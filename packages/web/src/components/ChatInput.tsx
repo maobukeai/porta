@@ -1,6 +1,22 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { ModelSelector } from "./ModelSelector";
-import { IconPaperclip } from "./Icons";
+import { api } from "../api/client";
+import {
+  IconPaperclip,
+  IconPlus,
+  IconMedia,
+  IconAt,
+  IconAction,
+  IconGlobe,
+  IconMessageCircle,
+  IconChat,
+  IconZap,
+  IconEdit,
+  IconUsers,
+  IconFileText,
+  IconFile,
+  IconFolder,
+} from "./Icons";
 import type { MediaAttachment } from "../types";
 import { prepareAttachments } from "../utils/imageAttachments";
 import { DEFAULT_MODEL } from "../constants";
@@ -37,6 +53,36 @@ interface AttachmentPreview {
   dataUrl: string;
 }
 
+interface SlashCommand {
+  name: string;
+  desc: string;
+  category?: string;
+}
+
+interface MentionOption {
+  name: string;
+  desc: string;
+  category: "rules" | "conversation" | "files" | "workspaces";
+}
+
+const MENTION_OPTIONS: MentionOption[] = [
+  { name: "Rules", desc: "引用编码规范与自定义规则", category: "rules" },
+  { name: "Conversation", desc: "引用历史对话上下文", category: "conversation" },
+  { name: "Files", desc: "引用工作区中的文件", category: "files" },
+  { name: "Workspaces", desc: "引用当前打开的工作区", category: "workspaces" },
+];
+
+const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
+  { name: "btw", desc: "不中断主对话的情况下快速提问" },
+  { name: "mcp:blender-mcp:asset_creation_strategy", desc: "定义在 Blender 中创建资产的策略" },
+  { name: "goal", desc: "持续运行直至完全完成指定的开发目标" },
+  { name: "schedule", desc: "按周期定时计划或一次性定时器运行指令" },
+  { name: "browser", desc: "调用浏览器 Agent 执行网页任务" },
+  { name: "grill-me", desc: "通过交互对话对齐并确认实施计划" },
+  { name: "teamwork-preview", desc: "调用多智能体团队协同解决大型项目" },
+  { name: "learn", desc: "总结复盘近期经验并沉淀为可复用技能" },
+];
+
 const PLANNER_OPTIONS: { value: PlannerType; label: string; desc: string }[] = [
   {
     value: "conversational",
@@ -45,6 +91,92 @@ const PLANNER_OPTIONS: { value: PlannerType; label: string; desc: string }[] = [
   },
   { value: "planning", label: "规划", desc: "多步结构化方法" },
 ];
+
+function AddContextSelector({
+  onSelectMedia,
+  onSelectMention,
+  onSelectAction,
+  onSelectBrowser,
+  disabled,
+}: {
+  onSelectMedia: () => void;
+  onSelectMention: () => void;
+  onSelectAction: () => void;
+  onSelectBrowser: () => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="add-context-selector" ref={ref}>
+      <button
+        className="chat-action-icon-btn"
+        onClick={() => setOpen((v) => !v)}
+        title="添加上下文"
+        disabled={disabled}
+      >
+        <IconPlus size={18} />
+      </button>
+      {open && (
+        <div className="add-context-dropdown">
+          <div className="add-context-header">添加上下文</div>
+          <button
+            className="add-context-item"
+            onClick={() => {
+              onSelectMedia();
+              setOpen(false);
+            }}
+          >
+            <IconMedia size={16} />
+            <span>媒体</span>
+          </button>
+          <button
+            className="add-context-item"
+            onClick={() => {
+              onSelectMention();
+              setOpen(false);
+            }}
+          >
+            <IconAt size={16} />
+            <span>提及 (@)</span>
+          </button>
+          <button
+            className="add-context-item"
+            onClick={() => {
+              onSelectAction();
+              setOpen(false);
+            }}
+          >
+            <IconAction size={16} />
+            <span>快捷指令 (/)</span>
+          </button>
+          <button
+            className="add-context-item"
+            onClick={() => {
+              onSelectBrowser();
+              setOpen(false);
+            }}
+          >
+            <IconGlobe size={16} />
+            <span>浏览器</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function PlannerTypeSelector({
   plannerType,
@@ -130,9 +262,67 @@ export function ChatInput({
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
+  const [showSlashMenu, setShowSlashMenu] = useState(true);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+  const [showMentionMenu, setShowMentionMenu] = useState(true);
+  const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
+  const [commands, setCommands] = useState<SlashCommand[]>(DEFAULT_SLASH_COMMANDS);
+
+  // Fetch dynamic commands from API on mount
+  useEffect(() => {
+    api
+      .commands()
+      .then((res) => {
+        if (res.commands && res.commands.length > 0) {
+          setCommands(res.commands);
+        }
+      })
+      .catch(() => {
+        // Keep default commands fallback on network/API error
+      });
+  }, []);
+
   const fileErrorTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Parse slash command query
+  const slashQuery = useMemo(() => {
+    const match = draft.match(/(?:^|\s)\/([^\s]*)$/);
+    return match ? match[1] : null;
+  }, [draft]);
+
+  const filteredSlashCommands = useMemo(() => {
+    if (slashQuery === null) return [];
+    const q = slashQuery.toLowerCase();
+    return commands.filter((cmd) => cmd.name.toLowerCase().includes(q));
+  }, [slashQuery, commands]);
+
+  // Parse mention query
+  const mentionQuery = useMemo(() => {
+    const match = draft.match(/(?:^|\s)@([^\s]*)$/);
+    return match ? match[1] : null;
+  }, [draft]);
+
+  const filteredMentionOptions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return MENTION_OPTIONS.filter((opt) => opt.name.toLowerCase().includes(q));
+  }, [mentionQuery]);
+
+  useEffect(() => {
+    setSlashSelectedIndex(0);
+    if (slashQuery !== null) {
+      setShowSlashMenu(true);
+    }
+  }, [slashQuery]);
+
+  useEffect(() => {
+    setMentionSelectedIndex(0);
+    if (mentionQuery !== null) {
+      setShowMentionMenu(true);
+    }
+  }, [mentionQuery]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -171,6 +361,44 @@ export function ChatInput({
       return prev.filter((_, i) => i !== index);
     });
   }, []);
+
+  const appendTextToInput = useCallback(
+    (textToAppend: string) => {
+      onDraftChange(draft ? `${draft.trimEnd()} ${textToAppend}` : textToAppend);
+      setShowSlashMenu(true);
+      setShowMentionMenu(true);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    },
+    [draft, onDraftChange],
+  );
+
+  const insertSlashCommand = useCallback(
+    (cmdName: string) => {
+      const match = draft.match(/^(.*(?:^|\s))\/[a-zA-Z0-9_:-]*$/);
+      if (match) {
+        onDraftChange(`${match[1]}/${cmdName} `);
+      } else {
+        onDraftChange(`/${cmdName} `);
+      }
+      setShowSlashMenu(false);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    },
+    [draft, onDraftChange],
+  );
+
+  const insertMention = useCallback(
+    (mentionName: string) => {
+      const match = draft.match(/^(.*(?:^|\s))@[^\s]*$/);
+      if (match) {
+        onDraftChange(`${match[1]}@${mentionName} `);
+      } else {
+        onDraftChange(`@${mentionName} `);
+      }
+      setShowMentionMenu(false);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    },
+    [draft, onDraftChange],
+  );
 
   const handleSubmit = useCallback(async () => {
     const trimmed = draft.trim();
@@ -221,6 +449,70 @@ export function ChatInput({
   const inputDisabled = disabled || isPreparingAttachments;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (
+      showMentionMenu &&
+      mentionQuery !== null &&
+      filteredMentionOptions.length > 0
+    ) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionSelectedIndex((prev) => (prev + 1) % filteredMentionOptions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionSelectedIndex(
+          (prev) => (prev - 1 + filteredMentionOptions.length) % filteredMentionOptions.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const selected = filteredMentionOptions[mentionSelectedIndex];
+        if (selected) {
+          insertMention(selected.name);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowMentionMenu(false);
+        return;
+      }
+    }
+
+    if (
+      showSlashMenu &&
+      slashQuery !== null &&
+      filteredSlashCommands.length > 0
+    ) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelectedIndex((prev) => (prev + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelectedIndex(
+          (prev) => (prev - 1 + filteredSlashCommands.length) % filteredSlashCommands.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const selected = filteredSlashCommands[slashSelectedIndex];
+        if (selected) {
+          insertSlashCommand(selected.name);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       // On mobile, Enter inserts a newline — send via button only
       if (window.innerWidth <= 480 || inputDisabled) return;
@@ -287,6 +579,22 @@ export function ChatInput({
     [addFiles],
   );
 
+  const renderSlashIcon = (name: string) => {
+    if (name.includes("browser")) return <IconGlobe size={14} />;
+    if (name.includes("grill")) return <IconEdit size={14} />;
+    if (name.includes("teamwork")) return <IconUsers size={14} />;
+    if (name.includes("mcp")) return <IconChat size={14} />;
+    if (name.includes("btw")) return <IconMessageCircle size={14} />;
+    return <IconZap size={14} />;
+  };
+
+  const renderMentionIcon = (category: MentionOption["category"]) => {
+    if (category === "rules") return <IconFileText size={14} />;
+    if (category === "conversation") return <IconMessageCircle size={14} />;
+    if (category === "files") return <IconFile size={14} />;
+    return <IconFolder size={14} />;
+  };
+
   return (
     <div
       className={`chat-input-area ${dragOver ? "drag-over" : ""}`}
@@ -300,6 +608,53 @@ export function ChatInput({
           {fileError}
         </div>
       )}
+
+      {/* Mention Autocomplete Menu */}
+      {showMentionMenu && mentionQuery !== null && filteredMentionOptions.length > 0 && (
+        <div className="slash-autocomplete-menu mention-autocomplete-menu">
+          {filteredMentionOptions.map((opt, idx) => {
+            const isSelected = idx === mentionSelectedIndex;
+            return (
+              <button
+                key={opt.name}
+                className={`slash-command-item ${isSelected ? "selected" : ""}`}
+                onClick={() => insertMention(opt.name)}
+                onMouseEnter={() => setMentionSelectedIndex(idx)}
+              >
+                <span className="slash-command-icon">
+                  {renderMentionIcon(opt.category)}
+                </span>
+                <span className="slash-command-name">{opt.name}</span>
+                <span className="slash-command-desc">{opt.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Slash Autocomplete Menu */}
+      {showSlashMenu && slashQuery !== null && filteredSlashCommands.length > 0 && (
+        <div className="slash-autocomplete-menu">
+          {filteredSlashCommands.map((cmd, idx) => {
+            const isSelected = idx === slashSelectedIndex;
+            return (
+              <button
+                key={cmd.name}
+                className={`slash-command-item ${isSelected ? "selected" : ""}`}
+                onClick={() => insertSlashCommand(cmd.name)}
+                onMouseEnter={() => setSlashSelectedIndex(idx)}
+              >
+                <span className="slash-command-icon">
+                  {renderSlashIcon(cmd.name)}
+                </span>
+                <span className="slash-command-name">{cmd.name}</span>
+                <span className="slash-command-desc">{cmd.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Attachment previews (top) */}
       {attachments.length > 0 && (
         <div className="attachment-previews">
@@ -320,15 +675,14 @@ export function ChatInput({
       <div
         className="chat-input-wrap"
         onClick={(e) => {
-          // If the user clicks the wrapping container but not a button or input explicitly, focus the textarea.
-          // This prevents "dead zones" where the browser doesn't know what to focus, leading to cursor bugs.
           const target = e.target as HTMLElement;
           if (
             target.tagName !== "BUTTON" &&
             target.tagName !== "TEXTAREA" &&
             target.tagName !== "INPUT" &&
             target.closest("button") === null &&
-            target.closest(".model-selector") === null
+            target.closest(".model-selector") === null &&
+            target.closest(".add-context-selector") === null
           ) {
             textareaRef.current?.focus();
           }
@@ -350,6 +704,13 @@ export function ChatInput({
 
         <div className="chat-input-bottom">
           <div className="chat-input-bottom-left">
+            <AddContextSelector
+              disabled={inputDisabled}
+              onSelectMedia={() => fileInputRef.current?.click()}
+              onSelectMention={() => appendTextToInput("@")}
+              onSelectAction={() => appendTextToInput("/")}
+              onSelectBrowser={() => appendTextToInput("/browser")}
+            />
             <button
               className="chat-action-icon-btn"
               onClick={() => fileInputRef.current?.click()}

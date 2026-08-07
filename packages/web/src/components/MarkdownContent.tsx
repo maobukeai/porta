@@ -53,23 +53,56 @@ function splitPreBlocks(html: string): Segment[] {
   return segments;
 }
 
+import { triggerHaptic } from "../utils/haptics";
+
+/** Extract programming language from class or tag in html */
+function extractLanguage(html: string): string {
+  const match = html.match(/class=["'][^"']*language-([a-zA-Z0-9_-]+)[^"']*["']/i);
+  if (match && match[1]) {
+    const lang = match[1].toLowerCase();
+    if (lang === "typescript" || lang === "ts") return "TS";
+    if (lang === "javascript" || lang === "js") return "JS";
+    if (lang === "tsx") return "TSX";
+    if (lang === "jsx") return "JSX";
+    if (lang === "python" || lang === "py") return "PY";
+    if (lang === "markdown" || lang === "md") return "MD";
+    if (lang === "bash" || lang === "sh" || lang === "shell") return "BASH";
+    return lang.toUpperCase().slice(0, 8);
+  }
+  return "CODE";
+}
+
 /** Copy button for code blocks */
-function CodeCopyBtn({ text }: { text: string }) {
+function CodeCopyBtn({ text, lang }: { text: string; lang: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
-      className="code-copy-btn"
-      title="Copy code"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
-    </button>
+    <div className="code-block-header">
+      <span className="code-lang-tag">{lang}</span>
+      <button
+        className={`code-copy-btn ${copied ? "copied" : ""}`}
+        title="复制代码"
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerHaptic("success");
+          navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          });
+        }}
+      >
+        {copied ? (
+          <>
+            <IconCheck size={12} />
+            <span>已复制</span>
+          </>
+        ) : (
+          <>
+            <IconCopy size={12} />
+            <span>复制</span>
+          </>
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -104,13 +137,18 @@ export const MarkdownContent = memo(function MarkdownContent({
         }
         // Pre block: render with copy button
         return (
-          <div key={i} style={{ position: "relative" }}>
+          <div key={i} className="code-block-wrapper" style={{ position: "relative" }}>
+            {!skipCopyButtons && (
+              <CodeCopyBtn
+                text={seg.content}
+                lang={extractLanguage(seg.rawHtml)}
+              />
+            )}
             <pre
               dangerouslySetInnerHTML={{
                 __html: seg.rawHtml.replace(/^<pre[^>]*>|<\/pre>$/gi, ""),
               }}
             />
-            {!skipCopyButtons && <CodeCopyBtn text={seg.content} />}
           </div>
         );
       })}

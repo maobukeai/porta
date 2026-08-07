@@ -74,7 +74,7 @@ function pendingApprovalNotifications(
       );
       notifications.push({
         key: `file:${identity}:${filePermissionRequest.absolutePathUri}`,
-        title: "Porta needs file access",
+        title: "Porta 需要文件访问权限",
         body: truncate(path, 120),
       });
       return;
@@ -92,8 +92,8 @@ function pendingApprovalNotifications(
 
     notifications.push({
       key: `command:${identity}:${command}`,
-      title: "Porta needs approval",
-      body: command ? truncate(command, 120) : "Approve or reject a command.",
+      title: "Porta 需要审批",
+      body: command ? truncate(command, 120) : "允许或拒绝命令。",
     });
   });
 
@@ -158,12 +158,12 @@ export function useChatNotifications({
       if (enabled) {
         const latestReply = latestAssistantReplyPreview(steps);
         showBrowserNotification({
-          title: "Porta job finished",
+          title: "Porta 任务已完成",
           body:
             latestReply ??
             (conversationTitle
-              ? `${conversationTitle} is now idle.`
-              : "The current session is now idle."),
+              ? `${conversationTitle} 当前已空闲。`
+              : "当前会话已空闲。"),
           tag: `porta:${cascadeId}:run-finished`,
         });
       }

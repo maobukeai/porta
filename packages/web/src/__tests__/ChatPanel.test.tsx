@@ -53,8 +53,8 @@ describe("ChatPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Implementation plan")).toBeInTheDocument();
-    expect(screen.getByText("View")).toBeInTheDocument();
+    expect(screen.getByText("执行计划")).toBeInTheDocument();
+    expect(screen.getByText("查看")).toBeInTheDocument();
     expect(screen.getByText("3.4s")).toBeInTheDocument();
     expect(
       screen.getByText("Inspect the current chat UI, then expose the plan."),
@@ -87,9 +87,9 @@ describe("ChatPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Live implementation plan")).toBeInTheDocument();
-    expect(screen.getByText("Live")).toBeInTheDocument();
-    expect(screen.getByText("Hide")).toBeInTheDocument();
+    expect(screen.getByText("实时执行计划")).toBeInTheDocument();
+    expect(screen.getByText("实时")).toBeInTheDocument();
+    expect(screen.getByText("隐藏")).toBeInTheDocument();
     expect(
       document.querySelector(".pinned-implementation-plan-message"),
     ).toBeInTheDocument();
@@ -126,16 +126,16 @@ describe("ChatPanel", () => {
 
     mockSteps(steps, true);
     const { rerender } = render(<ChatPanel {...props} />);
-    expect(screen.getByText("Live implementation plan")).toBeInTheDocument();
+    expect(screen.getByText("实时执行计划")).toBeInTheDocument();
 
     mockSteps(completedSteps, false);
     rerender(<ChatPanel {...props} />);
 
     expect(
-      screen.queryByText("Live implementation plan"),
+      screen.queryByText("实时执行计划"),
     ).not.toBeInTheDocument();
-    expect(screen.queryByText("Live")).not.toBeInTheDocument();
-    expect(screen.getByText("Implementation plan")).toBeInTheDocument();
+    expect(screen.queryByText("实时")).not.toBeInTheDocument();
+    expect(screen.getByText("执行计划")).toBeInTheDocument();
     const messageElements = Array.from(document.querySelectorAll(".message"));
     const planElement = document.querySelector(
       ".pinned-implementation-plan-message",

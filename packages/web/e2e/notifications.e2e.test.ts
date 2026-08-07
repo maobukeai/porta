@@ -159,7 +159,7 @@ describe("browser notifications", () => {
 
     await page!.waitFor(
       `window.__portaNotifications?.some((notification) =>
-        notification.title === "Porta needs approval" &&
+        notification.title === "Porta 需要审批" &&
         notification.body === "pnpm test" &&
         notification.permission === "granted"
       )`,
@@ -189,7 +189,7 @@ describe("browser notifications", () => {
 
     await page!.waitFor(
       `window.__portaNotifications?.some((notification) =>
-        notification.title === "Porta job finished" &&
+        notification.title === "Porta 任务已完成" &&
         notification.body === "I finished the requested notification check." &&
         notification.permission === "granted"
       )`,

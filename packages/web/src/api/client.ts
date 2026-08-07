@@ -165,10 +165,36 @@ export const api = {
         modelOrAlias: { model: string };
         supportsImages: boolean;
         isRecommended: boolean;
-        quotaInfo?: { remainingFraction: number };
+        quotaInfo?: { remainingFraction: number; resetTime?: string };
       }>;
       defaultOverrideModelConfig?: { modelOrAlias: { model: string } };
     }>("/api/models"),
+
+  userStatus: () =>
+    request<{
+      userStatus?: {
+        name?: string;
+        email?: string;
+        planStatus?: string;
+        userTier?: {
+          id?: string;
+          name?: string;
+          description?: string;
+        };
+        cascadeModelConfigData?: {
+          clientModelConfigs?: Array<{
+            label: string;
+            modelOrAlias: { model: string };
+            supportsImages: boolean;
+            isRecommended: boolean;
+            quotaInfo?: {
+              remainingFraction: number;
+              resetTime?: string;
+            };
+          }>;
+        };
+      };
+    }>("/api/user-status"),
 
   rpc: (method: string, body: Record<string, unknown> = {}) =>
     request(`/api/rpc/${method}`, {
@@ -188,4 +214,13 @@ export const api = {
       totalConversations: number;
       elapsedMs: number;
     }>(`/api/search?q=${encodeURIComponent(query)}`),
+
+  commands: () =>
+    request<{
+      commands: Array<{
+        name: string;
+        desc: string;
+        category?: "slash" | "skill" | "plugin" | "mcp";
+      }>;
+    }>("/api/commands"),
 };

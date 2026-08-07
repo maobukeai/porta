@@ -13,7 +13,8 @@ import { ChatPanel } from "./components/ChatPanel";
 import { ChatInput } from "./components/ChatInput";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspaceSelector } from "./components/WorkspaceSelector";
-import { IconFolder } from "./components/Icons";
+import { QuickSwitchSheet } from "./components/QuickSwitchSheet";
+import { IconFolder, IconGemini } from "./components/Icons";
 import { useConversations } from "./hooks/useConversations";
 import { usePolling } from "./hooks/usePolling";
 import { useWorkspaces, slugFromUri } from "./hooks/useWorkspaces";
@@ -75,6 +76,7 @@ function ChatView() {
   const isSettingsPage = location.pathname.endsWith("/settings");
   const activeId = chatId ?? null;
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 480);
+  const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
   const isMobile = () => window.innerWidth <= 480;
   const { conversations, loading, refresh, optimisticRemove } = useConversations(15_000);
   const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
@@ -86,6 +88,33 @@ function ChatView() {
   );
   const { draftText, handleDraftChange } = useDraftText(activeId);
   const { settings, updateSettings } = useClientSettings();
+
+  // ── Global Theme Application ──
+  useEffect(() => {
+    const currentTheme = settings.theme ?? "system";
+    const apply = (t: string) => {
+      let effective = t;
+      if (t === "system") {
+        effective = window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      }
+      document.documentElement.setAttribute("data-theme", effective);
+      document.documentElement.classList.toggle("theme-dark", effective === "dark");
+      document.documentElement.classList.toggle("theme-light", effective === "light");
+    };
+
+    apply(currentTheme);
+
+    if (currentTheme === "system") {
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      const listener = (e: MediaQueryListEvent) => {
+        apply(e.matches ? "dark" : "light");
+      };
+      media.addEventListener("change", listener);
+      return () => media.removeEventListener("change", listener);
+    }
+  }, [settings.theme]);
 
   const activeConv = conversations.find((c) => c.id === activeId);
   const isRunning = activeConv?.summary.status === "CASCADE_RUN_STATUS_RUNNING";
@@ -220,8 +249,12 @@ function ChatView() {
   );
 
   // ── Navigate helpers ──
-  const handleNew = useCallback(() => {
-    navigate(`/${projectSlug ?? "unknown"}`);
+  const handleNew = useCallback((workspaceUri?: string) => {
+    if (workspaceUri) {
+      navigate(`/${slugFromUri(workspaceUri)}`);
+    } else {
+      navigate(`/${projectSlug ?? "unknown"}`);
+    }
     setOptimisticMessages([]);
     if (isMobile()) setSidebarOpen(false);
   }, [navigate, projectSlug, setOptimisticMessages]);
@@ -300,6 +333,32 @@ function ChatView() {
           title={headerTitle}
           projectName={projectSlug ?? undefined}
           onMenuToggle={() => setSidebarOpen(true)}
+          onQuickSwitch={() => setQuickSwitchOpen(true)}
+          onNewChat={handleNew}
+          onOpenSettings={() => {
+            navigate(`/${projectSlug ?? "unknown"}/settings`);
+            if (isMobile()) setSidebarOpen(false);
+          }}
+        />
+
+        {/* Mobile Quick Switch Bottom Drawer */}
+        <QuickSwitchSheet
+          isOpen={quickSwitchOpen}
+          onClose={() => setQuickSwitchOpen(false)}
+          conversations={conversations}
+          activeId={activeId}
+          currentProjectSlug={projectSlug}
+          onSelectChat={(id) => {
+            setOptimisticMessages([]);
+            navigate(chatUrl(id));
+            if (isMobile()) setSidebarOpen(false);
+          }}
+          onNewChat={handleNew}
+          onOpenSidebar={() => setSidebarOpen(true)}
+          workspaces={workspaces}
+          onSelectProject={(slug) => {
+            navigate(`/${slug}`);
+          }}
         />
         {isSettingsPage ? (
           <SettingsPanel
@@ -363,50 +422,24 @@ function ChatView() {
             </div>
             {optimisticMessages.length === 0 && (
               <div className="chat-empty">
-                <div className="chat-empty-icon">
-                  <svg
-                    width="48"
-                    height="48"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <defs>
-                      <linearGradient
-                        id="chatGrad"
-                        x1="0%"
-                        y1="0%"
-                        x2="100%"
-                        y2="100%"
-                      >
-                        <stop offset="0%" stopColor="var(--accent)" />
-                        <stop offset="50%" stopColor="#a78bfa" />
-                        <stop offset="100%" stopColor="#f472b6" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M12 2C6.48 2 2 5.92 2 10.67c0 2.72 1.47 5.15 3.78 6.73L4.5 21.5l4.33-2.17c1.02.28 2.09.43 3.17.43 5.52 0 10-3.92 10-8.76S17.52 2 12 2z"
-                      fill="url(#chatGrad)"
-                      opacity="0.25"
-                    />
-                    <path
-                      d="M12 2C6.48 2 2 5.92 2 10.67c0 2.72 1.47 5.15 3.78 6.73L4.5 21.5l4.33-2.17c1.02.28 2.09.43 3.17.43 5.52 0 10-3.92 10-8.76S17.52 2 12 2z"
-                      stroke="url(#chatGrad)"
-                      strokeWidth="1.5"
-                      fill="none"
-                    />
-                  </svg>
+                <div className="chat-empty-badge">
+                  <IconGemini size={28} />
                 </div>
-                <div className="chat-empty-text">开始新对话</div>
+                <h1 className="chat-empty-title">你想在代码中构建什么？</h1>
+                <p className="chat-empty-subtitle">
+                  从分析项目、重构界面、开发新特性到智能调试，AI 协助全流程开发
+                </p>
                 {workspaces.length > 0 && currentWorkspaceUri ? (
-                  <WorkspaceSelector
-                    workspaces={workspaces}
-                    selected={currentWorkspaceUri}
-                    onSelect={(uri) => {
-                      const slug = slugFromUri(uri);
-                      navigate(`/${slug}`);
-                    }}
-                  />
+                  <div className="chat-empty-workspace-card">
+                    <WorkspaceSelector
+                      workspaces={workspaces}
+                      selected={currentWorkspaceUri}
+                      onSelect={(uri) => {
+                        const slug = slugFromUri(uri);
+                        navigate(`/${slug}`);
+                      }}
+                    />
+                  </div>
                 ) : (
                   <div className="chat-empty-project">
                     <IconFolder size={13} /> {projectSlug ?? "其他"}

@@ -2,23 +2,48 @@
 
 .mobile-menu-btn {
   display: none;
-  width: 32px;
-  height: 32px;
-  border: none;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
   cursor: pointer;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  transition: all var(--transition-fast);
+  outline: none;
+  user-select: none;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast),
+    box-shadow var(--transition-fast);
   flex-shrink: 0;
+}
+
+.mobile-menu-btn svg {
+  flex-shrink: 0;
+  transition: transform var(--transition-fast), color var(--transition-fast);
 }
 
 .mobile-menu-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  border-color: var(--border-default);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.mobile-menu-btn:hover svg {
+  transform: scale(1.08);
+}
+
+.mobile-menu-btn:active {
+  transform: scale(0.93);
+  background: var(--bg-active);
 }
 
 /* Hidden on desktop */

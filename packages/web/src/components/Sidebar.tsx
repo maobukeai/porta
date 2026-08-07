@@ -6,17 +6,18 @@ import {
   IconPlus,
   IconSearch,
   IconMenu,
-  IconMore,
   IconX,
   IconSpinner,
   IconGear,
+  IconPencil,
+  IconTrash,
 } from "./Icons";
 
 interface Props {
   conversations: ConversationEntry[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  onNew: () => void;
+  onNew: (workspaceUri?: string) => void;
   onDelete: (id: string) => void;
   onSettings: () => void;
   loading: boolean;
@@ -27,6 +28,7 @@ interface Props {
 
 interface WorkspaceGroup {
   name: string;
+  workspaceUri?: string;
   conversations: ConversationEntry[];
   hasRunning: boolean;
 }
@@ -58,42 +60,6 @@ function isArchived(conv: ConversationEntry): boolean {
   return conv.summary.status === "CASCADE_RUN_STATUS_UNLOADED";
 }
 
-/** Three-dot context menu */
-function ContextMenu({
-  onDelete,
-  onClose,
-}: {
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
-
-  return (
-    <div ref={ref} className="context-menu">
-      <button
-        className="context-menu-item danger"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-          onClose();
-        }}
-      >
-        删除
-      </button>
-    </div>
-  );
-}
-
 // ── Sidebar action items ──
 
 interface SidebarAction {
@@ -117,7 +83,6 @@ export function Sidebar({
 }: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<
@@ -133,20 +98,49 @@ export function Sidebar({
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const closeMenu = useCallback(() => setMenuOpen(null), []);
+  // Track custom/renamed conversation titles
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [customTitles, setCustomTitles] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("porta:customTitles") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  const startRename = (conv: ConversationEntry) => {
+    setEditingId(conv.id);
+    setEditTitle(customTitles[conv.id] || conv.summary.summary);
+  };
+
+  const saveRename = (id: string) => {
+    if (editTitle.trim()) {
+      setCustomTitles((prev) => {
+        const next = { ...prev, [id]: editTitle.trim() };
+        try {
+          localStorage.setItem("porta:customTitles", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+    setEditingId(null);
+  };
 
   const groups = useMemo<WorkspaceGroup[]>(() => {
-    const map = new Map<string, ConversationEntry[]>();
+    const map = new Map<string, { convs: ConversationEntry[]; uri?: string }>();
 
     for (const conv of conversations) {
       const name = extractWorkspaceName(conv);
-      const list = map.get(name) ?? [];
-      list.push(conv);
-      map.set(name, list);
+      const uri = conv.summary.workspaces?.[0]?.workspaceFolderAbsoluteUri;
+      const item = map.get(name) ?? { convs: [], uri };
+      if (!item.uri && uri) item.uri = uri;
+      item.convs.push(conv);
+      map.set(name, item);
     }
 
     return Array.from(map.entries())
-      .map(([name, convs]) => {
+      .map(([name, { convs, uri }]) => {
         // Sort within group: running first, then by lastModifiedTime desc
         convs.sort((a, b) => {
           const aRunning = a.summary.status === "CASCADE_RUN_STATUS_RUNNING";
@@ -159,6 +153,7 @@ export function Sidebar({
         });
         return {
           name,
+          workspaceUri: uri,
           conversations: convs,
           hasRunning: convs.some(
             (c) => c.summary.status === "CASCADE_RUN_STATUS_RUNNING",
@@ -198,7 +193,7 @@ export function Sidebar({
   };
 
   const actions: SidebarAction[] = [
-    { icon: <IconPlus size={14} />, label: "新建对话", onClick: onNew },
+    { icon: <IconPlus size={14} />, label: "新建对话", onClick: () => onNew() },
     {
       icon: <IconSearch size={14} />,
       label: "搜索",
@@ -276,6 +271,7 @@ export function Sidebar({
   const renderItem = (conv: ConversationEntry) => {
     const isRunning = conv.summary.status === "CASCADE_RUN_STATUS_RUNNING";
     const lastSeen = seenAt[conv.id];
+    const displayTitle = customTitles[conv.id] || conv.summary.summary;
     // Show update dot only if the thread was *previously opened* and
     // has been modified since we last saw it.
     // No seenAt record = never opened → no "update" concept → no dot.
@@ -291,12 +287,34 @@ export function Sidebar({
         key={conv.id}
         className={`sidebar-item ${conv.id === activeId ? "active" : ""} ${isArchived(conv) ? "dimmed" : ""}`}
         onClick={() => {
+          if (editingId === conv.id) return;
           markSeen(conv.id);
           onSelect(conv.id);
         }}
       >
         <div className="sidebar-item-content">
-          <div className="sidebar-item-title">{conv.summary.summary}</div>
+          {editingId === conv.id ? (
+            <input
+              className="sidebar-item-rename-input"
+              type="text"
+              value={editTitle}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.stopPropagation();
+                  saveRename(conv.id);
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setEditingId(null);
+                }
+              }}
+              onBlur={() => saveRename(conv.id)}
+            />
+          ) : (
+            <div className="sidebar-item-title">{displayTitle}</div>
+          )}
           <div className="sidebar-item-meta">
             {relativeTime(conv.summary.lastModifiedTime)}
             {" · "}
@@ -307,21 +325,25 @@ export function Sidebar({
           {isRunning && <IconSpinner size={13} className="item-indicator" />}
           {hasUpdates && <span className="item-dot" />}
           <button
-            className="sidebar-item-menu-btn"
+            className="sidebar-item-action-btn"
             onClick={(e) => {
               e.stopPropagation();
-              setMenuOpen(menuOpen === conv.id ? null : conv.id);
+              startRename(conv);
             }}
-            title="更多选项"
+            title="重命名对话"
           >
-            <IconMore size={13} />
+            <IconPencil size={13} />
           </button>
-          {menuOpen === conv.id && (
-            <ContextMenu
-              onDelete={() => onDelete(conv.id)}
-              onClose={closeMenu}
-            />
-          )}
+          <button
+            className="sidebar-item-action-btn danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(conv.id);
+            }}
+            title="删除对话"
+          >
+            <IconTrash size={13} />
+          </button>
         </div>
       </div>
     );
@@ -367,7 +389,7 @@ export function Sidebar({
           className="sidebar-brand"
           title={connected ? "已连接" : "未连接"}
         >
-          Porta
+          猫步反重力
         </span>
         <button
           className="sidebar-icon-btn"
@@ -383,7 +405,7 @@ export function Sidebar({
         {actions.map((action, i) => (
           <button
             key={i}
-            className={`sidebar-action-btn ${action.active ? "active" : ""}`}
+            className={`sidebar-action-btn ${i === 0 ? "primary" : ""} ${action.active ? "active" : ""}`}
             onClick={action.onClick}
           >
             <span className="sidebar-action-icon">{action.icon}</span>
@@ -412,18 +434,30 @@ export function Sidebar({
 
             return (
               <div key={group.name} className="workspace-group">
-                <button
-                  className="workspace-group-header"
-                  onClick={() => toggleGroup(group.name)}
-                >
-                  <span
-                    className={`workspace-group-chevron ${isGroupCollapsed ? "collapsed" : ""}`}
+                <div className="workspace-group-header-row">
+                  <button
+                    className="workspace-group-header"
+                    onClick={() => toggleGroup(group.name)}
                   >
-                    ▾
-                  </span>
-                  <span className="workspace-group-name">{group.name}</span>
-                  <span className="workspace-group-count">{totalCount}</span>
-                </button>
+                    <span
+                      className={`workspace-group-chevron ${isGroupCollapsed ? "collapsed" : ""}`}
+                    >
+                      ▾
+                    </span>
+                    <span className="workspace-group-name">{group.name}</span>
+                    <span className="workspace-group-count">{totalCount}</span>
+                  </button>
+                  <button
+                    className="workspace-group-add-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNew(group.workspaceUri);
+                    }}
+                    title="在项目中新建对话"
+                  >
+                    <IconPlus size={12} />
+                  </button>
+                </div>
 
                 {!isGroupCollapsed && (
                   <div className="workspace-group-items">

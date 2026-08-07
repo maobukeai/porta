@@ -40,6 +40,7 @@ import {
   IconMessageCircle,
   IconAlertTriangle,
   IconChevron,
+  IconGemini,
 } from "./Icons";
 import type { AskQuestionEntry, ChatMessage } from "../types";
 
@@ -108,16 +109,16 @@ function ImplementationPlanBlock({
           <IconList size={13} />
         </span>
         <span className="implementation-plan-label">
-          {live ? "Live implementation plan" : "Implementation plan"}
+          {live ? "实时执行计划" : "执行计划"}
         </span>
         {live && (
-          <span className="implementation-plan-live-badge">Live</span>
+          <span className="implementation-plan-live-badge">实时</span>
         )}
         {durationLabel && (
           <span className="implementation-plan-meta">{durationLabel}</span>
         )}
         <span className="implementation-plan-action">
-          {open ? "Hide" : "View"}
+          {open ? "隐藏" : "查看"}
         </span>
         <span className="implementation-plan-chevron">
           <IconChevron size={13} />
@@ -128,7 +129,7 @@ function ImplementationPlanBlock({
         <div className="implementation-plan-actions">
           <button
             className="msg-action-btn implementation-plan-copy"
-            title="Copy implementation plan"
+            title="复制执行计划"
             onClick={() => {
               navigator.clipboard.writeText(plan).then(() => {
                 setCopied(true);
@@ -388,7 +389,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       className="msg-action-btn"
-      title="Copy"
+      title="复制"
       onClick={() => {
         navigator.clipboard.writeText(text).then(() => {
           setCopied(true);
@@ -439,6 +440,11 @@ const MessageBubble = memo(
       <div
         className={`message ${msg.role}${isUnconfirmed ? " unconfirmed" : ""}`}
       >
+        {msg.role === "assistant" && (
+          <div className="message-avatar" title="Gemini AI">
+            <IconGemini size={15} />
+          </div>
+        )}
         <div className="chat-block message-body">
           {showImplementationPlan && msg.thinking && (
             <ImplementationPlanBlock
@@ -463,7 +469,7 @@ const MessageBubble = memo(
                       );
                     }
                   }}
-                  title="Revert"
+                  title="撤回并编辑"
                   disabled={isLocked}
                 >
                   <IconUndo size={13} />
@@ -761,7 +767,7 @@ export function ChatPanel({
       if (failedImages.current.has(img.src)) {
         img.dataset.failed = "1";
         img.removeAttribute("src");
-        img.alt = "⚠ Image not found";
+        img.alt = "⚠ 未找到图片";
         return;
       }
       img.addEventListener(
@@ -770,7 +776,7 @@ export function ChatPanel({
           failedImages.current.add(img.src);
           img.dataset.failed = "1";
           img.removeAttribute("src");
-          img.alt = "⚠ Image not found";
+          img.alt = "⚠ 未找到图片";
         },
         { once: true },
       );
@@ -808,7 +814,7 @@ export function ChatPanel({
           <div className="chat-empty-icon">
             <IconMessageCircle size={48} />
           </div>
-          <div className="chat-empty-text">No messages yet</div>
+          <div className="chat-empty-text">暂无消息</div>
         </div>
       </div>
     );
@@ -900,7 +906,7 @@ export function ChatPanel({
         <button
           className="scroll-to-bottom-btn"
           onClick={scrollToBottom}
-          aria-label="Scroll to bottom"
+          aria-label="滚动到底部"
         >
           ↓
         </button>

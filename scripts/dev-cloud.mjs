@@ -32,9 +32,15 @@ const runners = [
     path.join(logsDir, "proxy.log"),
   ),
   spawnLoggedProcess(
+    "web",
+    commandName("pnpm"),
+    ["--filter", "@porta/web", "dev"],
+    path.join(logsDir, "web.log"),
+  ),
+  spawnLoggedProcess(
     "tunnel",
-    "cloudflared",
-    cloudflaredArgs,
+    commandName("npx"),
+    ["cloudflared", ...cloudflaredArgs],
     path.join(logsDir, "tunnel.log"),
   ),
 ];

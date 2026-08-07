@@ -345,4 +345,6 @@ export interface ClientSettings {
   defaultPlannerType: "conversational" | "planning";
   /** Enables browser notifications for run completion and approval requests. */
   browserNotificationsEnabled: boolean;
+  /** Theme preference: dark, light, or system */
+  theme?: "dark" | "light" | "system";
 }

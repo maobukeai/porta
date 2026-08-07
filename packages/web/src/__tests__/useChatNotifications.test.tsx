@@ -96,7 +96,7 @@ describe("useChatNotifications", () => {
     expect(showBrowserNotificationMock).toHaveBeenCalledTimes(1);
     expect(showBrowserNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Porta needs approval",
+        title: "Porta 需要审批",
         body: "pnpm test",
         tag: expect.stringContaining("command:traj-1:7:pnpm test"),
       }),
@@ -121,7 +121,7 @@ describe("useChatNotifications", () => {
 
     expect(showBrowserNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Porta needs file access",
+        title: "Porta 需要文件访问权限",
         body: "/app/src/App.tsx",
       }),
     );
@@ -152,7 +152,7 @@ describe("useChatNotifications", () => {
     expect(showBrowserNotificationMock).toHaveBeenCalledTimes(1);
     expect(showBrowserNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Porta job finished",
+        title: "Porta 任务已完成",
         body: "Build completed successfully. I updated the notification tests.",
       }),
     );

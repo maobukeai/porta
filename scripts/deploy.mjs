@@ -15,6 +15,7 @@ function run(command, args, opts = {}) {
       env: process.env,
       stdio: "inherit",
       windowsHide: true,
+      shell: true,
       ...opts,
     });
 

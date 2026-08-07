@@ -15,4 +15,13 @@ export function registerModelRoutes(app: Hono): void {
       return handleRPCError(c, err);
     }
   });
+
+  app.get("/api/user-status", async (c) => {
+    try {
+      const data = await rpcAny("GetUserStatus");
+      return c.json(data);
+    } catch (err) {
+      return handleRPCError(c, err);
+    }
+  });
 }

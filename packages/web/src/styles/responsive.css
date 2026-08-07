@@ -72,6 +72,26 @@
     font-size: 13px;
   }
 
+  .main-header-actions {
+    gap: 4px;
+  }
+
+  .main-header-project-btn {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 11px;
+    max-width: 120px;
+    gap: 4px;
+  }
+
+  .header-icon-btn,
+  .mobile-menu-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+  }
+
   /* ── Chat area: reduced padding ── */
 
   .chat-area {
@@ -176,26 +196,79 @@
   /* ── Chat input area ── */
 
   .chat-input-area {
-    padding: 6px 10px 12px;
+    padding: 4px 8px 8px;
+  }
+
+  .chat-input-wrap {
+    padding: 8px 10px 6px;
+    border-radius: var(--radius-md);
+    gap: 6px;
+    min-height: 42px;
+  }
+
+  .chat-input {
+    font-size: 14px; /* keep 14px minimum for iOS to prevent zoom on focus */
+    min-height: 22px;
+    max-height: 100px;
+    line-height: 1.4;
+  }
+
+  .chat-input-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .chat-input-bottom-left {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    order: 0;
+  }
+
+  .chat-input-bottom-center {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-end;
+    margin: 0 2px 0 0;
+    order: 1;
+  }
+
+  .chat-input-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    order: 2;
   }
 
   .model-selector-btn {
     width: auto;
     min-width: 0;
-    max-width: 140px;
-    padding: 5px 8px 5px 10px;
+    max-width: 125px;
+    height: 25px;
+    padding: 0 6px;
     font-size: 11px;
+    gap: 3px;
+    border-radius: 12px;
   }
 
-  .chat-input-wrap {
-    padding: 10px 10px 8px;
-    border-radius: var(--radius-md);
-    gap: 10px;
+  .model-selector-tier-tag {
+    display: none;
   }
 
-  .chat-input {
-    font-size: 14px; /* keep 14px minimum for iOS to prevent zoom on focus */
-    max-height: 120px;
+  .chat-action-icon-btn,
+  .chat-send-btn,
+  .chat-stop-btn {
+    width: 26px;
+    height: 26px;
   }
 
   /* ── Step cards ── */

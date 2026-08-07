@@ -33,15 +33,20 @@
     display: none;
   }
 
-  .sidebar-item:hover .sidebar-item-menu-btn {
+  .sidebar-item:hover .sidebar-item-action-btn {
     display: flex;
     opacity: 0.6;
   }
 
-  .sidebar-item-menu-btn:hover {
+  .sidebar-item-action-btn:hover {
     opacity: 1 !important;
     background: var(--bg-hover);
     color: var(--text-primary);
+  }
+
+  .sidebar-item-action-btn.danger:hover {
+    background: rgb(var(--c-error) / 0.12);
+    color: rgb(var(--c-error));
   }
 
   .workspace-group-header:hover {
@@ -52,14 +57,7 @@
     color: var(--text-secondary);
   }
 
-  /* Context menu */
-  .context-menu-item:hover {
-    background: rgb(var(--c-lift) / 0.05);
-  }
 
-  .context-menu-item.danger:hover {
-    background: rgb(var(--c-error) / 0.06);
-  }
 
   /* Search results */
   .search-result-item:hover {
