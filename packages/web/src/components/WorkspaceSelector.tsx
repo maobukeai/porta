@@ -24,14 +24,14 @@ export function WorkspaceSelector({ workspaces, selected, onSelect }: Props) {
   }, [open]);
 
   const activeLabel =
-    workspaces.find((w) => w.uri === selected)?.name ?? "Project";
+    workspaces.find((w) => w.uri === selected)?.name ?? "项目";
 
   return (
     <div className="model-selector" ref={ref}>
       <button
         className="model-selector-btn"
         onClick={() => setOpen((v) => !v)}
-        title="Select workspace"
+        title="选择工作区"
       >
         <span className="model-selector-label">
           <IconFolder size={12} /> {activeLabel}

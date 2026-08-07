@@ -13,7 +13,7 @@ export function ChatHeader({ title, projectName, onMenuToggle }: Props) {
         <button
           className="mobile-menu-btn"
           onClick={onMenuToggle}
-          title="Open menu"
+          title="打开菜单"
         >
           <IconMenu size={18} />
         </button>
