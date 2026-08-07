@@ -36,12 +36,12 @@ const PREVIEW_COUNT = 3;
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return `${mins}分钟前`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}小时前`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${days}天前`;
 }
 
 function extractWorkspaceName(conv: ConversationEntry): string {
@@ -51,7 +51,7 @@ function extractWorkspaceName(conv: ConversationEntry): string {
   const name = workspaceNameFromMetadata(conv.summary.workspaces?.[0], {
     collapseAntigravityPlayground: true,
   });
-  return name === "Others" ? "No Workspace" : name;
+  return name === "Others" ? "无工作区" : name;
 }
 
 function isArchived(conv: ConversationEntry): boolean {
@@ -88,7 +88,7 @@ function ContextMenu({
           onClose();
         }}
       >
-        Delete
+        删除
       </button>
     </div>
   );
@@ -166,9 +166,9 @@ export function Sidebar({
         };
       })
       .sort((a, b) => {
-        // Keep "No Workspace" group at the bottom
-        if (a.name === "No Workspace" && b.name !== "No Workspace") return 1;
-        if (a.name !== "No Workspace" && b.name === "No Workspace") return -1;
+        // Keep "无工作区" group at the bottom
+        if (a.name === "无工作区" && b.name !== "无工作区") return 1;
+        if (a.name !== "无工作区" && b.name === "无工作区") return -1;
 
         const aHasActive = a.conversations.some((c) => !isArchived(c));
         const bHasActive = b.conversations.some((c) => !isArchived(c));
@@ -198,16 +198,16 @@ export function Sidebar({
   };
 
   const actions: SidebarAction[] = [
-    { icon: <IconPlus size={14} />, label: "New Chat", onClick: onNew },
+    { icon: <IconPlus size={14} />, label: "新建对话", onClick: onNew },
     {
       icon: <IconSearch size={14} />,
-      label: "Search",
+      label: "搜索",
       onClick: () => {
         setSearchOpen(true);
         setTimeout(() => searchInputRef.current?.focus(), 50);
       },
     },
-    { icon: <IconGear size={14} />, label: "Settings", onClick: onSettings },
+    { icon: <IconGear size={14} />, label: "设置", onClick: onSettings },
   ];
 
   // Debounced search
@@ -300,7 +300,7 @@ export function Sidebar({
           <div className="sidebar-item-meta">
             {relativeTime(conv.summary.lastModifiedTime)}
             {" · "}
-            {conv.summary.stepCount} steps
+            {conv.summary.stepCount} 步
           </div>
         </div>
         <div className="sidebar-item-right">
@@ -312,7 +312,7 @@ export function Sidebar({
               e.stopPropagation();
               setMenuOpen(menuOpen === conv.id ? null : conv.id);
             }}
-            title="More options"
+            title="更多选项"
           >
             <IconMore size={13} />
           </button>
@@ -335,7 +335,7 @@ export function Sidebar({
           <button
             className="sidebar-icon-btn"
             onClick={onToggle}
-            title="Expand sidebar"
+            title="展开侧边栏"
           >
             <IconMenu size={16} />
           </button>
@@ -352,7 +352,7 @@ export function Sidebar({
         </div>
         <div
           className="sidebar-collapsed-bottom"
-          title={connected ? "Connected" : "Disconnected"}
+          title={connected ? "已连接" : "未连接"}
         />
       </aside>
     );
@@ -365,14 +365,14 @@ export function Sidebar({
       <div className="sidebar-header">
         <span
           className="sidebar-brand"
-          title={connected ? "Connected" : "Disconnected"}
+          title={connected ? "已连接" : "未连接"}
         >
           Porta
         </span>
         <button
           className="sidebar-icon-btn"
           onClick={onToggle}
-          title="Collapse sidebar"
+          title="折叠侧边栏"
         >
           <IconMenu size={16} />
         </button>
@@ -434,7 +434,7 @@ export function Sidebar({
                         className="see-all-btn"
                         onClick={() => toggleExpanded(group.name)}
                       >
-                        {isExpanded ? "Show less" : `Show all (${totalCount})`}
+                        {isExpanded ? "收起" : `显示全部 (${totalCount})`}
                       </button>
                     )}
                   </div>
@@ -461,7 +461,7 @@ export function Sidebar({
                 ref={searchInputRef}
                 className="search-modal-input"
                 type="text"
-                placeholder="Search conversations..."
+                placeholder="搜索对话..."
                 value={searchQuery}
                 onChange={(e) => handleSearchInput(e.target.value)}
                 autoFocus
@@ -477,11 +477,11 @@ export function Sidebar({
                 </div>
               ) : searchResults === null ? (
                 <div className="search-modal-status">
-                  Type to search across all conversations
+                  输入以在所有对话中搜索
                 </div>
               ) : searchResults.length === 0 ? (
                 <div className="search-modal-status">
-                  No results for "{searchQuery}"
+                  没有找到关于 "{searchQuery}" 的结果
                 </div>
               ) : (
                 searchResults.map((result) => (
@@ -502,8 +502,7 @@ export function Sidebar({
                       ))}
                     </div>
                     <div className="search-result-meta">
-                      {result.matchCount} match
-                      {result.matchCount !== 1 ? "es" : ""}
+                      {result.matchCount} 处匹配
                     </div>
                   </button>
                 ))

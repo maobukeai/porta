@@ -59,7 +59,7 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
 
   const active = selectedModel ?? defaultModel;
   const activeLabel =
-    models.find((m) => m.modelOrAlias.model === active)?.label ?? "Model";
+    models.find((m) => m.modelOrAlias.model === active)?.label ?? "模型";
 
   return (
     <div className="model-selector" ref={ref}>
@@ -69,7 +69,7 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
           if (fetchError || models.length === 0) fetchModels();
           setOpen((v) => !v);
         }}
-        title="Select model"
+        title="选择模型"
       >
         <span className="model-selector-label">{activeLabel}</span>
         <span className="model-selector-caret">▾</span>
@@ -85,7 +85,7 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
                 justifyContent: "center",
               }}
             >
-              ⟳ Retry loading models
+              ⟳ 重新加载模型
             </button>
           )}
           {models.map((m) => {
