@@ -228,8 +228,8 @@ function ChatView() {
 
   // Header info
   const headerTitle = activeId
-    ? (activeConv?.summary.summary ?? "Session")
-    : "New Chat";
+    ? (activeConv?.summary.summary ?? "会话")
+    : "新建对话";
 
   // ── Mobile Swipe Gestures ──
   const touchStartX = useRef(0);
@@ -397,7 +397,7 @@ function ChatView() {
                     />
                   </svg>
                 </div>
-                <div className="chat-empty-text">Start a conversation</div>
+                <div className="chat-empty-text">开始新对话</div>
                 {workspaces.length > 0 && currentWorkspaceUri ? (
                   <WorkspaceSelector
                     workspaces={workspaces}
@@ -409,7 +409,7 @@ function ChatView() {
                   />
                 ) : (
                   <div className="chat-empty-project">
-                    <IconFolder size={13} /> {projectSlug ?? "Others"}
+                    <IconFolder size={13} /> {projectSlug ?? "其他"}
                   </div>
                 )}
               </div>
