@@ -30,13 +30,13 @@ describe("ChatInput", () => {
   it("renders correctly", () => {
     render(<ChatInput {...defaultProps} />);
     expect(
-      screen.getByPlaceholderText("Send a message..."),
+      screen.getByPlaceholderText("发送消息..."),
     ).toBeInTheDocument();
   });
 
   it("calls onDraftChange when typing", () => {
     render(<ChatInput {...defaultProps} />);
-    const textarea = screen.getByPlaceholderText("Send a message...");
+    const textarea = screen.getByPlaceholderText("发送消息...");
     fireEvent.change(textarea, { target: { value: "hello" } });
     expect(mockOnDraftChange).toHaveBeenCalledWith("hello");
   });
@@ -60,7 +60,7 @@ describe("ChatInput", () => {
       expect(screen.getByAltText("attachment")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByTitle("Send (Enter)"));
+    fireEvent.click(screen.getByTitle("发送 (Enter)"));
 
     await waitFor(() => {
       expect(mockOnSend).not.toHaveBeenCalled();

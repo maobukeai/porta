@@ -40,10 +40,10 @@ interface AttachmentPreview {
 const PLANNER_OPTIONS: { value: PlannerType; label: string; desc: string }[] = [
   {
     value: "conversational",
-    label: "Fast",
-    desc: "Direct, single-step responses",
+    label: "快速",
+    desc: "直接、单步响应",
   },
-  { value: "planning", label: "Plan", desc: "Multi-step structured approach" },
+  { value: "planning", label: "规划", desc: "多步结构化方法" },
 ];
 
 function PlannerTypeSelector({
@@ -68,14 +68,14 @@ function PlannerTypeSelector({
   }, [open]);
 
   const activeLabel =
-    PLANNER_OPTIONS.find((o) => o.value === plannerType)?.label ?? "Fast";
+    PLANNER_OPTIONS.find((o) => o.value === plannerType)?.label ?? "快速";
 
   return (
     <div className="model-selector" ref={ref}>
       <button
         className="model-selector-btn"
         onClick={() => setOpen((v) => !v)}
-        title="Select planner mode"
+        title="选择规划器模式"
       >
         <span className="model-selector-label">{activeLabel}</span>
         <span className="model-selector-caret">▾</span>
@@ -152,7 +152,7 @@ export function ChatInput({
       const fileArray = Array.from(files);
       for (const file of fileArray) {
         if (!ALLOWED_TYPES.includes(file.type)) {
-          showFileError(`Unsupported file type: ${file.type || "unknown"}`);
+          showFileError(`不支持的文件类型: ${file.type || "未知"}`);
           continue;
         }
         const dataUrl = URL.createObjectURL(file);
@@ -201,7 +201,7 @@ export function ChatInput({
       }
     } catch (err) {
       showFileError(
-        err instanceof Error ? err.message : "Failed to process attachments",
+        err instanceof Error ? err.message : "处理附件失败",
       );
     } finally {
       setIsPreparingAttachments(false);
@@ -338,7 +338,7 @@ export function ChatInput({
           <textarea
             ref={textareaRef}
             className="chat-input"
-            placeholder="Send a message..."
+            placeholder="发送消息..."
             value={draft}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
@@ -353,7 +353,7 @@ export function ChatInput({
             <button
               className="chat-action-icon-btn"
               onClick={() => fileInputRef.current?.click()}
-              title="Attach image"
+              title="添加图片"
               disabled={inputDisabled}
             >
               <IconPaperclip size={18} />
@@ -388,7 +388,7 @@ export function ChatInput({
               <button
                 className="chat-stop-btn"
                 onClick={onStop}
-                title="Stop generation"
+                title="停止生成"
               >
                 ■
               </button>
@@ -399,7 +399,7 @@ export function ChatInput({
               disabled={
                 (!draft.trim() && attachments.length === 0) || inputDisabled
               }
-              title={isPreparingAttachments ? "Processing images..." : "Send (Enter)"}
+              title={isPreparingAttachments ? "正在处理图片..." : "发送 (Enter)"}
             >
               ↑
             </button>

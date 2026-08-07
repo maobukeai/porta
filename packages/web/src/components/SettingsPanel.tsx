@@ -134,12 +134,12 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
   const notificationsDisabled = notificationPermission === "unsupported";
   const notificationStatus =
     notificationPermission === "unsupported"
-      ? "Unsupported"
+      ? "不支持"
       : notificationPermission === "denied"
-        ? "Blocked"
+        ? "已禁用"
         : notificationsChecked
-          ? "On"
-          : "Off";
+          ? "开启"
+          : "关闭";
 
   return (
     <div className="settings-panel">
@@ -147,26 +147,25 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
         <button
           className="settings-back-btn"
           onClick={onBack}
-          title="Back to chat"
+          title="返回对话"
         >
           <IconChevronLeft size={18} />
         </button>
-        <h1 className="settings-title">Settings</h1>
+        <h1 className="settings-title">设置</h1>
         <span className={`settings-saved-badge ${savedFlash ? "visible" : ""}`}>
-          <IconCheck size={12} /> Saved
+          <IconCheck size={12} /> 已保存
         </span>
       </div>
 
       <div className="settings-body">
         {/* ── Model ── */}
         <div className="settings-section">
-          <h2 className="settings-section-title">Model</h2>
+          <h2 className="settings-section-title">模型</h2>
           <div className="settings-row">
             <div className="settings-row-info">
-              <span className="settings-row-label">Default Model</span>
+              <span className="settings-row-label">默认模型</span>
               <span className="settings-row-desc">
-                The model used when you haven't explicitly selected one
-                per-message. Changes apply to new messages only.
+                在您没有为每条消息显式选择模型时所使用的默认模型。更改仅适用于新消息。
               </span>
             </div>
             <select
@@ -174,15 +173,15 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
               value={settings.defaultModel ?? "__none__"}
               onChange={(e) => handleModelChange(e.target.value)}
             >
-              <option value="__none__">Server default</option>
+              <option value="__none__">服务器默认</option>
               {fetchError && (
-                <option disabled>⚠ Failed to load models</option>
+                <option disabled>⚠ 无法加载模型</option>
               )}
               {models.map((m) => (
                 <option key={m.modelOrAlias.model} value={m.modelOrAlias.model}>
                   {m.label}
-                  {m.supportsImages ? " [Vision]" : ""}
-                  {m.isRecommended ? " (Recommended)" : ""}
+                  {m.supportsImages ? " [视觉]" : ""}
+                  {m.isRecommended ? " (推荐)" : ""}
                 </option>
               ))}
             </select>
@@ -191,13 +190,12 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
 
         {/* ── Planner ── */}
         <div className="settings-section">
-          <h2 className="settings-section-title">Planner</h2>
+          <h2 className="settings-section-title">规划器</h2>
           <div className="settings-row">
             <div className="settings-row-info">
-              <span className="settings-row-label">Default Mode</span>
+              <span className="settings-row-label">默认模式</span>
               <span className="settings-row-desc">
-                Fast gives direct single-step responses. Plan uses a
-                multi-step structured approach for complex tasks.
+                “快速” 模式提供直接的单步响应。“规划” 模式针对复杂任务使用多步结构化方法。
               </span>
             </div>
             <select
@@ -205,20 +203,20 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
               value={settings.defaultPlannerType}
               onChange={(e) => handlePlannerChange(e.target.value)}
             >
-              <option value="conversational">Fast</option>
-              <option value="planning">Plan</option>
+              <option value="conversational">快速</option>
+              <option value="planning">规划</option>
             </select>
           </div>
         </div>
 
         {/* Notifications */}
         <div className="settings-section">
-          <h2 className="settings-section-title">Notifications</h2>
+          <h2 className="settings-section-title">通知</h2>
           <div className="settings-row">
             <div className="settings-row-info">
-              <span className="settings-row-label">Browser Notifications</span>
+              <span className="settings-row-label">浏览器通知</span>
               <span className="settings-row-desc">
-                Run completion and approval requests.
+                在运行完成和需要审批请求时进行通知。
               </span>
             </div>
             <div className="settings-notification-control">
@@ -243,7 +241,7 @@ export function SettingsPanel({ settings, onUpdate, onBack }: Props) {
 
         {/* ── Reset ── */}
         <button className="settings-reset-btn" onClick={handleReset}>
-          Reset all settings to defaults
+          将所有设置重置为默认值
         </button>
       </div>
     </div>
