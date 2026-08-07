@@ -185,6 +185,13 @@ export function useChatActions({
   const handleRevert = useCallback(
     async (stepIndex: number, draftContent?: string) => {
       if (!activeId) return;
+      // Safe edit mode: only fill input box without reverting workspace code
+      if (stepIndex < 0) {
+        if (draftContent) {
+          draftStore.set(activeId, draftContent);
+        }
+        return;
+      }
       try {
         const targetStep = Math.max(0, stepIndex - 1);
         await api.revert(activeId, targetStep, DEFAULT_MODEL);

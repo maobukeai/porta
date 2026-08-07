@@ -31,6 +31,7 @@ import {
   IconCopy,
   IconCheck,
   IconUndo,
+  IconEdit,
   IconSearch,
   IconFile,
   IconFileSearch,
@@ -458,18 +459,36 @@ const MessageBubble = memo(
           {msg.content && <MarkdownContent html={renderedContent} />}
           {msg.content && (
             <div className="msg-actions">
+              {msg.role === "user" && (
+                <button
+                  className="msg-action-btn"
+                  onClick={() => {
+                    if (msg.content) {
+                      onRevert(-1, msg.content);
+                    }
+                  }}
+                  title="填入输入框（安全编辑，不修改代码）"
+                >
+                  <IconEdit size={13} />
+                </button>
+              )}
               {msg.stepIndex >= 0 && (
                 <button
                   className={`msg-action-btn ${isLocked ? "locked" : ""}`}
                   onClick={() => {
                     if (!isLocked) {
-                      onRevert(
-                        msg.stepIndex,
-                        msg.role === "user" ? msg.content : undefined,
+                      const confirmed = window.confirm(
+                        "⚠️ 警告：撤回操作会将项目文件和代码恢复至该历史节点的状态，之后的所有代码修改将被清空！\n\n如果仅需重新发送提示词，请使用左侧的“编辑”按钮。\n\n确定要回滚代码和对话吗？",
                       );
+                      if (confirmed) {
+                        onRevert(
+                          msg.stepIndex,
+                          msg.role === "user" ? msg.content : undefined,
+                        );
+                      }
                     }
                   }}
-                  title="撤回并编辑"
+                  title="撤回并回滚代码快照"
                   disabled={isLocked}
                 >
                   <IconUndo size={13} />
