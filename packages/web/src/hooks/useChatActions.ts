@@ -158,9 +158,10 @@ export function useChatActions({
               : msg,
           ),
         );
+        const rawErrorText = err instanceof Error ? err.message : "Unknown error";
         const errorMsg: ChatMessage = {
           role: "system",
-          content: `Failed to send: ${err instanceof Error ? err.message : "Unknown error"}`,
+          content: rawErrorText,
           stepIndex: -2,
           type: "error",
           icon: "alert",

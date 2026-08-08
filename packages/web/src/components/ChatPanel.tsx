@@ -29,6 +29,7 @@ import {
   FilePermissionCard,
   SubagentCard,
 } from "./StepCards";
+import { QuotaAlertCard } from "./QuotaAlertCard";
 import { getAskQuestionRequest, getFilePermissionRequest } from "../utils/stepCards";
 import {
   IconCopy,
@@ -330,6 +331,21 @@ function SystemMessage({
         </div>
       );
     }
+  }
+
+  const isErrorOrQuota =
+    msg.type === "error" ||
+    msg.icon === "alert" ||
+    /baseline model quota reached|quota reached|quota will refresh|exceeded quota|rate limit|resource_exhausted|wsasend|forcibly closed|streamgeneratecontent/i.test(
+      msg.content,
+    );
+
+  if (isErrorOrQuota) {
+    return (
+      <div className="message system">
+        <QuotaAlertCard content={msg.content} />
+      </div>
+    );
   }
 
   return (

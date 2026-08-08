@@ -30,7 +30,7 @@ export function ReasoningTreeModal({ isOpen, onClose, steps }: Props) {
               steps.map((step, i) => {
                 const typeStr = step.type || "STEP";
                 const isSubagent = isSubagentToolName(typeStr);
-                const isErr = step.status === "ERROR" || Boolean(step.error);
+                const isErr = step.status === "ERROR" || step.status === "CORTEX_STEP_STATUS_ERROR";
 
                 return (
                   <div key={i} className="vscode-graph-item" style={{ flexDirection: "column", alignItems: "flex-start", padding: 8 }}>
@@ -39,7 +39,7 @@ export function ReasoningTreeModal({ isOpen, onClose, steps }: Props) {
                       <span style={{ fontSize: 12, fontWeight: 600, color: isErr ? "#ef4444" : "#38bdf8" }}>
                         {typeStr}
                       </span>
-                      {isErr ? <IconAlertTriangle size={12} style={{ color: "#ef4444" }} /> : <IconCheck size={12} style={{ color: "#10b981" }} />}
+                      {isErr ? <IconAlertTriangle size={12} className="type-icon diff" /> : <IconCheck size={12} className="type-icon doc" />}
                     </div>
 
                     {isSubagent && (

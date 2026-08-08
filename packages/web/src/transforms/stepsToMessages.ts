@@ -70,6 +70,36 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       continue;
     }
 
+    // Handle error steps (e.g. CORTEX_STEP_TYPE_ERROR, quota limit, SSE disconnect, status ERROR)
+    const stepRecord = step as unknown as Record<string, unknown>;
+    const isErrorStep =
+      type === "CORTEX_STEP_TYPE_ERROR" ||
+      type.includes("ERROR") ||
+      step.status === "CORTEX_STEP_STATUS_ERROR" ||
+      step.status === "CASCADE_RUN_STATUS_ERROR" ||
+      Boolean(stepRecord.error) ||
+      Boolean(stepRecord.errorMessage);
+
+    if (isErrorStep) {
+      const errObj = stepRecord.error;
+      const rawText =
+        (typeof errObj === "string" ? errObj : (errObj as { message?: string })?.message) ??
+        stepRecord.errorMessage ??
+        step.plannerResponse?.modifiedResponse ??
+        "";
+      if (rawText) {
+        messages.push({
+          role: "system",
+          content: String(rawText),
+          stepIndex: i,
+          type: "error",
+          icon: "alert",
+          step,
+        });
+        continue;
+      }
+    }
+
     const toolName = step.metadata?.toolCall?.name;
     const isNativeSubagent =
       type === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
@@ -95,9 +125,10 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       continue;
     }
 
-    if (type === "CORTEX_STEP_TYPE_USER_INPUT" && step.userInput?.items) {
-      const text = textFromItems(step.userInput.items);
-      const media = step.userInput.media;
+    const userPrompt = step.userInput || (step as any).userPrompt;
+    if (type === "CORTEX_STEP_TYPE_USER_INPUT" && userPrompt) {
+      const text = textFromItems(userPrompt.items) || userPrompt.text || "";
+      const media = userPrompt.media;
       if (text || (media && media.length > 0)) {
         messages.push({
           role: "user",

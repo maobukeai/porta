@@ -86,6 +86,154 @@ export async function scanDiskConversations(
   return [...results.values()];
 }
 
+export interface DiskPeekMetadata {
+  summary?: string;
+  stepCount?: number;
+}
+
+export async function peekDiskConversationMetadata(
+  conversationId: string,
+): Promise<DiskPeekMetadata> {
+  for (const appDataDir of KNOWN_APP_DATA_DIRS) {
+    const transcriptPath = join(
+      homedir(),
+      ".gemini",
+      appDataDir,
+      "brain",
+      conversationId,
+      ".system_generated",
+      "logs",
+      "transcript.jsonl",
+    );
+    try {
+      const content = await readFile(transcriptPath, "utf-8");
+      const lines = content.split("\n").filter((l) => l.trim().length > 0);
+      const stepCount = lines.length;
+
+      let summary: string | undefined;
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === "USER_INPUT" && parsed.content) {
+            let rawText = String(parsed.content);
+            const userReqMatch = rawText.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
+            if (userReqMatch) {
+              rawText = userReqMatch[1].trim();
+            }
+            rawText = rawText.replace(/^\/[a-zA-Z0-9_\-\u4e00-\u9fa5]+\s*/, "").trim();
+            if (rawText) {
+              summary = rawText.slice(0, 60);
+              break;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (summary || stepCount > 0) {
+        return { summary, stepCount };
+      }
+    } catch {
+      // file missing
+    }
+  }
+
+  return {};
+}
+
+export interface DiskConversationStepsResult {
+  steps: Record<string, unknown>[];
+  offset: number;
+  stepCount: number;
+}
+
+export async function readDiskConversationSteps(
+  conversationId: string,
+  offset = 0,
+  limit = 100,
+): Promise<DiskConversationStepsResult | null> {
+  for (const appDataDir of KNOWN_APP_DATA_DIRS) {
+    const transcriptPath = join(
+      homedir(),
+      ".gemini",
+      appDataDir,
+      "brain",
+      conversationId,
+      ".system_generated",
+      "logs",
+      "transcript.jsonl",
+    );
+    try {
+      const content = await readFile(transcriptPath, "utf-8");
+      const lines = content.split("\n").filter((l) => l.trim().length > 0);
+      if (lines.length === 0) continue;
+
+      const steps: Record<string, unknown>[] = [];
+      const slicedLines = lines.slice(offset, offset + limit);
+
+      for (let idx = 0; idx < slicedLines.length; idx++) {
+        const rawLine = slicedLines[idx];
+        const stepIndex = offset + idx;
+        try {
+          const parsed = JSON.parse(rawLine);
+          const rawType = parsed.type || "PLANNER_RESPONSE";
+          const type =
+            rawType === "USER_INPUT"
+              ? "CORTEX_STEP_TYPE_USER_INPUT"
+              : rawType === "PLANNER_RESPONSE"
+              ? "CORTEX_STEP_TYPE_PLANNER_RESPONSE"
+              : `CORTEX_STEP_TYPE_${rawType}`;
+
+          let contentStr = String(parsed.content || "");
+          if (rawType === "USER_INPUT") {
+            const userReqMatch = contentStr.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
+            if (userReqMatch) {
+              contentStr = userReqMatch[1].trim();
+            }
+          }
+
+          const stepObj: Record<string, unknown> = {
+            stepIndex,
+            type,
+          };
+
+          if (rawType === "USER_INPUT") {
+            stepObj.userPrompt = {
+              text: contentStr,
+              items: [{ text: contentStr }],
+            };
+          } else {
+            stepObj.plannerResponse = {
+              text: contentStr,
+              items: [{ text: contentStr }],
+              toolCalls: parsed.tool_calls || parsed.toolCalls || [],
+            };
+          }
+
+          steps.push(stepObj);
+        } catch {
+          steps.push({
+            stepIndex,
+            type: "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
+            plannerResponse: { text: "（步骤解析中）", items: [{ text: "（步骤解析中）" }] },
+          });
+        }
+      }
+
+      return {
+        steps,
+        offset,
+        stepCount: lines.length,
+      };
+    } catch {
+      // missing file
+    }
+  }
+
+  return null;
+}
+
 export function conversationDirsForAppDataDirs(
   appDataDirs: Iterable<string | undefined>,
 ): string[] {

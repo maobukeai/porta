@@ -24,6 +24,9 @@ const ArtifactsConsole = lazy(() =>
 const QuickSwitchSheet = lazy(() =>
   import("./components/QuickSwitchSheet").then((m) => ({ default: m.QuickSwitchSheet })),
 );
+import { ExportModal } from "./components/ExportModal";
+import { ReasoningTreeModal } from "./components/ReasoningTreeModal";
+import { stepsToMessages } from "./transforms/stepsToMessages";
 import { useConversations } from "./hooks/useConversations";
 import { usePolling } from "./hooks/usePolling";
 import { getStepsFromCache } from "./hooks/useStepsStream";
@@ -90,6 +93,8 @@ function ChatView() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 480);
   const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [reasoningTreeOpen, setReasoningTreeOpen] = useState(false);
   const isMobile = () => window.innerWidth <= 480;
   const { conversations, loading, refresh, optimisticRemove } = useConversations(15_000);
   const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
@@ -385,6 +390,8 @@ function ChatView() {
             if (isMobile()) setSidebarOpen(false);
           }}
           onToggleArtifacts={() => setArtifactsOpen((v) => !v)}
+          onOpenExport={() => setExportOpen(true)}
+          onOpenReasoningTree={() => setReasoningTreeOpen(true)}
           artifactsCount={artifactsCount}
           isArtifactsOpen={artifactsOpen}
         />
@@ -514,7 +521,7 @@ function ChatView() {
                   onSend={handleSend}
                   onStop={handleStop}
                   isRunning={isRunning}
-                  disabled={!connected}
+                  disabled={false}
                   draft={draftText}
                   onDraftChange={handleDraftChange}
                   defaultModel={settings.defaultModel}
@@ -538,6 +545,18 @@ function ChatView() {
           )}
         </div>
       </div>
+      <ExportModal
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title={headerTitle}
+        cascadeId={activeId}
+        initialMessages={stepsToMessages(steps)}
+      />
+      <ReasoningTreeModal
+        isOpen={reasoningTreeOpen}
+        onClose={() => setReasoningTreeOpen(false)}
+        steps={steps}
+      />
     </div>
   );
 }

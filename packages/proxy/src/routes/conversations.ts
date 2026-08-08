@@ -20,6 +20,8 @@ import {
   getMetadata,
   getPrimaryWorkspaceUri,
   scanDiskConversations,
+  peekDiskConversationMetadata,
+  readDiskConversationSteps,
   withNormalizedConversationWorkspaces,
   getProjectNameMap,
 } from "../metadata.js";
@@ -305,12 +307,14 @@ export function registerConversationRoutes(app: Hono): void {
             injectedWorkspaces = [{ workspaceFolderAbsoluteUri: uri }];
           }
 
+          const peek = await peekDiskConversationMetadata(diskId.id);
+
           candidates.push({
             id: diskId.id,
             modifiedAt: parseConversationTime(diskId.mtime),
             summary: {
-              summary: diskId.id.slice(0, 8) + "…",
-              stepCount: 0,
+              summary: peek.summary || diskId.id.slice(0, 8) + "…",
+              stepCount: peek.stepCount ?? 0,
               status: "CASCADE_RUN_STATUS_UNLOADED",
               lastModifiedTime: diskId.mtime,
               createdTime: diskId.mtime,
@@ -371,8 +375,10 @@ export function registerConversationRoutes(app: Hono): void {
       limit = Math.min(limit, MAX_STEPS_LIMIT);
     }
 
+    let resolvedOffset = offset;
+    let targetCount = limit ?? 100;
+
     try {
-      let resolvedOffset = offset;
       let stepCount: number | undefined;
       let pinnedInstance: LSInstance | undefined;
       let stepsArray: unknown[] = [];
@@ -396,8 +402,7 @@ export function registerConversationRoutes(app: Hono): void {
 
       // We need to fetch until we get what we came for, or we run out of steps.
       let currentOffset = resolvedOffset;
-      let targetCount =
-        limit ?? (stepCount ? stepCount - resolvedOffset : 100);
+      targetCount = limit ?? (stepCount ? stepCount - resolvedOffset : 100);
       targetCount = Math.min(targetCount, MAX_STEPS_LIMIT);
       let consecutiveSkips = 0;
 
@@ -485,6 +490,20 @@ export function registerConversationRoutes(app: Hono): void {
         ...(stepCount !== undefined ? { stepCount } : {}),
       });
     } catch (err) {
+      try {
+        const diskResult = await readDiskConversationSteps(id, resolvedOffset, targetCount);
+        if (diskResult && diskResult.steps.length > 0) {
+          return c.json({
+            steps: messageTracker.annotateSteps(id, diskResult.offset, diskResult.steps),
+            offset: diskResult.offset,
+            stepCount: diskResult.stepCount,
+            _fromDisk: true,
+          });
+        }
+      } catch {
+        // ignore disk fallback error
+      }
+
       return handleRPCError(c, err);
     }
   });

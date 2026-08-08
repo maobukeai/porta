@@ -79,6 +79,14 @@ export default defineConfig(({ mode }) => {
     server: {
       host: env.PORTA_HOST || process.env.PORTA_HOST || "127.0.0.1",
       port: Number(env.PORTA_WEB_PORT || process.env.PORTA_WEB_PORT || 3070),
+      watch: {
+        ignored: [
+          "**/.git/**",
+          "**/dist/**",
+          "**/.tempmediaStorage/**",
+          "**/.user_uploaded/**",
+        ],
+      },
       // A tunnel and its watchdog target one fixed origin port. Do not silently
       // move Vite to the next port if that origin is already occupied.
       strictPort: true,

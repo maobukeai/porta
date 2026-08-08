@@ -28,12 +28,18 @@ interface ModelGroup {
 }
 
 function parseModelLabel(config: ModelConfig): ParsedModel {
-  const match = config.label.match(/^(.*?)(?:\s*\((Low|Medium|High)\))?$/i);
+  const match = config.label.match(/^(.*?)(?:\s*\((Low|Medium|High|Thinking|低|中|高|思考)\))?$/i);
   if (match && match[2]) {
+    const rawTier = match[2].trim();
+    let tier = rawTier.charAt(0).toUpperCase() + rawTier.slice(1).toLowerCase();
+    if (rawTier === "低") tier = "Low";
+    if (rawTier === "中") tier = "Medium";
+    if (rawTier === "高") tier = "High";
+    if (rawTier === "思考") tier = "Thinking";
     return {
       config,
       baseName: match[1].trim(),
-      tier: match[2].charAt(0).toUpperCase() + match[2].slice(1).toLowerCase(),
+      tier,
     };
   }
   return {
@@ -87,7 +93,19 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const active = selectedModel ?? defaultModel;
+  const active =
+    selectedModel ??
+    defaultModel ??
+    models.find((m) => m.isRecommended)?.modelOrAlias?.model ??
+    models[0]?.modelOrAlias?.model ??
+    "gemini-3.6-flash-high";
+
+  // Auto-bind default model if none selected
+  useEffect(() => {
+    if (!selectedModel && active) {
+      onSelect(active);
+    }
+  }, [active, selectedModel, onSelect]);
 
   const groups = useMemo<ModelGroup[]>(() => {
     const map = new Map<string, ParsedModel[]>();
@@ -99,7 +117,7 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
       map.get(parsed.baseName)!.push(parsed);
     }
 
-    const tierOrder: Record<string, number> = { Low: 1, Medium: 2, High: 3 };
+    const tierOrder: Record<string, number> = { Low: 1, Medium: 2, High: 3, Thinking: 4 };
 
     const result: ModelGroup[] = [];
     for (const [baseName, items] of map.entries()) {
@@ -111,11 +129,14 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
     }
 
     const getGroupScore = (name: string) => {
-      if (name.includes("3.6")) return 300;
-      if (name.includes("4.6")) return 250;
-      if (name.includes("3.5")) return 200;
-      if (name.includes("3.1")) return 100;
-      return 50;
+      const n = name.toLowerCase();
+      if (n.includes("3.6")) return 500;
+      if (n.includes("3.5")) return 400;
+      if (n.includes("3.1")) return 350;
+      if (n.includes("sonnet")) return 300;
+      if (n.includes("opus")) return 250;
+      if (n.includes("gpt")) return 200;
+      return 100;
     };
 
     result.sort((a, b) => getGroupScore(b.baseName) - getGroupScore(a.baseName));
@@ -124,7 +145,17 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
 
   const activeLabel = useMemo(() => {
     const found = models.find((m) => m.modelOrAlias.model === active);
-    return found ? found.label : "模型";
+    if (found) return found.label;
+    if (active) {
+      if (active.includes("gemini-3.6-flash")) return "Gemini 3.6 Flash (High)";
+      if (active.includes("gemini-3.5-flash")) return "Gemini 3.5 Flash (Medium)";
+      if (active.includes("gemini-3.1-pro")) return "Gemini 3.1 Pro (Low)";
+      if (active.includes("claude-sonnet")) return "Claude Sonnet 4.6 (Thinking)";
+      if (active.includes("claude-opus")) return "Claude Opus 4.6 (Thinking)";
+      if (active.includes("gpt-oss")) return "GPT-OSS 120B (Medium)";
+      return active;
+    }
+    return "Gemini 3.6 Flash (High)";
   }, [models, active]);
 
   return (

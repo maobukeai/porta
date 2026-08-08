@@ -27,6 +27,8 @@ export function ChatHeader({
   onNewChat,
   onOpenSettings,
   onToggleArtifacts,
+  onOpenExport,
+  onOpenReasoningTree,
   artifactsCount = 0,
   isArtifactsOpen = false,
 }: Props) {
@@ -118,6 +120,34 @@ export function ChatHeader({
             {artifactsCount > 0 && (
               <span className="header-artifacts-badge">{artifactsCount}</span>
             )}
+          </button>
+        )}
+
+        {onOpenExport && (
+          <button
+            className="header-icon-btn"
+            onClick={() => {
+              triggerHaptic("medium");
+              onOpenExport();
+            }}
+            title="导出与分享对话"
+            aria-label="导出与分享对话"
+          >
+            <IconDownload size={15} />
+          </button>
+        )}
+
+        {onOpenReasoningTree && (
+          <button
+            className="header-icon-btn"
+            onClick={() => {
+              triggerHaptic("medium");
+              onOpenReasoningTree();
+            }}
+            title="AI 推理树分析器"
+            aria-label="AI 推理树分析器"
+          >
+            <IconTerminal size={15} />
           </button>
         )}
 

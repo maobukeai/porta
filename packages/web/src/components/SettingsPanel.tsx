@@ -17,6 +17,7 @@ import {
   IconChevronLeft,
   IconX,
   IconInfo,
+  IconRefresh,
 } from "./Icons";
 import { api } from "../api/client";
 import { requestBrowserNotificationPermission } from "../utils/browserNotifications";
@@ -132,15 +133,77 @@ export function SettingsPanel({
       if (data?.userStatus?.userTier?.name || data?.userStatus?.planStatus) {
         setUserPlan(data.userStatus.userTier?.name || data.userStatus.planStatus || "");
       }
+      const liveConfigs = data?.userStatus?.cascadeModelConfigData?.clientModelConfigs;
+      if (Array.isArray(liveConfigs) && liveConfigs.length > 0) {
+        setModels(liveConfigs as ModelConfig[]);
+      }
     } catch (err) {
       console.warn("Failed to fetch user status:", err);
     }
   }, []);
 
+  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
+
   useEffect(() => {
     fetchModels();
     fetchUserStatus();
   }, [fetchModels, fetchUserStatus]);
+
+  const handleRefreshQuota = useCallback(async () => {
+    setQuotaRefreshing(true);
+    await Promise.all([fetchModels(1), fetchUserStatus()]);
+    setTimeout(() => setQuotaRefreshing(false), 500);
+  }, [fetchModels, fetchUserStatus]);
+
+  const quotaData = useMemo(() => {
+    const geminiModels = models.filter(
+      (m) =>
+        m.label?.toLowerCase().includes("gemini") ||
+        m.modelOrAlias?.model?.toLowerCase().includes("gemini")
+    );
+    const claudeGptModels = models.filter(
+      (m) =>
+        m.label?.toLowerCase().includes("claude") ||
+        m.label?.toLowerCase().includes("gpt") ||
+        m.modelOrAlias?.model?.toLowerCase().includes("claude") ||
+        m.modelOrAlias?.model?.toLowerCase().includes("gpt")
+    );
+
+    // Find recommended/active high tier Gemini Flash & Gemini Pro models
+    const geminiFlashHigh = geminiModels.find(
+      (m) =>
+        m.isRecommended ||
+        m.modelOrAlias?.model?.includes("flash-high") ||
+        m.label?.toLowerCase().includes("high")
+    );
+    const geminiPro = geminiModels.find(
+      (m) =>
+        m.modelOrAlias?.model?.includes("pro") ||
+        m.label?.toLowerCase().includes("pro")
+    );
+
+    const mainGeminiModel = geminiFlashHigh || geminiModels[0];
+
+    const rawGemini5h = mainGeminiModel?.quotaInfo?.remainingFraction;
+    const rawGeminiWeekly = geminiPro?.quotaInfo?.remainingFraction ?? rawGemini5h;
+
+    const geminiWeeklyPct =
+      rawGeminiWeekly !== undefined ? Math.round(rawGeminiWeekly * 100) : 100;
+
+    const gemini5hPct =
+      rawGemini5h !== undefined ? Math.round(rawGemini5h * 100) : 100;
+
+    const rawClaudeWeekly = claudeGptModels[0]?.quotaInfo?.remainingFraction;
+    const rawClaude5h =
+      claudeGptModels[1]?.quotaInfo?.remainingFraction ?? rawClaudeWeekly;
+
+    const claudeWeeklyPct =
+      rawClaudeWeekly !== undefined ? Math.round(rawClaudeWeekly * 100) : 100;
+    const claude5hPct =
+      rawClaude5h !== undefined ? Math.round(rawClaude5h * 100) : 100;
+
+    return { geminiWeeklyPct, gemini5hPct, claudeWeeklyPct, claude5hPct };
+  }, [models]);
 
   const flashSaved = useCallback(() => {
     setSavedFlash(true);
@@ -667,9 +730,21 @@ export function SettingsPanel({
 
             {/* Section 3: Gemini Models */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title header-with-icon">
-                <span>Gemini 系列模型配额</span>
-                <IconInfo size={13} className="info-icon" />
+              <div className="settings-card-group-title header-with-icon" style={{ justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>Gemini 系列模型配额</span>
+                  <IconInfo size={13} className="info-icon" />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRefreshQuota}
+                  className="btn-google-upgrade"
+                  style={{ padding: "3px 8px", fontSize: 11, background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}
+                  title="重新同步最新额度"
+                >
+                  <IconRefresh size={11} className={quotaRefreshing ? "icon-spin" : ""} />
+                  <span>刷新额度</span>
+                </button>
               </div>
               <div className="settings-official-card">
                 {/* Row 1: Weekly Limit */}
@@ -677,11 +752,13 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">每周剩余额度</div>
                     <div className="settings-official-desc">
-                      您已使用部分每周额度，将在 6 天 23 小时后重置刷新。
+                      {quotaData.geminiWeeklyPct >= 100
+                        ? "您尚未动用每周额度，将在 7 天后完整重置。"
+                        : `您已使用部分每周额度（剩余 ${quotaData.geminiWeeklyPct}%），将在 6 天 23 小时后重置刷新。`}
                     </div>
                   </div>
                   <div className="quota-ring-container">
-                    <span className="quota-ring-percent">87%</span>
+                    <span className="quota-ring-percent">{quotaData.geminiWeeklyPct}%</span>
                     <svg width="26" height="26" viewBox="0 0 24 24" className="quota-ring-svg">
                       <circle cx="12" cy="12" r="9.5" fill="none" stroke="var(--border-subtle)" strokeWidth="2.5" />
                       <circle
@@ -689,10 +766,10 @@ export function SettingsPanel({
                         cy="12"
                         r="9.5"
                         fill="none"
-                        stroke="#4CAF50"
+                        stroke={quotaData.geminiWeeklyPct > 30 ? "#4CAF50" : "#FFA000"}
                         strokeWidth="2.5"
                         strokeDasharray={59.69}
-                        strokeDashoffset={59.69 * (1 - 0.87)}
+                        strokeDashoffset={59.69 * (1 - quotaData.geminiWeeklyPct / 100)}
                         strokeLinecap="round"
                         transform="rotate(-90 12 12)"
                       />
@@ -705,11 +782,13 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">5小时动态剩余额度</div>
                     <div className="settings-official-desc">
-                      您已使用部分 5 小时额度，将在 4 小时 37 分钟后刷新。
+                      {quotaData.gemini5hPct >= 100
+                        ? "您尚未动用 5 小时额度，将在 5 小时后刷新。"
+                        : `您已使用部分 5 小时额度（剩余 ${quotaData.gemini5hPct}%），将在 4 小时 37 分钟后刷新。`}
                     </div>
                   </div>
                   <div className="quota-ring-container">
-                    <span className="quota-ring-percent">21%</span>
+                    <span className="quota-ring-percent">{quotaData.gemini5hPct}%</span>
                     <svg width="26" height="26" viewBox="0 0 24 24" className="quota-ring-svg">
                       <circle cx="12" cy="12" r="9.5" fill="none" stroke="var(--border-subtle)" strokeWidth="2.5" />
                       <circle
@@ -717,10 +796,10 @@ export function SettingsPanel({
                         cy="12"
                         r="9.5"
                         fill="none"
-                        stroke="#FFA000"
+                        stroke={quotaData.gemini5hPct > 30 ? "#4CAF50" : "#FFA000"}
                         strokeWidth="2.5"
                         strokeDasharray={59.69}
-                        strokeDashoffset={59.69 * (1 - 0.21)}
+                        strokeDashoffset={59.69 * (1 - quotaData.gemini5hPct / 100)}
                         strokeLinecap="round"
                         transform="rotate(-90 12 12)"
                       />
@@ -742,11 +821,13 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">每周剩余额度</div>
                     <div className="settings-official-desc">
-                      您尚未动用每周额度，将在 7 天后完整重置。
+                      {quotaData.claudeWeeklyPct >= 100
+                        ? "您尚未动用每周额度，将在 7 天后完整重置。"
+                        : `您已使用部分每周额度（剩余 ${quotaData.claudeWeeklyPct}%），将在 6 天 23 小时后重置刷新。`}
                     </div>
                   </div>
                   <div className="quota-ring-container">
-                    <span className="quota-ring-percent">100%</span>
+                    <span className="quota-ring-percent">{quotaData.claudeWeeklyPct}%</span>
                     <svg width="26" height="26" viewBox="0 0 24 24" className="quota-ring-svg">
                       <circle cx="12" cy="12" r="9.5" fill="none" stroke="var(--border-subtle)" strokeWidth="2.5" />
                       <circle
@@ -757,7 +838,7 @@ export function SettingsPanel({
                         stroke="#4CAF50"
                         strokeWidth="2.5"
                         strokeDasharray={59.69}
-                        strokeDashoffset={0}
+                        strokeDashoffset={59.69 * (1 - quotaData.claudeWeeklyPct / 100)}
                         strokeLinecap="round"
                         transform="rotate(-90 12 12)"
                       />
@@ -770,11 +851,13 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">5小时动态剩余额度</div>
                     <div className="settings-official-desc">
-                      您尚未动用 5 小时额度，将在 5 小时后刷新。
+                      {quotaData.claude5hPct >= 100
+                        ? "您尚未动用 5 小时额度，将在 5 小时后刷新。"
+                        : `您已使用部分 5 小时额度（剩余 ${quotaData.claude5hPct}%），将在 4 小时 37 分钟后刷新。`}
                     </div>
                   </div>
                   <div className="quota-ring-container">
-                    <span className="quota-ring-percent">100%</span>
+                    <span className="quota-ring-percent">{quotaData.claude5hPct}%</span>
                     <svg width="26" height="26" viewBox="0 0 24 24" className="quota-ring-svg">
                       <circle cx="12" cy="12" r="9.5" fill="none" stroke="var(--border-subtle)" strokeWidth="2.5" />
                       <circle
@@ -785,7 +868,7 @@ export function SettingsPanel({
                         stroke="#4CAF50"
                         strokeWidth="2.5"
                         strokeDasharray={59.69}
-                        strokeDashoffset={0}
+                        strokeDashoffset={59.69 * (1 - quotaData.claude5hPct / 100)}
                         strokeLinecap="round"
                         transform="rotate(-90 12 12)"
                       />

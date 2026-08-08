@@ -280,7 +280,13 @@ export function Sidebar({
   const renderItem = (conv: ConversationEntry) => {
     const isRunning = conv.summary.status === "CASCADE_RUN_STATUS_RUNNING";
     const lastSeen = seenAt[conv.id];
-    const displayTitle = customTitles[conv.id] || conv.summary.summary;
+    const rawTitle = conv.summary.summary || "";
+    const isRawHash = /^[0-9a-f]{8}(…|\.\.\.|\b)/i.test(rawTitle.trim()) || rawTitle === conv.id;
+    const cleanSummary = !isRawHash && rawTitle ? rawTitle : "";
+    const displayTitle =
+      customTitles[conv.id] ||
+      cleanSummary ||
+      `对话 (${conv.id.slice(0, 6)})`;
     // Show update dot only if the thread was *previously opened* and
     // has been modified since we last saw it.
     // No seenAt record = never opened → no "update" concept → no dot.

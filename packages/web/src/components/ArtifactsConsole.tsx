@@ -118,6 +118,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
   const [changesCollapsed, setChangesCollapsed] = useState(false);
   const [graphCollapsed, setGraphCollapsed] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [showAllFiles, setShowAllFiles] = useState(false);
 
   const fetchGitData = useCallback(async () => {
     setGitLoading(true);
@@ -387,29 +388,22 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
         {(selectedType === "diff" || selectedType === "all") && (
           <div className="vscode-git-container">
               {/* VS Code Top Header */}
+              {/* Single Compact Header */}
               <div className="vscode-git-header">
-                <span className="vscode-git-title">源代码管理</span>
-                <div className="vscode-git-header-actions">
-                  <button onClick={fetchGitData} title="刷新" disabled={gitLoading}>
-                    <IconRefresh size={14} className={gitLoading ? "icon-spin" : ""} />
-                  </button>
-                  <button onClick={handleOpenBranchModal} title="更多操作">
-                    <IconMoreHorizontal size={14} />
-                  </button>
+                <div className="vscode-git-title-wrap">
+                  <span className="vscode-git-title">源代码管理</span>
+                  {gitFiles.length > 0 && (
+                    <span className="vscode-count-badge">{gitFiles.length}</span>
+                  )}
                 </div>
-              </div>
-
-              {/* Top Action Bar */}
-              <div className="vscode-git-action-bar">
-                <span className="vscode-git-sub-title">更改</span>
-                <div className="vscode-git-bar-tools">
-                  <button onClick={() => handleCommit(false)} title="提交">
+                <div className="vscode-git-header-actions">
+                  <button type="button" onClick={() => handleCommit(false)} title="一键提交" disabled={committing || !commitMsg.trim()}>
                     <IconCheck size={14} />
                   </button>
-                  <button onClick={fetchGitData} title="刷新">
-                    <IconRefresh size={14} />
+                  <button type="button" onClick={fetchGitData} title="刷新" disabled={gitLoading}>
+                    <IconRefresh size={14} className={gitLoading ? "icon-spin" : ""} />
                   </button>
-                  <button onClick={handleOpenBranchModal} title="更多操作">
+                  <button type="button" onClick={handleOpenBranchModal} title="更多操作">
                     <IconMoreHorizontal size={14} />
                   </button>
                 </div>
@@ -446,15 +440,17 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                 {/* Primary Split Commit Button */}
                 <div className="vscode-split-commit-btn-group">
                   <button
+                    type="button"
                     className="vscode-main-commit-btn"
                     disabled={committing || !commitMsg.trim()}
                     onClick={() => handleCommit(false)}
                   >
                     {committing ? <IconSpinner size={14} className="icon-spin" /> : <IconCheck size={14} />}
-                    <span>✓ 提交</span>
+                    <span>提交</span>
                     <span className="vscode-btn-shortcut">Ctrl+Enter</span>
                   </button>
                   <button
+                    type="button"
                     className="vscode-commit-dropdown-trigger"
                     onClick={() => setCommitDropdownOpen(!commitDropdownOpen)}
                     title="更多提交方式 (Commit Options)"
@@ -465,6 +461,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                   {commitDropdownOpen && (
                     <div className="vscode-commit-dropdown-menu">
                       <button
+                        type="button"
                         onClick={() => {
                           setCommitDropdownOpen(false);
                           handleCommit(false);
@@ -473,6 +470,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                         ✓ 提交 (Commit)
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setCommitDropdownOpen(false);
                           handleCommit(true);
@@ -481,6 +479,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                         ✓ 提交并推送 (Commit & Push)
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setCommitDropdownOpen(false);
                           handleStageFile();
@@ -539,92 +538,105 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                   gitFiles.length === 0 ? (
                     <div className="vscode-empty-hint">工作区无修改点</div>
                   ) : (
-                    <div className="vscode-file-list">
-                      {gitFiles.map((file) => {
-                        const parsed = parseFilename(file.path);
-                        const isDiffOpen = activeDiffFile === file.path;
-                        const dirPath = file.path.includes("/") || file.path.includes("\\")
-                          ? file.path.substring(0, file.path.lastIndexOf(file.path.includes("/") ? "/" : "\\"))
-                          : "src";
+                    <>
+                      <div className="vscode-file-list">
+                        {(showAllFiles ? gitFiles : gitFiles.slice(0, 5)).map((file) => {
+                          const parsed = parseFilename(file.path);
+                          const isDiffOpen = activeDiffFile === file.path;
+                          const dirPath = file.path.includes("/") || file.path.includes("\\")
+                            ? file.path.substring(0, file.path.lastIndexOf(file.path.includes("/") ? "/" : "\\"))
+                            : "src";
 
-                        return (
-                          <div key={file.path} className="vscode-file-item-wrap">
-                            <div
-                              className="vscode-file-row"
-                              onClick={() => handleInspectDiff(file.path)}
-                            >
-                              <span className={`vscode-file-badge ${parsed.ext.toUpperCase()}`}>
-                                {getFileBadge(file.path)}
-                              </span>
-                              <span className="vscode-file-name">{parsed.filename}</span>
-                              <span className="vscode-file-dir">{dirPath}</span>
-                              <div className="vscode-file-hover-tools" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={() => {
-                                    handleStageFile(file.path);
-                                    setCommitStatusMsg(`✓ 已暂存 ${parsed.filename}`);
-                                  }}
-                                  title="暂存该文件 (+)"
-                                >
-                                  <IconPlus size={12} />
-                                </button>
-                                <button
-                                  onClick={() => handleDiscardFile(file.path)}
-                                  title="放弃该文件改动 (↩)"
-                                >
-                                  <IconUndo size={12} />
-                                </button>
-                              </div>
-                              <span className={`vscode-file-status ${file.status}`}>{file.status}</span>
-                            </div>
-
-                            {isDiffOpen && (
-                              <div className="git-diff-preview-box">
-                                <div className="git-diff-preview-header">
-                                  <span>差异对比: {parsed.filename}</span>
-                                  <div className="git-diff-mode-toggle">
-                                    <button
-                                      className={diffViewMode === "split" ? "active" : ""}
-                                      onClick={() => setDiffViewMode("split")}
-                                    >
-                                      双栏对比
-                                    </button>
-                                    <button
-                                      className={diffViewMode === "unified" ? "active" : ""}
-                                      onClick={() => setDiffViewMode("unified")}
-                                    >
-                                      单栏
-                                    </button>
-                                    <button onClick={() => setActiveDiffFile(null)}><IconX size={12} /></button>
-                                  </div>
+                          return (
+                            <div key={file.path} className="vscode-file-item-wrap">
+                              <div
+                                className="vscode-file-row"
+                                onClick={() => handleInspectDiff(file.path)}
+                              >
+                                <span className={`vscode-file-badge ${parsed.ext.toUpperCase()}`}>
+                                  {getFileBadge(file.path)}
+                                </span>
+                                <span className="vscode-file-name">{parsed.filename}</span>
+                                <span className="vscode-file-dir">{dirPath}</span>
+                                <div className="vscode-file-hover-tools" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => {
+                                      handleStageFile(file.path);
+                                      setCommitStatusMsg(`✓ 已暂存 ${parsed.filename}`);
+                                    }}
+                                    title="暂存该文件 (+)"
+                                  >
+                                    <IconPlus size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDiscardFile(file.path)}
+                                    title="放弃该文件改动 (↩)"
+                                  >
+                                    <IconUndo size={12} />
+                                  </button>
                                 </div>
-
-                                {diffViewMode === "split" ? (
-                                  <div className="git-diff-split-view">
-                                    {sideBySideLines.map((l, idx) => (
-                                      <div key={idx} className={`diff-line-row ${l.type}`}>
-                                        <div className="diff-col left">
-                                          <span className="line-num">{l.leftNum || ""}</span>
-                                          <span className="line-text">{l.leftText}</span>
-                                        </div>
-                                        <div className="diff-col right">
-                                          <span className="line-num">{l.rightNum || ""}</span>
-                                          <span className="line-text">{l.rightText}</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <pre className="artifact-code-preview">
-                                    <code>{activeDiffText ?? "加载中..."}</code>
-                                  </pre>
-                                )}
+                                <span className={`vscode-file-status ${file.status}`}>{file.status}</span>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+
+                              {isDiffOpen && (
+                                <div className="git-diff-preview-box">
+                                  <div className="git-diff-preview-header">
+                                    <span>差异对比: {parsed.filename}</span>
+                                    <div className="git-diff-mode-toggle">
+                                      <button
+                                        className={diffViewMode === "split" ? "active" : ""}
+                                        onClick={() => setDiffViewMode("split")}
+                                      >
+                                        双栏对比
+                                      </button>
+                                      <button
+                                        className={diffViewMode === "unified" ? "active" : ""}
+                                        onClick={() => setDiffViewMode("unified")}
+                                      >
+                                        单栏
+                                      </button>
+                                      <button onClick={() => setActiveDiffFile(null)}><IconX size={12} /></button>
+                                    </div>
+                                  </div>
+
+                                  {diffViewMode === "split" ? (
+                                    <div className="git-diff-split-view">
+                                      {sideBySideLines.map((l, idx) => (
+                                        <div key={idx} className={`diff-line-row ${l.type}`}>
+                                          <div className="diff-col left">
+                                            <span className="line-num">{l.leftNum || ""}</span>
+                                            <span className="line-text">{l.leftText}</span>
+                                          </div>
+                                          <div className="diff-col right">
+                                            <span className="line-num">{l.rightNum || ""}</span>
+                                            <span className="line-text">{l.rightText}</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <pre className="artifact-code-preview">
+                                      <code>{activeDiffText ?? "加载中..."}</code>
+                                    </pre>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {gitFiles.length > 5 && (
+                        <button
+                          type="button"
+                          className="vscode-file-expand-btn"
+                          onClick={() => setShowAllFiles(!showAllFiles)}
+                        >
+                          {showAllFiles
+                            ? "↑ 收起列表"
+                            : `↓ 展开全部 ${gitFiles.length} 项修改文件 (${gitFiles.length - 5}+)`}
+                        </button>
+                      )}
+                    </>
                   )
                 )}
               </div>

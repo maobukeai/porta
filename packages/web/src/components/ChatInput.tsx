@@ -19,7 +19,9 @@ import {
   IconMic,
   IconMicOff,
   IconStop,
+  IconSparkles,
 } from "./Icons";
+import { QuickCommandSheet } from "./QuickCommandSheet";
 import type { MediaAttachment } from "../types";
 import { prepareAttachments } from "../utils/imageAttachments";
 import { useSpeechToText } from "../hooks/useSpeechToText";
@@ -332,6 +334,8 @@ export function ChatInput({
       setShowSlashMenu(true);
     }
   }, [slashQuery]);
+
+  const [quickCommandSheetOpen, setQuickCommandSheetOpen] = useState(false);
 
   useEffect(() => {
     setMentionSelectedIndex(0);
@@ -742,6 +746,15 @@ export function ChatInput({
               <IconPaperclip size={18} />
             </button>
 
+            <button
+              className="chat-action-icon-btn"
+              onClick={() => setQuickCommandSheetOpen(true)}
+              title="快捷 Prompt 指令库"
+              disabled={inputDisabled}
+            >
+              <IconSparkles size={18} />
+            </button>
+
             {isSpeechSupported && (
               <button
                 className={`chat-action-icon-btn mic-btn ${isListening ? "listening" : ""}`}
@@ -802,6 +815,14 @@ export function ChatInput({
           </div>
         </div>
       </div>
+      <QuickCommandSheet
+        isOpen={quickCommandSheetOpen}
+        onClose={() => setQuickCommandSheetOpen(false)}
+        onSelectPreset={(preset) => {
+          onDraftChange(preset.prompt);
+          textareaRef.current?.focus();
+        }}
+      />
     </div>
   );
 }
