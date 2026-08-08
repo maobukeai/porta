@@ -102,15 +102,18 @@ export function registerGitRoutes(app: Hono): void {
     try {
       const { stdout } = await execFileAsync(
         "git",
-        ["log", `-n${limit}`, `--pretty=format:%h|%s|%an|%cr|%cd`],
+        ["log", `-n${limit}`, `--pretty=format:%h|%s|%an|%cr|%cd|%d`],
         { cwd },
       );
       const logs = stdout
         .split(/\r?\n/)
         .filter((l) => l.trim().length > 0)
         .map((line) => {
-          const [hash, message, author, relativeTime, date] = line.split("|");
-          return { hash, message, author, relativeTime, date };
+          const [hash, message, author, relativeTime, date, decoration] = line.split("|");
+          const refs = decoration ? decoration.trim().replace(/^\(|\)$/g, "") : "";
+          const isRemotePushed = refs.includes("origin/");
+          const isHead = refs.includes("HEAD");
+          return { hash, message, author, relativeTime, date, refs, isRemotePushed, isHead };
         });
 
       return c.json({ logs });
@@ -138,17 +141,29 @@ export function registerGitRoutes(app: Hono): void {
   app.post("/api/git/commit", async (c) => {
     try {
       const body = await c.req.json();
-      const { workspaceUri, message, push = false, files } = body;
-      const cwd = resolvePathFromUri(workspaceUri);
+      const { workspaceUri, message, push } = body;
 
       if (!message || !message.trim()) {
         return c.json({ error: "提交信息不能为空" }, 400);
       }
 
-      // Add files
-      if (Array.isArray(files) && files.length > 0) {
-        await execFileAsync("git", ["add", ...files], { cwd });
-      } else {
+      const cwd = resolvePathFromUri(workspaceUri);
+
+      // Get current branch name
+      let currentBranch = "main";
+      try {
+        const { stdout: bOut } = await execFileAsync("git", ["branch", "--show-current"], { cwd });
+        currentBranch = bOut.trim() || "main";
+      } catch {
+        // Fallback
+      }
+
+      // Auto-stage all modified/untracked files if nothing staged
+      const { stdout: statusOut } = await execFileAsync("git", ["status", "--porcelain=v1"], { cwd });
+      const lines = statusOut.split(/\r?\n/).filter(Boolean);
+      const stagedCount = lines.filter((l) => l[0] !== " " && l[0] !== "?").length;
+
+      if (stagedCount === 0) {
         await execFileAsync("git", ["add", "."], { cwd });
       }
 
@@ -162,10 +177,20 @@ export function registerGitRoutes(app: Hono): void {
       let pushOut = "";
       if (push) {
         try {
-          const { stdout: pOut } = await execFileAsync("git", ["push"], { cwd });
+          const { stdout: pOut } = await execFileAsync("git", ["push", "origin", currentBranch], { cwd });
           pushOut = pOut;
         } catch (pushErr) {
-          pushOut = `Push Warning: ${(pushErr as Error).message}`;
+          try {
+            const { stdout: pOut2 } = await execFileAsync("git", ["push", "-u", "origin", currentBranch], { cwd });
+            pushOut = pOut2;
+          } catch (pushErr2) {
+            const rawError = (pushErr2 as Error).message || (pushErr as Error).message;
+            return c.json({
+              error: `代码已成功在本地 Commit，但推送至 GitHub (${currentBranch}) 失败: ${rawError}`,
+              commitOutput: commitOut,
+              pushOutput: rawError,
+            }, 400);
+          }
         }
       }
 

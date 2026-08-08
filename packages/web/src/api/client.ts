@@ -253,6 +253,9 @@ export const api = {
         author: string;
         relativeTime: string;
         date: string;
+        refs?: string;
+        isRemotePushed?: boolean;
+        isHead?: boolean;
       }>;
       error?: string;
     }>(`/api/git/log?limit=${limit}${workspaceUri ? `&workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`),

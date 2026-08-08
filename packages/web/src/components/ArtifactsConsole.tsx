@@ -96,7 +96,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
   // ── Git Source Control 2.0 States ──
   const [gitBranch, setGitBranch] = useState("main");
   const [gitFiles, setGitFiles] = useState<Array<{ status: string; path: string; staged: boolean }>>([]);
-  const [gitLogs, setGitLogs] = useState<Array<{ hash: string; message: string; author: string; relativeTime: string }>>([]);
+  const [gitLogs, setGitLogs] = useState<Array<{ hash: string; message: string; author: string; relativeTime: string; refs?: string; isRemotePushed?: boolean; isHead?: boolean }>>([]);
   const [gitLoading, setGitLoading] = useState(false);
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -675,7 +675,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                                   <IconGitBranch size={10} /> {gitBranch}
                                 </span>
                               )}
-                              {isHead && (
+                              {(log.isRemotePushed || log.refs?.includes("origin/")) && (
                                 <span className="vscode-branch-pill remote">
                                   <IconCloud size={10} /> origin/{gitBranch}
                                 </span>
