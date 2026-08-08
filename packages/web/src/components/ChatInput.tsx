@@ -16,6 +16,9 @@ import {
   IconFileText,
   IconFile,
   IconFolder,
+  IconMic,
+  IconMicOff,
+  IconStop,
 } from "./Icons";
 import type { MediaAttachment } from "../types";
 import { prepareAttachments } from "../utils/imageAttachments";
@@ -260,12 +263,16 @@ export function ChatInput({
     setPlannerType(effectivePlanner);
   }, [effectivePlanner]);
 
-  const { isListening, isSupported: isSpeechSupported, toggleListening } =
-    useSpeechToText({
-      onTranscript: (text) => {
-        onDraftChange(draft ? `${draft} ${text}` : text);
-      },
-    });
+  const {
+    isListening,
+    isSupported: isSpeechSupported,
+    toggleListening,
+    error: speechError,
+  } = useSpeechToText({
+    onTranscript: (text) => {
+      onDraftChange(draft ? `${draft} ${text}` : text);
+    },
+  });
 
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -681,6 +688,12 @@ export function ChatInput({
         </div>
       )}
 
+      {(fileError || speechError) && (
+        <div className="chat-input-alert-banner">
+          <span>{fileError || speechError}</span>
+        </div>
+      )}
+
       <div
         className="chat-input-wrap"
         onClick={(e) => {
@@ -731,18 +744,14 @@ export function ChatInput({
 
             {isSpeechSupported && (
               <button
-                className={`chat-action-icon-btn ${isListening ? "listening" : ""}`}
+                className={`chat-action-icon-btn mic-btn ${isListening ? "listening" : ""}`}
                 onClick={toggleListening}
                 title={
-                  isListening ? "正在语音识别（再次点击停止）" : "语音输入"
+                  isListening ? "正在语音识别（点击停止）" : "语音转文字输入"
                 }
                 disabled={inputDisabled}
-                style={{
-                  color: isListening ? "#ef4444" : undefined,
-                  animation: isListening ? "pulse 1.5s infinite" : undefined,
-                }}
               >
-                🎤
+                {isListening ? <IconMicOff size={18} /> : <IconMic size={18} />}
               </button>
             )}
             <input
@@ -777,7 +786,7 @@ export function ChatInput({
                 onClick={onStop}
                 title="停止生成"
               >
-                ■
+                <IconStop size={13} />
               </button>
             )}
             <button

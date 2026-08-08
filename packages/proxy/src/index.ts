@@ -17,6 +17,7 @@ import { registerFileRoutes } from "./routes/files.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerRpcPassthroughRoutes } from "./routes/rpcPassthrough.js";
 import { registerCommandRoutes } from "./routes/commands.js";
+import { registerGitRoutes } from "./routes/git.js";
 import {
   assertSupportedListenHost,
   formatListenAddress,
@@ -68,6 +69,7 @@ registerFileRoutes(app);
 registerSearchRoutes(app);
 registerRpcPassthroughRoutes(app);
 registerCommandRoutes(app);
+registerGitRoutes(app);
 
 // ── Start ──
 

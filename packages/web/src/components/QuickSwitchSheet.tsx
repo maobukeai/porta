@@ -14,6 +14,7 @@ import {
   IconExternalLink,
 } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
+import { prefetchSteps } from "../hooks/useStepsStream";
 
 export interface WorkspaceItem {
   uri: string;
@@ -75,14 +76,19 @@ export function QuickSwitchSheet({
   const [sheetTranslateY, setSheetTranslateY] = useState(0);
   const isDragging = useRef(false);
 
-  // Reset states on open
+  // Reset states on open & set default tab to 'current' if in project
   useEffect(() => {
     if (isOpen) {
       setSearchQuery("");
       setSheetTranslateY(0);
       isDragging.current = false;
+      if (currentProjectSlug) {
+        setActiveTab("current");
+      } else {
+        setActiveTab("all");
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, currentProjectSlug]);
 
   // Close on Escape
   useEffect(() => {
@@ -251,9 +257,16 @@ export function QuickSwitchSheet({
             ref={searchInputRef}
             type="text"
             className="quick-search-input"
-            placeholder="快速搜索对话标题或工作区..."
+            placeholder="快速搜索对话标题或工作区 (按回车直接选择)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && filteredConversations.length > 0) {
+                triggerHaptic("medium");
+                onSelectChat(filteredConversations[0].id);
+                onClose();
+              }
+            }}
           />
           {searchQuery && (
             <button
@@ -465,6 +478,8 @@ export function QuickSwitchSheet({
                   className={`quick-conversation-item ${isCurrent ? "active" : ""} ${
                     isRunning ? "running" : ""
                   }`}
+                  onMouseEnter={() => prefetchSteps(conv.id)}
+                  onTouchStart={() => prefetchSteps(conv.id)}
                   onClick={() => {
                     triggerHaptic("light");
                     onSelectChat(conv.id);

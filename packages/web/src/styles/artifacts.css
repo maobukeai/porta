@@ -1,0 +1,1596 @@
+/* ── Main Layout & Split Pane System ── */
+
+.main-content-layout {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: calc(100vh - var(--header-height));
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.chat-view-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.artifacts-side-pane {
+  width: 420px;
+  max-width: 45vw;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-default);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.08);
+  z-index: 20;
+}
+
+.artifacts-side-pane .artifacts-console {
+  height: 100%;
+}
+
+.artifacts-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  color: var(--accent);
+  padding: 40px;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Mobile Responsive Drawer Overlay */
+@media (max-width: 768px) {
+  .artifacts-side-pane {
+    position: fixed;
+    top: var(--header-height);
+    right: 0;
+    bottom: 0;
+    width: 88vw;
+    max-width: 400px;
+    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+  }
+}
+
+/* ── Artifacts Console (Antigravity 2.0 Auxiliary Pane Style) ── */
+
+.artifacts-console {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  box-sizing: border-box;
+}
+
+.artifacts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.artifacts-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.artifacts-icon {
+  color: var(--accent);
+}
+
+.artifacts-count-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 163, 127, 0.15);
+  color: var(--accent);
+}
+
+.artifacts-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.artifacts-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Toolbar: Search & Filters ── */
+
+.artifacts-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.artifacts-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.artifacts-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.artifacts-search-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 34px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.artifacts-search-input:focus {
+  border-color: var(--accent);
+}
+
+.artifacts-search-clear {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.artifacts-filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.artifacts-filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.artifacts-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.artifacts-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.artifacts-tab.active {
+  background: rgba(16, 163, 127, 0.16);
+  color: var(--accent);
+  border-color: rgba(16, 163, 127, 0.4);
+  font-weight: 600;
+}
+
+/* ── Content Grid / List ── */
+
+.artifacts-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.artifacts-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  gap: 12px;
+  color: var(--text-tertiary);
+}
+
+.artifacts-empty-hint {
+  font-size: 12px;
+  max-width: 320px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.artifact-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.artifact-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.artifact-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.artifact-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.type-icon {
+  flex-shrink: 0;
+}
+
+.type-icon.code {
+  color: #3b82f6;
+}
+
+.type-icon.doc {
+  color: #10b981;
+}
+
+.type-icon.diff {
+  color: #a855f7;
+}
+
+.type-icon.media {
+  color: #f59e0b;
+}
+
+.artifact-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-lang-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.artifact-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.artifact-action-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  transition: all var(--transition-fast);
+}
+
+.artifact-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.artifact-card-body {
+  padding: 12px 14px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.artifact-code-preview {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+/* ── Header Badge Style ── */
+
+.header-artifacts-btn {
+  position: relative;
+}
+
+.header-artifacts-btn.active {
+  color: var(--accent) !important;
+  background: rgba(16, 163, 127, 0.15) !important;
+}
+
+.header-artifacts-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--accent);
+  color: var(--text-on-solid);
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 4px;
+  min-width: 14px;
+  text-align: center;
+  line-height: 1;
+}
+
+/* ── Git Source Control Panel (VS Code Style) ── */
+
+.git-source-control-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.git-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.git-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.git-panel-title .git-icon {
+  color: var(--accent);
+}
+
+.git-branch-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 163, 127, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(16, 163, 127, 0.25);
+}
+
+.git-refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all var(--transition-fast);
+}
+
+.git-refresh-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.git-commit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-tertiary);
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.git-commit-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.git-commit-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 95px 0 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.git-commit-input:focus {
+  border-color: var(--accent);
+}
+
+.git-ai-msg-btn {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 163, 127, 0.12);
+  border: 1px solid rgba(16, 163, 127, 0.3);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.git-ai-msg-btn:hover {
+  background: rgba(16, 163, 127, 0.22);
+}
+
+.git-commit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.git-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+}
+
+.git-btn.primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+
+.git-btn.primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-0.5px);
+}
+
+.git-btn.secondary {
+  background: var(--accent);
+  color: var(--text-on-solid);
+}
+
+.git-btn.secondary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-0.5px);
+}
+
+.git-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.git-status-toast {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+}
+
+.git-status-toast.success {
+  color: rgb(var(--c-success));
+  background: rgb(var(--c-success) / 0.1);
+}
+
+.git-status-toast.error {
+  color: rgb(var(--c-error));
+  background: rgb(var(--c-error) / 0.1);
+}
+
+/* ── Changed files list ── */
+
+.git-changes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.git-section-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.git-changes-count {
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  padding: 0 6px;
+  border-radius: 999px;
+}
+
+.git-no-changes {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  padding: 8px 0;
+  font-style: italic;
+}
+
+.git-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.git-file-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.git-file-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  flex-shrink: 0;
+}
+
+.git-file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.git-file-dir {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.git-status-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.git-status-tag.M {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.git-status-tag.A {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.git-status-tag.D {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.git-status-tag.U {
+  background: rgba(66, 133, 244, 0.15);
+  color: #4285f4;
+}
+
+.git-diff-preview-box {
+  margin-top: 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.git-diff-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.git-diff-preview-header button {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+/* ── Git log history ── */
+
+.git-history-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+}
+
+.git-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.git-log-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+}
+
+.git-hash-pill {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-accent);
+  background: rgba(16, 163, 127, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.git-log-msg {
+  color: var(--text-primary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* ── VS Code Pixel-Perfect Source Control & Git Graph Panel ── */
+
+.vscode-git-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-surface, #1e1e1e);
+  color: var(--text-primary, #cccccc);
+  padding: 12px;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--border-default, #2d2d2d);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.vscode-git-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+}
+
+.vscode-git-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.vscode-git-header-actions,
+.vscode-git-bar-tools,
+.vscode-section-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vscode-git-header-actions button,
+.vscode-git-bar-tools button,
+.vscode-section-tools button {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary, #858585);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.vscode-git-header-actions button:hover,
+.vscode-git-bar-tools button:hover,
+.vscode-section-tools button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.vscode-git-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border-subtle, #252526);
+}
+
+.vscode-git-sub-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #cccccc);
+}
+
+/* VS Code Commit Input Wrapper & AI Button */
+
+.vscode-commit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vscode-commit-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-tertiary, #252526);
+  border: 1px solid var(--border-default, #3c3c3c);
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.vscode-commit-input-wrap:focus-within {
+  border-color: #007fd4;
+}
+
+.vscode-commit-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 80px 0 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary, #ffffff);
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+
+.vscode-input-actions {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.vscode-ai-spark-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  background: rgba(16, 163, 127, 0.15);
+  border: 1px solid rgba(16, 163, 127, 0.3);
+  color: #10a37f;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vscode-ai-spark-btn:hover {
+  background: rgba(16, 163, 127, 0.25);
+  color: #12c99d;
+}
+
+/* VS Code Split Main Commit Button */
+
+.vscode-split-commit-btn-group {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vscode-main-commit-btn {
+  flex: 1;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #3a3d41;
+  color: #ffffff;
+  border: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vscode-main-commit-btn:hover:not(:disabled) {
+  background: #45494e;
+}
+
+.vscode-main-commit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vscode-btn-shortcut {
+  font-size: 11px;
+  color: #a0a0a0;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.vscode-commit-dropdown-trigger {
+  width: 32px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3a3d41;
+  color: #ffffff;
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.vscode-commit-dropdown-trigger:hover:not(:disabled) {
+  background: #45494e;
+}
+
+.vscode-status-toast {
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+
+.vscode-status-toast.success {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.vscode-status-toast.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* VS Code Section & Accordion Header */
+
+.vscode-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.vscode-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.vscode-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #cccccc);
+}
+
+.vscode-accordion-chevron {
+  color: #858585;
+}
+
+.vscode-count-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #383838;
+  color: #cccccc;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+.vscode-empty-hint {
+  font-size: 11.5px;
+  color: #858585;
+  font-style: italic;
+  padding: 6px 12px;
+}
+
+/* VS Code File Row Styling */
+
+.vscode-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vscode-file-item-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.vscode-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.vscode-file-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.vscode-file-badge {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #3178c6;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.vscode-file-badge.TS, .vscode-file-badge.TSX {
+  background: #3178c6;
+  color: #ffffff;
+}
+
+.vscode-file-badge.JS, .vscode-file-badge.JSX {
+  background: #f7df1e;
+  color: #000000;
+}
+
+.vscode-file-badge.CSS {
+  background: #38bdf8;
+  color: #000000;
+}
+
+.vscode-file-name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.vscode-file-dir {
+  font-size: 11px;
+  color: #858585;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.vscode-file-status {
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.vscode-file-status.M {
+  color: #e2c08d;
+}
+
+.vscode-file-status.A {
+  color: #73c991;
+}
+
+.vscode-file-status.D {
+  color: #f14c4c;
+}
+
+.vscode-file-status.U {
+  color: #73c991;
+}
+
+/* VS Code Git Graph Tree Visualizer (图形) */
+
+.vscode-section.graph {
+  border-top: 1px solid var(--border-subtle, #2d2d2d);
+  padding-top: 8px;
+}
+
+.vscode-tool-text-btn {
+  font-size: 11px;
+  color: #858585;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.vscode-graph-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.vscode-graph-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 3px;
+  transition: background 0.12s ease;
+}
+
+.vscode-graph-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.vscode-graph-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.vscode-track-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #454545;
+}
+
+.vscode-graph-node {
+  position: relative;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a855f7;
+  border: 2px solid #1e1e1e;
+}
+
+.vscode-graph-node.head {
+  background: #007acc;
+  box-shadow: 0 0 6px rgba(0, 122, 204, 0.6);
+}
+
+.vscode-graph-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.vscode-graph-msg {
+  color: #cccccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  font-size: 12px;
+}
+
+.vscode-graph-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.vscode-branch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.vscode-branch-pill.local {
+  background: rgba(0, 122, 204, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(0, 122, 204, 0.4);
+}
+
+.vscode-branch-pill.remote {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+/* ── Header Git Badge ── */
+
+.main-header-git-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(16, 163, 127, 0.1);
+  border: 1px solid rgba(16, 163, 127, 0.25);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.main-header-git-pill:hover {
+  background: rgba(16, 163, 127, 0.18);
+  transform: translateY(-0.5px);
+}
+
+.header-git-branch-name {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-git-changes-badge {
+  background: #f59e0b;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+.git-branch-badge-interactive {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(16, 163, 127, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(16, 163, 127, 0.3);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.git-branch-badge-interactive:hover {
+  background: rgba(16, 163, 127, 0.22);
+}
+
+.git-file-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.8;
+  transition: opacity var(--transition-fast);
+}
+
+.git-file-item:hover .git-file-item-actions {
+  opacity: 1;
+}
+
+.git-file-item-actions button, .git-section-actions button {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--radius-xs);
+  padding: 3px 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.git-file-item-actions button:hover, .git-section-actions button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.git-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.git-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-changes-section.staged {
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+}
+
+/* ── Split Side-by-side Diff View ── */
+
+.git-diff-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.git-diff-mode-toggle button {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.git-diff-mode-toggle button.active {
+  background: var(--accent);
+  color: var(--text-on-solid);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.git-diff-split-view {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.diff-line-row {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.diff-col {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 6px;
+  overflow: hidden;
+  white-space: pre;
+}
+
+.diff-col.left {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.diff-line-row.add .right {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.diff-line-row.del .left {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.diff-line-row.header {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 10.5px;
+}
+
+.line-num {
+  width: 24px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  user-select: none;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.line-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Branch Modal / Drawer ── */
+
+.branch-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.branch-modal-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.branch-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.branch-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.branch-modal-header button {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.branch-modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.branch-sync-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.branch-status-msg {
+  font-size: 12px;
+  color: var(--accent);
+  padding: 6px 10px;
+  background: rgba(16, 163, 127, 0.1);
+  border-radius: var(--radius-xs);
+}
+
+.branch-create-box {
+  display: flex;
+  gap: 8px;
+}
+
+.branch-input {
+  flex: 1;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.branch-input:focus {
+  border-color: var(--accent);
+}
+
+.branch-list-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.branch-list-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.branch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.branch-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-default);
+}
+
+.branch-item.active {
+  background: rgba(16, 163, 127, 0.12);
+  border-color: rgba(16, 163, 127, 0.3);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.current-pill {
+  margin-left: auto;
+  font-size: 10px;
+  background: var(--accent);
+  color: var(--text-on-solid);
+  padding: 1px 6px;
+  border-radius: 999px;
+}

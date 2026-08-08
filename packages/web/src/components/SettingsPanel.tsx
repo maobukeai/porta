@@ -106,6 +106,9 @@ export function SettingsPanel({
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
 
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [userPlan, setUserPlan] = useState<string>("");
+
   const fetchModels = useCallback(async (retries = 3) => {
     for (let i = 0; i < retries; i++) {
       try {
@@ -120,9 +123,24 @@ export function SettingsPanel({
     }
   }, []);
 
+  const fetchUserStatus = useCallback(async () => {
+    try {
+      const data = await api.userStatus();
+      if (data?.userStatus?.email) {
+        setUserEmail(data.userStatus.email);
+      }
+      if (data?.userStatus?.userTier?.name || data?.userStatus?.planStatus) {
+        setUserPlan(data.userStatus.userTier?.name || data.userStatus.planStatus || "");
+      }
+    } catch (err) {
+      console.warn("Failed to fetch user status:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchModels();
-  }, [fetchModels]);
+    fetchUserStatus();
+  }, [fetchModels, fetchUserStatus]);
 
   const flashSaved = useCallback(() => {
     setSavedFlash(true);
@@ -439,7 +457,9 @@ export function SettingsPanel({
                 {/* Row 1: Your Plan */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">当前订阅方案：Google AI Pro</div>
+                    <div className="settings-official-label">
+                      当前订阅方案：{userPlan || "Google AI Pro"}
+                    </div>
                     <div className="settings-official-desc">
                       您可以升级至 Google AI Ultra 方案以获取更高的速率限制与并发额度。
                     </div>
@@ -457,7 +477,7 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">绑定邮箱</div>
                     <div className="settings-official-desc email-text">
-                      zs2026958851@gmail.com
+                      {userEmail || "未获取到邮箱 (或加载中)"}
                     </div>
                   </div>
                   <button

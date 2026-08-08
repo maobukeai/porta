@@ -39,6 +39,25 @@ interface UseStepsStreamResult {
  *   5. HTTP GET /steps?offset=X → older page
  *   6. Prepend to steps array
  */
+const stepsMemoryCache = new Map<string, { steps: TrajectoryStep[]; baseOffset: number; endOffset: number }>();
+
+export function getStepsFromCache(cascadeId: string): TrajectoryStep[] {
+  return stepsMemoryCache.get(cascadeId)?.steps ?? [];
+}
+
+export function prefetchSteps(cascadeId: string): void {
+  if (!cascadeId || stepsMemoryCache.has(cascadeId)) return;
+  api.getSteps(cascadeId, 0, 100).then((res) => {
+    if (res.steps) {
+      stepsMemoryCache.set(cascadeId, {
+        steps: res.steps,
+        baseOffset: res.offset ?? 0,
+        endOffset: (res.offset ?? 0) + res.steps.length,
+      });
+    }
+  }).catch(() => {});
+}
+
 export function useStepsStream(
   cascadeId: string,
   totalStepCount?: number,
@@ -46,8 +65,9 @@ export function useStepsStream(
   isConversationRunning = false,
   keepAliveWhenHidden = false,
 ): UseStepsStreamResult {
-  const [steps, setSteps] = useState<TrajectoryStep[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = cascadeId ? stepsMemoryCache.get(cascadeId) : null;
+  const [steps, setSteps] = useState<TrajectoryStep[]>(() => cached?.steps ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -56,18 +76,37 @@ export function useStepsStream(
   const mountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stepsRef = useRef<TrajectoryStep[]>([]);
+  const stepsRef = useRef<TrajectoryStep[]>(cached?.steps ?? []);
   // The absolute offset of stepsRef[0] in the full trajectory.
-  const baseOffsetRef = useRef(0);
+  const baseOffsetRef = useRef(cached?.baseOffset ?? 0);
   // The exact offset of the NEXT step AFTER the end of stepsRef.
-  const endOffsetRef = useRef(0);
+  const endOffsetRef = useRef(cached?.endOffset ?? 0);
   // Monotonic generation counter — prevents stale responses from overwriting.
   const genRef = useRef(0);
   const bumpGeneration = useCallback(() => {
     genRef.current += 1;
   }, []);
 
-  // ── HTTP: initial load (latest N steps) ──
+  const rafIdRef = useRef<number | null>(null);
+  const scheduleStepsFlush = useCallback(() => {
+    if (rafIdRef.current !== null) return;
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      if (mountedRef.current) {
+        setSteps([...stepsRef.current]);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (cascadeId && steps.length > 0) {
+      stepsMemoryCache.set(cascadeId, {
+        steps,
+        baseOffset: baseOffsetRef.current,
+        endOffset: endOffsetRef.current,
+      });
+    }
+  }, [cascadeId, steps]);
   const totalRef = useRef(totalStepCount ?? 0);
   totalRef.current = totalStepCount ?? 0;
 
@@ -212,10 +251,8 @@ export function useStepsStream(
                   .concat(newSteps);
                 stepsRef.current = updated;
                 endOffsetRef.current = deltaOffset + newSteps.length;
-                setSteps([...updated]);
+                scheduleStepsFlush();
               }
-              // If relOffset < 0, the delta is for steps before our window
-              // (shouldn't happen in practice — ignore)
             }
           } catch {
             // Ignore malformed messages

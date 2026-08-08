@@ -1,0 +1,29 @@
+/* ── Speech STT Microphone & Waveform Animations ── */
+
+.chat-action-icon-btn.mic-btn.listening {
+  color: rgb(var(--c-error, 239 68 68)) !important;
+  background: rgb(239 68 68 / 0.15) !important;
+  border-color: rgb(239 68 68 / 0.4) !important;
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.msg-action-btn.tts-btn {
+  position: relative;
+}
+
+.msg-action-btn.tts-btn:hover {
+  color: var(--accent);
+  background: rgb(var(--c-accent) / 0.15);
+}

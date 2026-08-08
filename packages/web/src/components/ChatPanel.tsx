@@ -21,6 +21,7 @@ import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
 import { useMessageTouchGesture } from "../hooks/useMessageTouchGesture";
 import { MessageActionSheet } from "./MessageActionSheet";
+import { useVisualViewport } from "../hooks/useVisualViewport";
 import {
   AskQuestionCard,
   CommandCard,
@@ -44,7 +45,10 @@ import {
   IconAlertTriangle,
   IconChevron,
   IconGemini,
+  IconVolume,
+  IconVolumeX,
 } from "./Icons";
+import { speakTTS, stopTTS, isTTSSpeaking } from "../utils/speech";
 import type { AskQuestionEntry, ChatMessage } from "../types";
 
 interface Props {
@@ -505,6 +509,25 @@ const MessageBubble = memo(
                   <IconUndo size={13} />
                 </button>
               )}
+              {msg.role === "assistant" && msg.content && (
+                <button
+                  className="msg-action-btn tts-btn"
+                  onClick={() => {
+                    if (isTTSSpeaking()) {
+                      stopTTS();
+                    } else {
+                      speakTTS(msg.content);
+                    }
+                  }}
+                  title="朗读回复（智能过滤代码与标记）"
+                >
+                  {isTTSSpeaking() ? (
+                    <IconVolumeX size={13} className="active-icon" />
+                  ) : (
+                    <IconVolume size={13} />
+                  )}
+                </button>
+              )}
               <CopyButton text={msg.content} />
             </div>
           )}
@@ -794,6 +817,16 @@ export function ChatPanel({
     });
   }, []);
 
+  const vvState = useVisualViewport();
+  useEffect(() => {
+    if (vvState.isKeyboardVisible && isNearBottom.current) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 180);
+      return () => clearTimeout(timer);
+    }
+  }, [vvState.isKeyboardVisible, scrollToBottom]);
+
   const innerRef = useRef<HTMLDivElement>(null);
 
   // Prevent infinite retry of broken images rendered from markdown.
@@ -840,6 +873,20 @@ export function ChatPanel({
     }
   }, []);
 
+  const handleChatAreaClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      handleImgClick(e);
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLTextAreaElement ||
+        el instanceof HTMLInputElement
+      ) {
+        el.blur();
+      }
+    },
+    [handleImgClick],
+  );
+
   if (loading && messages.length === 0) {
     return (
       <div className="chat-area">
@@ -879,7 +926,7 @@ export function ChatPanel({
         }
       }}
     >
-      <div className="chat-area-inner" ref={innerRef} onClick={handleImgClick}>
+      <div className="chat-area-inner" ref={innerRef} onClick={handleChatAreaClick}>
         {loadingOlder && (
           <div className="loading-older">
             <div className="loading-spinner" />

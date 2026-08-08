@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import {
   Routes,
   Route,
@@ -11,17 +11,28 @@ import { Sidebar } from "./components/Sidebar";
 import { ChatHeader } from "./components/ChatHeader";
 import { ChatPanel } from "./components/ChatPanel";
 import { ChatInput } from "./components/ChatInput";
-import { SettingsPanel } from "./components/SettingsPanel";
 import { WorkspaceSelector } from "./components/WorkspaceSelector";
-import { QuickSwitchSheet } from "./components/QuickSwitchSheet";
+import { extractArtifactsFromSteps } from "./utils/extractArtifacts";
 import { IconFolder, IconGemini } from "./components/Icons";
+
+const SettingsPanel = lazy(() =>
+  import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel })),
+);
+const ArtifactsConsole = lazy(() =>
+  import("./components/ArtifactsConsole").then((m) => ({ default: m.ArtifactsConsole })),
+);
+const QuickSwitchSheet = lazy(() =>
+  import("./components/QuickSwitchSheet").then((m) => ({ default: m.QuickSwitchSheet })),
+);
 import { useConversations } from "./hooks/useConversations";
 import { usePolling } from "./hooks/usePolling";
+import { getStepsFromCache } from "./hooks/useStepsStream";
 import { useWorkspaces, slugFromUri } from "./hooks/useWorkspaces";
 import { useDraftText } from "./hooks/useDraftText";
 import { useChatActions } from "./hooks/useChatActions";
 import { useClientSettings } from "./hooks/useClientSettings";
 import { useVisualViewport } from "./hooks/useVisualViewport";
+import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
 import { api } from "./api/client";
 import { isUnconfirmedOptimisticMessage } from "./utils/optimisticMessages";
 import type { AskQuestionEntry, HealthResponse, MediaAttachment } from "./types";
@@ -78,9 +89,13 @@ function ChatView() {
   const activeId = chatId ?? null;
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 480);
   const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
+  const [artifactsOpen, setArtifactsOpen] = useState(false);
   const isMobile = () => window.innerWidth <= 480;
   const { conversations, loading, refresh, optimisticRemove } = useConversations(15_000);
   const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
+
+  // ── Steps Cache for Artifacts Extraction ──
+  const steps = getStepsFromCache(activeId ?? "");
 
   // ── Hooks ──
   const { workspaces, currentWorkspaceUri } = useWorkspaces(
@@ -90,6 +105,11 @@ function ChatView() {
   const { draftText, handleDraftChange } = useDraftText(activeId);
   const { settings, updateSettings } = useClientSettings();
   useVisualViewport();
+  useSidebarSwipe({
+    isOpen: sidebarOpen,
+    onOpen: () => setSidebarOpen(true),
+    onClose: () => setSidebarOpen(false),
+  });
 
   // ── Global Theme Application ──
   useEffect(() => {
@@ -143,6 +163,26 @@ function ChatView() {
     conversations,
     optimisticRemove,
   });
+
+  const [gitBranch, setGitBranch] = useState<string | undefined>(undefined);
+  const [gitChangesCount, setGitChangesCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (currentWorkspaceUri) {
+      api
+        .gitStatus(currentWorkspaceUri)
+        .then((res) => {
+          if (res.branch) setGitBranch(res.branch);
+          if (typeof res.totalChanges === "number") setGitChangesCount(res.totalChanges);
+        })
+        .catch(() => {});
+    }
+  }, [currentWorkspaceUri, artifactsOpen]);
+
+  const artifactsCount = useMemo(
+    () => extractArtifactsFromSteps(steps, optimisticMessages).length,
+    [steps, optimisticMessages],
+  );
 
   // Wire handleRevert to also update draft text
   const handleRevert = useCallback(
@@ -323,17 +363,20 @@ function ChatView() {
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((v) => !v)}
       />
-      {/* Mobile backdrop: tap to close sidebar */}
+      {/* Mobile/Responsive backdrop: click or tap anywhere outside to close sidebar */}
       {sidebarOpen && (
         <div
           className="sidebar-backdrop"
           onClick={() => setSidebarOpen(false)}
+          onTouchStart={() => setSidebarOpen(false)}
         />
       )}
       <div className="main-panel">
         <ChatHeader
           title={headerTitle}
           projectName={projectSlug ?? undefined}
+          gitBranch={gitBranch}
+          gitChangesCount={gitChangesCount}
           onMenuToggle={() => setSidebarOpen(true)}
           onQuickSwitch={() => setQuickSwitchOpen(true)}
           onNewChat={handleNew}
@@ -341,133 +384,160 @@ function ChatView() {
             navigate(`/${projectSlug ?? "unknown"}/settings`);
             if (isMobile()) setSidebarOpen(false);
           }}
+          onToggleArtifacts={() => setArtifactsOpen((v) => !v)}
+          artifactsCount={artifactsCount}
+          isArtifactsOpen={artifactsOpen}
         />
 
         {/* Mobile Quick Switch Bottom Drawer */}
-        <QuickSwitchSheet
-          isOpen={quickSwitchOpen}
-          onClose={() => setQuickSwitchOpen(false)}
-          conversations={conversations}
-          activeId={activeId}
-          currentProjectSlug={projectSlug}
-          onSelectChat={(id) => {
-            setOptimisticMessages([]);
-            navigate(chatUrl(id));
-            if (isMobile()) setSidebarOpen(false);
-          }}
-          onNewChat={handleNew}
-          onOpenSidebar={() => setSidebarOpen(true)}
-          workspaces={workspaces}
-          onSelectProject={(slug) => {
-            navigate(`/${slug}`);
-          }}
-        />
-        {isSettingsPage ? (
-          <SettingsPanel
-            settings={settings}
-            onUpdate={updateSettings}
-            onBack={() => navigate(`/${projectSlug ?? "unknown"}`)}
-          />
-        ) : activeId ? (
-          <ChatPanel
-            key={activeId}
-            cascadeId={activeId}
-            onRevert={handleRevert}
-            onFilePermission={handleFilePermission}
-            onCommandAction={handleCommandAction}
-            onAskQuestion={handleAskQuestion}
-            onConfirmOptimistic={confirmOptimisticMessages}
-            optimisticMessages={optimisticMessages}
-            refreshKey={stepsRefreshKey}
-            hardRefreshKey={hardRefreshKey}
-            totalStepCount={activeConv?.summary.stepCount}
-            isConversationRunning={isRunning}
-            browserNotificationsEnabled={settings.browserNotificationsEnabled}
-            conversationTitle={headerTitle}
-            onQuoteMessage={(text) =>
-              handleDraftChange(
-                draftText ? `${draftText}\n> ${text}\n` : `> ${text}\n`,
-              )
-            }
-            onSidebarRefresh={refresh}
-          />
-        ) : (
-          <div
-            className="chat-area"
-            onTouchMove={() => {
-              const el = document.activeElement;
-              if (
-                el instanceof HTMLTextAreaElement ||
-                el instanceof HTMLInputElement
-              ) {
-                el.blur();
-              }
+        <Suspense fallback={null}>
+          <QuickSwitchSheet
+            isOpen={quickSwitchOpen}
+            onClose={() => setQuickSwitchOpen(false)}
+            conversations={conversations}
+            activeId={activeId}
+            currentProjectSlug={projectSlug}
+            onSelectChat={(id) => {
+              setOptimisticMessages([]);
+              navigate(chatUrl(id));
+              if (isMobile()) setSidebarOpen(false);
             }}
-          >
-            <div className="chat-area-inner">
-              {optimisticMessages.map((msg, i) => (
-                <div
-                  key={msg.optimisticId ?? i}
-                  className={`message ${msg.role}${isUnconfirmedOptimisticMessage(msg) ? " unconfirmed" : ""}`}
-                >
-                  <div className="chat-block message-body">
-                    <p>{msg.content}</p>
-                  </div>
-                </div>
-              ))}
-              {optimisticMessages.some(isUnconfirmedOptimisticMessage) && (
-                <div className="message assistant">
-                  <div className="chat-block message-body">
-                    <div className="typing-indicator">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            {optimisticMessages.length === 0 && (
-              <div className="chat-empty">
-                <div className="chat-empty-badge">
-                  <IconGemini size={28} />
-                </div>
-                <h1 className="chat-empty-title">你想在代码中构建什么？</h1>
-                <p className="chat-empty-subtitle">
-                  从分析项目、重构界面、开发新特性到智能调试，AI 协助全流程开发
-                </p>
-                {workspaces.length > 0 && currentWorkspaceUri ? (
-                  <div className="chat-empty-workspace-card">
-                    <WorkspaceSelector
-                      workspaces={workspaces}
-                      selected={currentWorkspaceUri}
-                      onSelect={(uri) => {
-                        const slug = slugFromUri(uri);
-                        navigate(`/${slug}`);
-                      }}
-                    />
-                  </div>
+            onNewChat={handleNew}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            workspaces={workspaces}
+            onSelectProject={(slug) => {
+              navigate(`/${slug}`);
+            }}
+          />
+        </Suspense>
+
+        <div className="main-content-layout">
+          {isSettingsPage ? (
+            <Suspense fallback={<div className="artifacts-loading"><IconGemini className="icon-spin" /></div>}>
+              <SettingsPanel
+                settings={settings}
+                onUpdate={updateSettings}
+                onBack={() => navigate(`/${projectSlug ?? "unknown"}`)}
+              />
+            </Suspense>
+          ) : (
+            <>
+              <div className="chat-view-pane">
+                {activeId ? (
+                  <ChatPanel
+                    key={activeId}
+                    cascadeId={activeId}
+                    onRevert={handleRevert}
+                    onFilePermission={handleFilePermission}
+                    onCommandAction={handleCommandAction}
+                    onAskQuestion={handleAskQuestion}
+                    onConfirmOptimistic={confirmOptimisticMessages}
+                    optimisticMessages={optimisticMessages}
+                    refreshKey={stepsRefreshKey}
+                    hardRefreshKey={hardRefreshKey}
+                    totalStepCount={activeConv?.summary.stepCount}
+                    isConversationRunning={isRunning}
+                    browserNotificationsEnabled={settings.browserNotificationsEnabled}
+                    conversationTitle={headerTitle}
+                    onQuoteMessage={(text) =>
+                      handleDraftChange(
+                        draftText ? `${draftText}\n> ${text}\n` : `> ${text}\n`,
+                      )
+                    }
+                    onSidebarRefresh={refresh}
+                  />
                 ) : (
-                  <div className="chat-empty-project">
-                    <IconFolder size={13} /> {projectSlug ?? "其他"}
+                  <div
+                    className="chat-area"
+                    onTouchMove={() => {
+                      const el = document.activeElement;
+                      if (
+                        el instanceof HTMLTextAreaElement ||
+                        el instanceof HTMLInputElement
+                      ) {
+                        el.blur();
+                      }
+                    }}
+                  >
+                    <div className="chat-area-inner">
+                      {optimisticMessages.map((msg, i) => (
+                        <div
+                          key={msg.optimisticId ?? i}
+                          className={`message ${msg.role}${isUnconfirmedOptimisticMessage(msg) ? " unconfirmed" : ""}`}
+                        >
+                          <div className="chat-block message-body">
+                            <p>{msg.content}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {optimisticMessages.some(isUnconfirmedOptimisticMessage) && (
+                        <div className="message assistant">
+                          <div className="chat-block message-body">
+                            <div className="typing-indicator">
+                              <span />
+                              <span />
+                              <span />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {optimisticMessages.length === 0 && (
+                      <div className="chat-empty">
+                        <div className="chat-empty-badge">
+                          <IconGemini size={28} />
+                        </div>
+                        <h1 className="chat-empty-title">你想在代码中构建什么？</h1>
+                        <p className="chat-empty-subtitle">
+                          从分析项目、重构界面、开发新特性到智能调试，AI 协助全流程开发
+                        </p>
+                        {workspaces.length > 0 && currentWorkspaceUri ? (
+                          <div className="chat-empty-workspace-card">
+                            <WorkspaceSelector
+                              workspaces={workspaces}
+                              selected={currentWorkspaceUri}
+                              onSelect={(uri) => {
+                                const slug = slugFromUri(uri);
+                                navigate(`/${slug}`);
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="chat-empty-project">
+                            <IconFolder size={13} /> {projectSlug ?? "其他"}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
+                <ChatInput
+                  onSend={handleSend}
+                  onStop={handleStop}
+                  isRunning={isRunning}
+                  disabled={!connected}
+                  draft={draftText}
+                  onDraftChange={handleDraftChange}
+                  defaultModel={settings.defaultModel}
+                  defaultPlannerType={settings.defaultPlannerType}
+                />
               </div>
-            )}
-          </div>
-        )}
-        {!isSettingsPage && (
-          <ChatInput
-            onSend={handleSend}
-            onStop={handleStop}
-            isRunning={isRunning}
-            disabled={!connected}
-            draft={draftText}
-            onDraftChange={handleDraftChange}
-            defaultModel={settings.defaultModel}
-            defaultPlannerType={settings.defaultPlannerType}
-          />
-        )}
+
+              {artifactsOpen && (
+                <div className="artifacts-side-pane">
+                  <Suspense fallback={<div className="artifacts-loading"><IconGemini className="icon-spin" /></div>}>
+                    <ArtifactsConsole
+                      steps={steps}
+                      messages={optimisticMessages}
+                      workspaceUri={currentWorkspaceUri}
+                      onClose={() => setArtifactsOpen(false)}
+                    />
+                  </Suspense>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

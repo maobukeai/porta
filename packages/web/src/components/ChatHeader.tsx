@@ -1,22 +1,32 @@
-import { IconMenu, IconFolder, IconGemini, IconChevron, IconPlus, IconGear } from "./Icons";
+import { IconMenu, IconFolder, IconGemini, IconChevron, IconPlus, IconGear, IconBox, IconGitBranch } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
 
 interface Props {
   title: string;
   projectName?: string;
+  gitBranch?: string;
+  gitChangesCount?: number;
   onMenuToggle?: () => void;
   onQuickSwitch?: () => void;
   onNewChat?: () => void;
   onOpenSettings?: () => void;
+  onToggleArtifacts?: () => void;
+  artifactsCount?: number;
+  isArtifactsOpen?: boolean;
 }
 
 export function ChatHeader({
   title,
   projectName,
+  gitBranch,
+  gitChangesCount = 0,
   onMenuToggle,
   onQuickSwitch,
   onNewChat,
   onOpenSettings,
+  onToggleArtifacts,
+  artifactsCount = 0,
+  isArtifactsOpen = false,
 }: Props) {
   return (
     <div className="main-header">
@@ -35,9 +45,14 @@ export function ChatHeader({
 
       <div
         className="main-header-title-wrap"
-        onClick={() => {
+        onClick={(e) => {
           triggerHaptic("light");
-          if (onQuickSwitch) {
+          if (e.detail === 2) {
+            // Double-tap: quick scroll to top
+            document
+              .querySelector(".chat-area")
+              ?.scrollTo({ top: 0, behavior: "smooth" });
+          } else if (onQuickSwitch) {
             onQuickSwitch();
           } else {
             document
@@ -45,7 +60,7 @@ export function ChatHeader({
               ?.scrollTo({ top: 0, behavior: "smooth" });
           }
         }}
-        title="点击快速切换会话"
+        title="点击切换会话 / 双击滚到顶部"
       >
         <span className="main-header-badge" title="Gemini">
           <IconGemini size={14} />
@@ -55,6 +70,23 @@ export function ChatHeader({
       </div>
 
       <div className="main-header-actions">
+        {gitBranch && onToggleArtifacts && (
+          <button
+            className="main-header-git-pill"
+            onClick={() => {
+              triggerHaptic("light");
+              onToggleArtifacts();
+            }}
+            title={`Git 分支: ${gitBranch}${gitChangesCount > 0 ? ` (${gitChangesCount} 文件更改)` : ""}`}
+          >
+            <IconGitBranch size={12} />
+            <span className="header-git-branch-name">{gitBranch}</span>
+            {gitChangesCount > 0 && (
+              <span className="header-git-changes-badge">{gitChangesCount}</span>
+            )}
+          </button>
+        )}
+
         {projectName && (
           <button
             className="main-header-project-btn"
@@ -67,6 +99,23 @@ export function ChatHeader({
           >
             <IconFolder size={12} />
             <span className="main-header-project-name">{projectName}</span>
+          </button>
+        )}
+
+        {onToggleArtifacts && (
+          <button
+            className={`header-icon-btn header-artifacts-btn ${isArtifactsOpen ? "active" : ""}`}
+            onClick={() => {
+              triggerHaptic("medium");
+              onToggleArtifacts();
+            }}
+            title="Artifacts 交付物控制台"
+            aria-label="Artifacts 交付物控制台"
+          >
+            <IconBox size={15} />
+            {artifactsCount > 0 && (
+              <span className="header-artifacts-badge">{artifactsCount}</span>
+            )}
           </button>
         )}
 

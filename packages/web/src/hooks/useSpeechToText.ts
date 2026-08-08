@@ -46,7 +46,14 @@ export function useSpeechToText({
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const onTranscriptRef = useRef(onTranscript);
+  const userIntentListeningRef = useRef(false);
+
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+  }, [onTranscript]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -57,9 +64,12 @@ export function useSpeechToText({
   }, []);
 
   const stopListening = useCallback(() => {
+    userIntentListeningRef.current = false;
     if (recognitionRef.current) {
       triggerHaptic("medium");
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch {}
       recognitionRef.current = null;
     }
     setIsListening(false);
@@ -72,43 +82,64 @@ export function useSpeechToText({
       window.SpeechRecognition || window.webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setError("当前浏览器不支持语音识别功能");
+      setError("当前浏览器不支持语音识别");
       return;
     }
 
     try {
       if (recognitionRef.current) {
-        recognitionRef.current.abort();
+        try {
+          recognitionRef.current.abort();
+        } catch {}
       }
 
       triggerHaptic("success");
+      userIntentListeningRef.current = true;
+
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const recognition = new SpeechRecognition();
-      recognition.continuous = true;
+
+      // Mobile Safari / Chrome auto-closes immediately if continuous=true is set
+      recognition.continuous = !isMobile;
       recognition.interimResults = true;
       recognition.lang = lang;
 
+      let lastEmittedText = "";
+
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        let finalTranscript = "";
+        let text = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result.isFinal) {
-            finalTranscript += result[0].transcript;
-          }
+          text += result[0].transcript;
         }
-        if (finalTranscript.trim() && onTranscript) {
-          onTranscript(finalTranscript.trim());
+
+        const trimmed = text.trim();
+        if (trimmed && trimmed !== lastEmittedText && onTranscriptRef.current) {
+          lastEmittedText = trimmed;
+          onTranscriptRef.current(trimmed);
         }
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.warn("[useSpeechToText] Speech recognition error:", event.error);
-        if (event.error !== "no-speech") {
-          setError(`语音识别错误: ${event.error}`);
+        console.warn("[useSpeechToText] Speech error:", event.error);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setError("请允许浏览器访问麦克风权限");
+          userIntentListeningRef.current = false;
+          setIsListening(false);
+        } else if (event.error !== "no-speech" && event.error !== "aborted") {
+          setError(`语音识别提示: ${event.error}`);
         }
-        setIsListening(false);
       };
 
       recognition.onend = () => {
+        // If user still intends to listen on desktop, keep listening
+        if (userIntentListeningRef.current && !isMobile) {
+          try {
+            recognition.start();
+            return;
+          } catch {}
+        }
+        userIntentListeningRef.current = false;
         setIsListening(false);
       };
 
@@ -117,11 +148,12 @@ export function useSpeechToText({
       setIsListening(true);
       setError(null);
     } catch (err) {
-      console.error("[useSpeechToText] Failed to start speech recognition:", err);
-      setError("启动语音识别失败");
+      console.error("[useSpeechToText] Start error:", err);
+      setError("启动语音识别失败，请检查麦克风权限");
+      userIntentListeningRef.current = false;
       setIsListening(false);
     }
-  }, [lang, onTranscript]);
+  }, [lang]);
 
   const toggleListening = useCallback(() => {
     if (isListening) {

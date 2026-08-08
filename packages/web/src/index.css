@@ -9,4 +9,6 @@
 @import "./styles/overlays.css";
 @import "./styles/interaction.css";
 @import "./styles/settings.css";
+@import "./styles/speech.css";
+@import "./styles/artifacts.css";
 @import "./styles/responsive.css";

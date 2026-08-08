@@ -140,6 +140,8 @@ export interface TrajectoryStep {
   completedInteractions?: CompletedInteractionData[];
   /** File permission request can appear on any tool step */
   filePermissionRequest?: FilePermissionRequest;
+  replaceFileContent?: { targetFile?: string; replacementContent?: string };
+  writeFile?: { targetFile?: string; content?: string };
 }
 
 export interface PlannerResponseData {

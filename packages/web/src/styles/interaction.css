@@ -1,7 +1,49 @@
-/* ── Pointer-device hover effects ──────────────────────────────────────────────
-   All interactive :hover rules live here. Touch devices skip this entire
-   section via the media query, preventing "sticky hover" and double-tap issues.
-   ⚠ Do NOT add :hover rules for clickable elements outside this block. ──── */
+/* ── Pointer-device hover & press effects ──────────────────────────────────────────
+   All interactive :hover and :active rules live here.
+   Touch devices skip hover state via media query to avoid sticky-hover bugs,
+   while press state (active) provides instant feedback across all platforms. ──── */
+
+/* Focus Ring Accessibility (targeted to buttons and clickable controls, excluding inputs) */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Active Press Feedback (universal across touch & pointer) */
+button:active:not(:disabled),
+.sidebar-action-btn:active,
+.header-icon-btn:active,
+.chat-action-icon-btn:active,
+.mobile-menu-btn:active,
+.search-result-item:active,
+.model-selector-btn:active {
+  transform: scale(0.96);
+  transition: transform var(--transition-fast);
+}
+
+/* Pulse Animation Keyframes */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes glow-emerald {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(16, 163, 127, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(16, 163, 127, 0.5);
+  }
+}
 
 @media (hover: hover) {
   /* Sidebar */
@@ -26,6 +68,11 @@
 
   .sidebar-item.dimmed:hover {
     opacity: 0.75;
+  }
+
+  .sidebar-item .sidebar-item-action-btn {
+    display: none;
+    opacity: 0.6;
   }
 
   .sidebar-item:hover .item-indicator,
@@ -57,8 +104,6 @@
     color: var(--text-secondary);
   }
 
-
-
   /* Search results */
   .search-result-item:hover {
     background: var(--bg-hover);
@@ -72,7 +117,6 @@
   }
 
   /* Message actions */
-
   .msg-action-btn:hover {
     color: var(--text-primary);
     background: var(--bg-hover);

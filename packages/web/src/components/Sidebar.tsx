@@ -1,7 +1,8 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import type { ConversationEntry } from "../hooks/useConversations";
 import { api } from "../api/client";
-import { workspaceNameFromMetadata } from "../utils/workspaceNames";
+import { workspaceNameFromMetadata, workspaceNameFromUri } from "../utils/workspaceNames";
+import { prefetchSteps } from "../hooks/useStepsStream";
 import {
   IconPlus,
   IconSearch,
@@ -35,8 +36,11 @@ interface WorkspaceGroup {
 
 const PREVIEW_COUNT = 3;
 
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+function relativeTime(iso?: string): string {
+  if (!iso) return "刚刚";
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "刚刚";
+  const diff = Date.now() - date.getTime();
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "刚刚";
   if (mins < 60) return `${mins}分钟前`;
@@ -50,7 +54,11 @@ function extractWorkspaceName(conv: ConversationEntry): string {
   if (conv.summary.projectName) {
     return conv.summary.projectName;
   }
-  const name = workspaceNameFromMetadata(conv.summary.workspaces?.[0], {
+  const ws = conv.summary.workspaces?.[0];
+  if (ws?.workspaceFolderAbsoluteUri) {
+    return workspaceNameFromUri(ws.workspaceFolderAbsoluteUri);
+  }
+  const name = workspaceNameFromMetadata(ws, {
     collapseAntigravityPlayground: true,
   });
   return name === "Others" ? "无工作区" : name;
@@ -286,6 +294,8 @@ export function Sidebar({
       <div
         key={conv.id}
         className={`sidebar-item ${conv.id === activeId ? "active" : ""} ${isArchived(conv) ? "dimmed" : ""}`}
+        onMouseEnter={() => prefetchSteps(conv.id)}
+        onTouchStart={() => prefetchSteps(conv.id)}
         onClick={() => {
           if (editingId === conv.id) return;
           markSeen(conv.id);
