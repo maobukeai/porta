@@ -4,7 +4,6 @@
 
 import type { Hono } from "hono";
 import { rpcAny } from "../routing.js";
-import { handleRPCError } from "../errors.js";
 
 const DEFAULT_MODEL_CONFIGS = [
   {

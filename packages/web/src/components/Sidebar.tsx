@@ -281,7 +281,10 @@ export function Sidebar({
     const isRunning = conv.summary.status === "CASCADE_RUN_STATUS_RUNNING";
     const lastSeen = seenAt[conv.id];
     const rawTitle = conv.summary.summary || "";
-    const isRawHash = /^[0-9a-f]{8}(…|\.\.\.|\b)/i.test(rawTitle.trim()) || rawTitle === conv.id;
+    const isRawHash =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTitle.trim()) ||
+      /^[0-9a-f]{8}(?:…|\.\.\.)$/i.test(rawTitle.trim()) ||
+      rawTitle === conv.id;
     const cleanSummary = !isRawHash && rawTitle ? rawTitle : "";
     const displayTitle =
       customTitles[conv.id] ||

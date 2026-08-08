@@ -349,4 +349,8 @@ export interface ClientSettings {
   browserNotificationsEnabled: boolean;
   /** Theme preference: dark, light, or system */
   theme?: "dark" | "light" | "system";
+  /** List of disabled skills */
+  disabledSkills?: string[];
+  /** List of disabled MCP tools */
+  disabledMcpTools?: string[];
 }

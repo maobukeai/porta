@@ -6,4 +6,4 @@
  */
 
 /** Model used when the user hasn't explicitly picked one (Defaults to latest Gemini 3.6). */
-export const DEFAULT_MODEL = "MODEL_PLACEHOLDER_M71";
+export const DEFAULT_MODEL = "gemini-3.6-flash-high";

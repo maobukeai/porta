@@ -3,7 +3,7 @@
  * Replicates the complete official settings interface with real data integration and full Chinese localization.
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   IconCheck,
   IconMonitor,
@@ -19,8 +19,12 @@ import {
   IconInfo,
   IconRefresh,
 } from "./Icons";
-import { api } from "../api/client";
-import { requestBrowserNotificationPermission } from "../utils/browserNotifications";
+import { api, getApiBase, setCustomApiBase } from "../api/client";
+import {
+  requestBrowserNotificationPermission,
+  showBrowserNotification,
+  playNotificationSound,
+} from "../utils/browserNotifications";
 import type { ClientSettings } from "../types";
 import type { PlannerType } from "./ChatInput";
 
@@ -101,6 +105,20 @@ export function SettingsPanel({
   const [enableTelemetry, setEnableTelemetry] = useState(false);
   const [marketingEmails, setMarketingEmails] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
+  const [customServerUrl, setCustomServerUrl] = useState<string>(() => getApiBase());
+  const [proxyStatus, setProxyStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
+  const [healthData, setHealthData] = useState<import("../types").HealthResponse | null>(null);
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (activeTabRef.current) {
+      activeTabRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "center",
+      });
+    }
+  }, [activeTab]);
 
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -109,6 +127,63 @@ export function SettingsPanel({
 
   const [userEmail, setUserEmail] = useState<string>("");
   const [userPlan, setUserPlan] = useState<string>("");
+
+  const disabledSkills = useMemo(() => new Set(settings.disabledSkills ?? []), [settings.disabledSkills]);
+  const disabledMcpTools = useMemo(() => new Set(settings.disabledMcpTools ?? []), [settings.disabledMcpTools]);
+
+  const toggleSkill = useCallback((skillName: string) => {
+    const next = new Set(disabledSkills);
+    if (next.has(skillName)) {
+      next.delete(skillName);
+    } else {
+      next.add(skillName);
+    }
+    onUpdate({ disabledSkills: Array.from(next) });
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  }, [disabledSkills, onUpdate]);
+
+  const toggleMcpTool = useCallback((toolName: string) => {
+    const next = new Set(disabledMcpTools);
+    if (next.has(toolName)) {
+      next.delete(toolName);
+    } else {
+      next.add(toolName);
+    }
+    onUpdate({ disabledMcpTools: Array.from(next) });
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2000);
+  }, [disabledMcpTools, onUpdate]);
+
+  const [liveSkills, setLiveSkills] = useState<Array<{ name: string; description: string; source: string }>>([]);
+  const [liveMcpServers, setLiveMcpServers] = useState<Array<{ name: string; description: string }>>([]);
+
+  const isMountedRef = useRef(true);
+
+  const fetchCustomizations = useCallback(async () => {
+    try {
+      const data = await api.customizations();
+      if (!isMountedRef.current) return; // guard against unmounted setState
+      if (Array.isArray(data.skills) && data.skills.length > 0) {
+        setLiveSkills(data.skills);
+      }
+      if (Array.isArray(data.mcpServers) && data.mcpServers.length > 0) {
+        setLiveMcpServers(data.mcpServers);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch dynamic customizations:", err);
+    }
+  }, []);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const data = await api.health();
+      if (!isMountedRef.current) return; // guard against unmounted setState
+      setHealthData(data);
+    } catch (err) {
+      console.warn("Failed to fetch health status:", err);
+    }
+  }, []);
 
   const fetchModels = useCallback(async (retries = 3) => {
     for (let i = 0; i < retries; i++) {
@@ -144,10 +219,62 @@ export function SettingsPanel({
 
   const [quotaRefreshing, setQuotaRefreshing] = useState(false);
 
+  const skillsToDisplay = useMemo(() => {
+    if (liveSkills.length > 0) {
+      return liveSkills.map((s) => ({
+        name: s.name,
+        // Build a friendly display label from the skill's machine name
+        label: s.name.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        // Source badge shown separately
+        tag: s.source === "builtin" ? "内置" : "扩展",
+        desc: s.description,
+      }));
+    }
+    return [
+      { name: "frontend_design", label: "前端极致设计", tag: "内置", desc: "构建兼具高端设计感与生产级别的独特前端界面，避开平庸排版。" },
+      { name: "ui-ux-pro-max", label: "UI/UX 智能体", tag: "内置", desc: "内置 50+ 风格、161+ 色板、57+ 字体与 99+ 条核心设计指南。" },
+      { name: "brainstorming", label: "深度头脑风暴", tag: "内置", desc: "在动手开发前深入探索用户意图、技术架构与多维度方案设计。" },
+      { name: "systematic-debugging", label: "系统化调试", tag: "内置", desc: "严密追溯 Bug 根因，系统化推导代码修复与防御策略。" },
+      { name: "test-driven-development", label: "测试驱动开发", tag: "内置", desc: "在实现新功能前编写严格的断言与单元测试逻辑。" },
+      { name: "subagent-driven-development", label: "子代理并行", tag: "内置", desc: "多任务并行调度独立子智能体，执行无状态依赖的复合规划。" },
+      { name: "executing-plans", label: "计划执行器", tag: "内置", desc: "按实施步骤逐项验收并推进大型开发里程碑。" },
+    ];
+  }, [liveSkills]);
+
+  const mcpToDisplay = useMemo(() => {
+    if (liveMcpServers.length > 0) {
+      return liveMcpServers.map((m) => ({
+        name: m.name,
+        desc: m.description,
+      }));
+    }
+    return [
+      { name: "blender-mcp", desc: "3D 资产建模、渲染调度、Polyhaven 与 Sketchfab 模型检索集成。" },
+      { name: "chrome-devtools-mcp", desc: "原生自动化网页交互、DOM 检查、Console 日志抓取与截屏审查。" },
+      { name: "eagle-mcp", desc: "Eagle 设计资源库与素材管理集成。" },
+      { name: "github-mcp-server", desc: "GitHub 仓库检索、分支建立、PR 自动创建与代码合并自动化。" },
+      { name: "prisma-mcp-server", desc: "Prisma 数据库迁移状态监控与 Prisma Studio 调试可视化。" },
+      { name: "sequential-thinking", desc: "Sequential Thinking 顺序思考与复杂逻辑推理引擎。" },
+      { name: "StitchMCP", desc: "Stitch UI 设计稿自动缝合与代码转换引擎。" },
+      { name: "videostudio-tutorial", desc: "自动化视频教程录制、片段合成与渲染流水线。" },
+    ];
+  }, [liveMcpServers]);
+
   useEffect(() => {
+    isMountedRef.current = true;
     fetchModels();
     fetchUserStatus();
-  }, [fetchModels, fetchUserStatus]);
+    fetchHealth();
+    fetchCustomizations();
+    const timer = setInterval(() => {
+      fetchHealth();
+      fetchCustomizations();
+    }, 3000);
+    return () => {
+      isMountedRef.current = false; // prevent setState after unmount
+      clearInterval(timer);
+    };
+  }, [fetchModels, fetchUserStatus, fetchHealth, fetchCustomizations]);
 
   const handleRefreshQuota = useCallback(async () => {
     setQuotaRefreshing(true);
@@ -213,30 +340,32 @@ export function SettingsPanel({
 
   // Parse models sorted by quality/tier
   const parsedModels: ParsedModelOption[] = useMemo(() => {
-    const list = models.map((m) => {
-      const label = m.label || m.modelOrAlias.model;
-      const match = label.match(/^(.*?)(?:\s*\((Low|Medium|High|Thinking)\))?$/i);
-      const baseName = match ? match[1].trim() : label;
-      const rawTier = match && match[2] ? match[2] : null;
-      let tier: ParsedModelOption["tier"] = null;
-      if (rawTier) {
-        tier = (rawTier.charAt(0).toUpperCase() + rawTier.slice(1).toLowerCase()) as any;
-      }
-      const quota =
-        m.quotaInfo?.remainingFraction !== undefined
-          ? m.quotaInfo.remainingFraction
-          : 1.0;
+    const list = models
+      .filter((m) => m.modelOrAlias?.model) // skip malformed entries missing modelOrAlias
+      .map((m) => {
+        const label = m.label || m.modelOrAlias?.model || "";
+        const match = label.match(/^(.*?)(?:\s*\((Low|Medium|High|Thinking)\))?$/i);
+        const baseName = match ? match[1].trim() : label;
+        const rawTier = match && match[2] ? match[2] : null;
+        let tier: ParsedModelOption["tier"] = null;
+        if (rawTier) {
+          tier = (rawTier.charAt(0).toUpperCase() + rawTier.slice(1).toLowerCase()) as any;
+        }
+        const quota =
+          m.quotaInfo?.remainingFraction !== undefined
+            ? m.quotaInfo.remainingFraction
+            : 1.0;
 
-      return {
-        id: m.modelOrAlias.model,
-        fullName: label,
-        baseName,
-        tier,
-        supportsImages: !!m.supportsImages,
-        isRecommended: !!m.isRecommended,
-        quota,
-      };
-    });
+        return {
+          id: m.modelOrAlias?.model ?? "",
+          fullName: label,
+          baseName,
+          tier,
+          supportsImages: !!m.supportsImages,
+          isRecommended: !!m.isRecommended,
+          quota,
+        };
+      });
 
     const getVersionScore = (name: string, tier: string | null) => {
       let score = 0;
@@ -282,6 +411,12 @@ export function SettingsPanel({
       if (perm === "granted") {
         onUpdate({ browserNotificationsEnabled: true });
         flashSaved();
+        playNotificationSound();
+        showBrowserNotification({
+          title: "Porta 系统通知与声音提示已开启",
+          body: "当长时间任务完成或需要审批时，将弹出系统通知并播放提示音。",
+          playSound: true,
+        });
       }
     } else {
       onUpdate({ browserNotificationsEnabled: false });
@@ -331,6 +466,7 @@ export function SettingsPanel({
             return (
               <button
                 key={item.id}
+                ref={isActive ? activeTabRef : null}
                 className={`settings-mobile-tab-btn ${isActive ? "active" : ""}`}
                 onClick={() => setActiveTab(item.id)}
               >
@@ -540,7 +676,7 @@ export function SettingsPanel({
                   <div className="settings-official-info">
                     <div className="settings-official-label">绑定邮箱</div>
                     <div className="settings-official-desc email-text">
-                      {userEmail || "未获取到邮箱 (或加载中)"}
+                      {userEmail || "已连接 Antigravity IDE 实例"}
                     </div>
                   </div>
                   <button
@@ -549,6 +685,21 @@ export function SettingsPanel({
                   >
                     退出登录
                   </button>
+                </div>
+
+                {/* Row 3: Language Server Process */}
+                <div className="settings-official-row">
+                  <div className="settings-official-info">
+                    <div className="settings-official-label">Language Server 引擎状态</div>
+                    <div className="settings-official-desc">
+                      {healthData?.languageServers && healthData.languageServers.length > 0
+                        ? `进程 PID: ${healthData.languageServers[0].pid} · HTTPS 端口: ${healthData.languageServers[0].httpsPort}`
+                        : "正在连接 Antigravity IDE 2.0+ 引擎..."}
+                    </div>
+                  </div>
+                  <span className="settings-status-online">
+                    {healthData?.status === "ok" ? "● 运行正常" : "○ 离线/校验中"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -606,20 +757,157 @@ export function SettingsPanel({
             </div>
 
             <div className="settings-card-group">
-              <div className="settings-card-group-title">消息通知</div>
-              <div className="settings-card-row">
+              <div className="settings-card-group-title">消息通知与声音提示 (System & Sound Notifications)</div>
+              <div className="settings-card-row notification-card-row">
                 <div className="settings-card-info">
-                  <div className="settings-card-label">浏览器桌面通知</div>
-                  <div className="settings-card-desc">当长时间运行的代码任务或命令完成时弹出系统通知</div>
+                  <div className="settings-card-label">系统级原生通知与音频提示音</div>
+                  <div className="settings-card-desc">
+                    在安卓 APP 或桌面端运行长时间任务/命令完成或需审批时，直接弹出系统原生通知并播放水晶音阶提示音
+                  </div>
                 </div>
-                <label className="settings-switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.browserNotificationsEnabled}
-                    onChange={handleToggleNotifications}
-                  />
-                  <span className="settings-slider" />
-                </label>
+                <div className="notification-row-actions">
+                  <button
+                    type="button"
+                    className="btn-notification-test"
+                    onClick={async () => {
+                      await requestBrowserNotificationPermission();
+                      playNotificationSound();
+                      showBrowserNotification({
+                        title: "✨ Porta 水晶提示音测试",
+                        body: "测试成功！高阶水晶提示音与系统通知运行正常。",
+                        playSound: true,
+                      });
+                    }}
+                  >
+                    ✨ 测试提示音
+                  </button>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={settings.browserNotificationsEnabled}
+                      onChange={handleToggleNotifications}
+                      aria-label="消息通知与声音提示"
+                    />
+                    <span className="settings-slider" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 3: Custom Proxy Server URL */}
+            <div className="settings-card-group">
+              <div className="settings-card-group-title">代理服务器连接 (Proxy Server)</div>
+              <div className="settings-official-card">
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 16px", width: "100%", boxSizing: "border-box" }}>
+                  <div className="settings-official-info">
+                    <div className="settings-official-label">局域网 / 远程 Proxy 服务地址</div>
+                    <div className="settings-official-desc">
+                      在手机 APP 上运行时，填入电脑端的 Proxy 地址（如 <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, padding: "1px 4px", background: "var(--bg-tertiary)", borderRadius: 3 }}>http://192.168.1.100:3000</code>）。留空则使用当前同源地址。
+                    </div>
+                  </div>
+
+                  {/* Input row */}
+                  <div className="proxy-input-row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
+                    <input
+                      type="text"
+                      id="proxy-server-url-input"
+                      placeholder="http://192.168.x.x:3000"
+                      value={customServerUrl}
+                      onChange={(e) => {
+                        setCustomServerUrl(e.target.value);
+                        setProxyStatus("idle");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.currentTarget.nextElementSibling as HTMLButtonElement | null)?.click();
+                      }}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        height: 38,
+                        padding: "0 12px",
+                        fontSize: 13,
+                        fontFamily: "var(--font-mono)",
+                        background: "var(--bg-tertiary)",
+                        border: `1px solid ${
+                          proxyStatus === "error" ? "rgba(239,68,68,0.6)"
+                          : proxyStatus === "ok" ? "rgba(16,163,127,0.6)"
+                          : "var(--border-default)"
+                        }`,
+                        borderRadius: 8,
+                        color: "var(--text-primary)",
+                        outline: "none",
+                        transition: "border-color 0.2s",
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-google-upgrade proxy-save-btn"
+                      disabled={proxyStatus === "saving"}
+                      style={{ height: 38, padding: "0 16px", fontSize: 13, flexShrink: 0, whiteSpace: "nowrap", opacity: proxyStatus === "saving" ? 0.7 : 1 }}
+                      onClick={async () => {
+                        setProxyStatus("saving");
+                        try {
+                          setCustomApiBase(customServerUrl);
+                          await Promise.all([fetchModels(1), fetchUserStatus()]);
+                          setProxyStatus("ok");
+                          setTimeout(() => setProxyStatus("idle"), 2500);
+                        } catch {
+                          setProxyStatus("error");
+                          setTimeout(() => setProxyStatus("idle"), 3000);
+                        }
+                      }}
+                    >
+                      {proxyStatus === "saving" ? "连接中…" : proxyStatus === "ok" ? "✓ 已保存" : "保存地址"}
+                    </button>
+                    {customServerUrl && (
+                      <button
+                        type="button"
+                        title="清除，恢复同源地址"
+                        style={{
+                          height: 38,
+                          width: 38,
+                          flexShrink: 0,
+                          border: "1px solid var(--border-default)",
+                          borderRadius: 8,
+                          background: "var(--bg-tertiary)",
+                          color: "var(--text-tertiary)",
+                          fontSize: 16,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                        onClick={() => {
+                          setCustomServerUrl("");
+                          setCustomApiBase("");
+                          setProxyStatus("idle");
+                        }}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Status row */}
+                  {proxyStatus !== "idle" && (
+                    <div style={{
+                      fontSize: 12,
+                      color: proxyStatus === "error" ? "rgb(239,68,68)" : proxyStatus === "ok" ? "var(--text-accent)" : "var(--text-tertiary)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}>
+                      {proxyStatus === "saving" && "⏳ 正在连接并加载模型列表…"}
+                      {proxyStatus === "ok" && "✅ 连接成功！已切换到新代理地址"}
+                      {proxyStatus === "error" && "❌ 连接失败，请检查地址和网络"}
+                    </div>
+                  )}
+
+                  {/* Current active address hint */}
+                  <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    当前使用地址：<code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{getApiBase() || window.location.origin + "（同源）"}</code>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -730,16 +1018,15 @@ export function SettingsPanel({
 
             {/* Section 3: Gemini Models */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title header-with-icon" style={{ justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>Gemini 系列模型配额</span>
+              <div className="settings-card-group-title section-header-row">
+                <div className="section-header-title-wrap">
+                  <span className="section-header-title">Gemini 系列模型配额</span>
                   <IconInfo size={13} className="info-icon" />
                 </div>
                 <button
                   type="button"
                   onClick={handleRefreshQuota}
-                  className="btn-google-upgrade"
-                  style={{ padding: "3px 8px", fontSize: 11, background: "var(--bg-tertiary)", color: "var(--text-secondary)", border: "1px solid var(--border-default)" }}
+                  className="btn-section-refresh"
                   title="重新同步最新额度"
                 >
                   <IconRefresh size={11} className={quotaRefreshing ? "icon-spin" : ""} />
@@ -912,57 +1199,65 @@ export function SettingsPanel({
           <div className="settings-section-container">
             {/* 1. Superpowers Skills */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">超级技能库 (Superpowers)</div>
+              <div className="settings-card-group-title section-header-row">
+                <span className="section-header-title">超级技能库 (Superpowers)</span>
+                <button
+                  type="button"
+                  onClick={fetchHealth}
+                  className="btn-section-refresh"
+                >
+                  <IconRefresh size={11} />
+                  <span>刷新技能状态</span>
+                </button>
+              </div>
               <div className="customizations-list">
-                {[
-                  {
-                    name: "frontend_design",
-                    label: "前端极致设计",
-                    desc: "构建兼具高端设计感与生产级别的独特前端界面，避开平庸排版。",
-                  },
-                  {
-                    name: "ui-ux-pro-max",
-                    label: "UI/UX 智能体",
-                    desc: "内置 50+ 风格、161+ 色板、57+ 字体与 99+ 条核心设计指南。",
-                  },
-                  {
-                    name: "brainstorming",
-                    label: "深度头脑风暴",
-                    desc: "在动手开发前深入探索用户意图、技术架构与多维度方案设计。",
-                  },
-                  {
-                    name: "systematic-debugging",
-                    label: "系统化调试",
-                    desc: "严密追溯 Bug 根因，系统化推导代码修复与防御策略。",
-                  },
-                  {
-                    name: "test-driven",
-                    label: "测试驱动开发",
-                    desc: "在实现新功能前编写严格的断言与单元测试逻辑。",
-                  },
-                  {
-                    name: "subagent-driven",
-                    label: "子代理并行",
-                    desc: "多任务并行调度独立子智能体，执行无状态依赖的复合规划。",
-                  },
-                  {
-                    name: "executing-plans",
-                    label: "计划执行器",
-                    desc: "按实施步骤逐项验收并推进大型开发里程碑。",
-                  },
-                ].map((s) => (
-                  <div key={s.name} className="customization-card-row">
-                    <div className="customization-card-left">
-                      <div className="customization-card-title">
-                        <IconPuzzle size={14} className="puzzle-icon" />
-                        <span className="skill-title-name">{s.name}</span>
-                        <span className="skill-tag">{s.label}</span>
+                {skillsToDisplay.map((s) => {
+                  const isEnabled = !disabledSkills.has(s.name);
+                  const isProxyOnline = Boolean(healthData?.status === "ok");
+                  const isLsOnline = Boolean(
+                    healthData?.languageServers && healthData.languageServers.length > 0,
+                  );
+                  const isRealActive = isLsOnline && isEnabled;
+
+                  const statusLabel = !isProxyOnline
+                    ? "○ 代理未连通"
+                    : !isLsOnline
+                      ? "○ 软件未连接"
+                      : !isEnabled
+                        ? "○ 已手动禁用"
+                        : "● 已激活";
+
+                  return (
+                    <div key={s.name} className="customization-card-row" style={{ opacity: isRealActive ? 1 : 0.6 }}>
+                      <div className="customization-card-left">
+                        <div className="customization-card-title">
+                          <IconPuzzle size={14} className="puzzle-icon" />
+                          <span className="skill-title-name">{s.label}</span>
+                          {"tag" in s && <span className="skill-tag">{(s as { tag?: string }).tag}</span>}
+                        </div>
+                        <div className="customization-card-desc">
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-tertiary)", marginRight: 4 }}>{s.name}</span>
+                          {s.desc}
+                        </div>
                       </div>
-                      <div className="customization-card-desc">{s.desc}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className={`customization-status-badge ${isRealActive ? "" : "disabled"}`}>
+                          {statusLabel}
+                        </span>
+                        <label className="settings-switch">
+                          <input
+                            type="checkbox"
+                            checked={isEnabled && isLsOnline}
+                            disabled={!isLsOnline}
+                            onChange={() => toggleSkill(s.name)}
+                            aria-label={`开关 ${s.name}`}
+                          />
+                          <span className="settings-slider" />
+                        </label>
+                      </div>
                     </div>
-                    <span className="customization-status-badge">● 已激活</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -970,39 +1265,49 @@ export function SettingsPanel({
             <div className="settings-card-group">
               <div className="settings-card-group-title">MCP 服务与工具 (Model Context Protocol)</div>
               <div className="customizations-list">
-                {[
-                  {
-                    name: "blender-mcp",
-                    desc: "3D 资产建模、渲染调度、Polyhaven 与 Sketchfab 模型检索集成。",
-                  },
-                  {
-                    name: "chrome-devtools-mcp",
-                    desc: "原生自动化网页交互、DOM 检查、Console 日志抓取与截屏审查。",
-                  },
-                  {
-                    name: "github-mcp-server",
-                    desc: "GitHub 仓库检索、分支建立、PR 自动创建与代码合并自动化。",
-                  },
-                  {
-                    name: "prisma-mcp-server",
-                    desc: "Prisma 数据库迁移状态监控与 Prisma Studio 调试可视化。",
-                  },
-                  {
-                    name: "videostudio-tutorial",
-                    desc: "自动化视频教程录制、片段合成与渲染流水线。",
-                  },
-                ].map((m) => (
-                  <div key={m.name} className="customization-card-row">
-                    <div className="customization-card-left">
-                      <div className="customization-card-title">
-                        <span className="mcp-name-text">{m.name}</span>
-                        <span className="mcp-tag">MCP 工具</span>
+                {mcpToDisplay.map((m) => {
+                  const isEnabled = !disabledMcpTools.has(m.name);
+                  const isProxyOnline = Boolean(healthData?.status === "ok");
+                  const isLsOnline = Boolean(
+                    healthData?.languageServers && healthData.languageServers.length > 0,
+                  );
+                  const isRealConnected = isLsOnline && isEnabled;
+
+                  const statusLabel = !isProxyOnline
+                    ? "○ 代理未连通"
+                    : !isLsOnline
+                      ? "○ 软件未连接"
+                      : !isEnabled
+                        ? "○ 已手动断开"
+                        : "● 已连接";
+
+                  return (
+                    <div key={m.name} className="customization-card-row" style={{ opacity: isRealConnected ? 1 : 0.6 }}>
+                      <div className="customization-card-left">
+                        <div className="customization-card-title">
+                          <span className="mcp-name-text">{m.name}</span>
+                          <span className="mcp-tag">MCP 工具</span>
+                        </div>
+                        <div className="customization-card-desc">{m.desc}</div>
                       </div>
-                      <div className="customization-card-desc">{m.desc}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className={`customization-status-badge mcp ${isRealConnected ? "" : "disabled"}`}>
+                          {statusLabel}
+                        </span>
+                        <label className="settings-switch">
+                          <input
+                            type="checkbox"
+                            checked={isEnabled && isLsOnline}
+                            disabled={!isLsOnline}
+                            onChange={() => toggleMcpTool(m.name)}
+                            aria-label={`开关 ${m.name}`}
+                          />
+                          <span className="settings-slider" />
+                        </label>
+                      </div>
                     </div>
-                    <span className="customization-status-badge mcp">● 已连接</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1038,7 +1343,11 @@ export function SettingsPanel({
                   <div className="settings-card-label">页面审查与网页交互</div>
                   <div className="settings-card-desc">允许智能体执行点击、输入、截屏与性能诊断</div>
                 </div>
-                <span className="settings-status-online">● 已就绪</span>
+                <span className={`customization-status-badge mcp ${
+                  healthData?.languageServers && healthData.languageServers.length > 0 ? "" : "disabled"
+                }`}>
+                  {healthData?.languageServers && healthData.languageServers.length > 0 ? "● 已就绪" : "○ 软件未连接"}
+                </span>
               </div>
             </div>
           </div>
@@ -1079,9 +1388,24 @@ export function SettingsPanel({
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Service Worker 离线缓存</div>
+                    <div className="settings-official-label">Service Worker 离线缓存与存储</div>
                     <div className="settings-official-desc">
-                      缓存静态资源与对话界面，实现离线秒级启动
+                      已缓存离线静态资源与对话数据（本地 LocalStorage 已用 {
+                        (() => {
+                          try {
+                            let total = 0;
+                            for (let i = 0; i < localStorage.length; i++) {
+                              const key = localStorage.key(i);
+                              if (key) {
+                                total += (localStorage.getItem(key) ?? "").length + key.length;
+                              }
+                            }
+                            return (total / 1024).toFixed(1);
+                          } catch {
+                            return "0.0";
+                          }
+                        })()
+                      } KB）
                     </div>
                   </div>
                   <button

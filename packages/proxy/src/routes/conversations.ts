@@ -365,7 +365,8 @@ export function registerConversationRoutes(app: Hono): void {
 
   app.get("/api/conversations/:id/steps", async (c) => {
     const id = c.req.param("id");
-    const offset = parseInt(c.req.query("offset") ?? "0", 10);
+    let offset = parseInt(c.req.query("offset") ?? "0", 10);
+    if (isNaN(offset) || offset < 0) offset = 0;
     const limitParam = c.req.query("limit");
     let limit = limitParam ? parseInt(limitParam, 10) : undefined;
     if (limit !== undefined && (isNaN(limit) || limit <= 0)) {

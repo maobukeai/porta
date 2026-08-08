@@ -1228,6 +1228,107 @@
   color: rgb(var(--c-success));
 }
 
+/* ── Notification Card Row Base Rules ── */
+.notification-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notification-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-notification-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.btn-notification-test:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Section Header Row with Refresh Button ── */
+.section-header-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.section-header-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.section-header-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-section-refresh {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  border-radius: var(--radius-sm) !important;
+  background: var(--bg-tertiary) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--border-default) !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.btn-section-refresh:hover {
+  background: var(--bg-hover) !important;
+  border-color: var(--accent) !important;
+  color: var(--text-primary) !important;
+}
+
+/* ── Prevent flex text collapse into single-character vertical columns ── */
+.settings-card-info,
+.settings-official-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.settings-card-label,
+.settings-official-label {
+  word-break: break-word;
+}
+
 /* ── Responsive adjustments for mobile ── */
 
 @media (max-width: 768px) {
@@ -1254,7 +1355,7 @@
     padding-top: 14px;
     padding-left: max(16px, env(safe-area-inset-left));
     padding-right: max(16px, env(safe-area-inset-right));
-    padding-bottom: max(40px, env(safe-area-inset-bottom));
+    padding-bottom: max(60px, env(safe-area-inset-bottom));
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -1298,7 +1399,9 @@
   }
 
   .settings-official-info {
-    width: 100%;
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
   }
 
   .btn-google-upgrade,
@@ -1322,8 +1425,15 @@
     justify-content: space-between;
   }
 
-  .settings-card-info {
-    width: 100%;
+  .settings-card-row:has(.settings-switch) .settings-card-info {
+    flex: 1 1 0% !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding-right: 12px !important;
+  }
+
+  .settings-card-row:has(.settings-switch) .settings-switch {
+    flex-shrink: 0 !important;
   }
 
   .btn-pill-primary,
@@ -1376,5 +1486,89 @@
   .feedback-textarea {
     min-height: 100px;
     font-size: 13px;
+  }
+
+  /* ── Customizations & Skills Cards Mobile Fix ── */
+  .customization-card-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 12px;
+  }
+
+  .customization-card-left {
+    width: 100%;
+  }
+
+  .customization-card-title {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .skill-title-name {
+    word-break: break-word;
+  }
+
+  .customization-card-row > div:last-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .customizations-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* ── Notification Card Row Mobile Override ── */
+  .settings-card-row.notification-card-row,
+  .notification-card-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .notification-card-row .settings-card-info {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .notification-row-actions {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--border-subtle) !important;
+  }
+
+  .btn-notification-test {
+    padding: 6px 14px;
+    font-size: 12.5px;
+  }
+
+  /* ── Proxy input row: stay horizontal on mobile ── */
+  .proxy-input-row {
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .proxy-save-btn {
+    width: auto !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 0 14px !important;
+    font-size: 13px !important;
+  }
+
+  #proxy-server-url-input {
+    min-width: 0 !important;
+    flex: 1 1 0% !important;
   }
 }

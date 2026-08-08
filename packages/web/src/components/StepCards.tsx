@@ -80,7 +80,10 @@ export function FilePermissionCard({
   const usesGenericPermission = permissionRequest.responseKind === "permission";
 
   const trajectoryId =
-    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ?? "";
+    (step as any).trajectoryId ??
+    (step.metadata as any)?.trajectoryId ??
+    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ??
+    "active";
   const stepIndex = step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? 0;
 
   const path = permissionRequest.absolutePathUri;
@@ -240,7 +243,10 @@ export function AskQuestionCard({
 
   const isWaiting = step.status === "CORTEX_STEP_STATUS_WAITING";
   const trajectoryId =
-    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ?? "";
+    (step as any).trajectoryId ??
+    (step.metadata as any)?.trajectoryId ??
+    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ??
+    "active";
   const stepIndex =
     step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? fallbackStepIndex;
   const canRespond =
@@ -424,7 +430,10 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
   const exitCode = cmd.exitCode;
 
   const trajectoryId =
-    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ?? "";
+    (step as any).trajectoryId ??
+    (step.metadata as any)?.trajectoryId ??
+    step.metadata?.sourceTrajectoryStepInfo?.trajectoryId ??
+    "active";
   const stepIndex = step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? 0;
 
   const statusClass = isWaiting

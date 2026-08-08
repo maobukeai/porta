@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   IconBox,
   IconFileCode,
@@ -314,7 +315,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
       <div className="artifacts-header">
         <div className="artifacts-title">
           <IconBox size={18} className="artifacts-icon" />
-          <span>Artifacts 交付物与 Git 控制台</span>
+          <span className="artifacts-title-text">Artifacts 交付物与 Git 控制台</span>
           <span className="artifacts-count-badge">{artifacts.length} 项产物</span>
         </div>
         {onClose && (
@@ -415,7 +416,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                   <input
                     type="text"
                     className="vscode-commit-input"
-                    placeholder={`提交变更内容(Ctrl+Enter 在“${gitBranch}”...`}
+                    placeholder={`提交变更说明 (${gitBranch})...`}
                     value={commitMsg}
                     onChange={(e) => setCommitMsg(e.target.value)}
                     onKeyDown={(e) => {
@@ -754,69 +755,71 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
       </div>
 
       {/* Branch Management Modal */}
-      {branchModalOpen && (
-        <div className="branch-modal-overlay" onClick={() => setBranchModalOpen(false)}>
-          <div className="branch-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="branch-modal-header">
-              <div className="branch-modal-title">
-                <IconGitBranch size={16} />
-                <span>Git 分支与远程同步</span>
-              </div>
-              <button onClick={() => setBranchModalOpen(false)}><IconX size={16} /></button>
-            </div>
-
-            <div className="branch-modal-body">
-              <div className="branch-sync-bar">
-                <span className="branch-current-label">当前分支: <strong>{gitBranch}</strong></span>
-                <button className="git-btn secondary" onClick={handleGitPull}>
-                  <IconRefresh size={13} /> 拉取远程代码 (Pull)
-                </button>
+      {branchModalOpen &&
+        createPortal(
+          <div className="branch-modal-overlay" onClick={() => setBranchModalOpen(false)}>
+            <div className="branch-modal-card" onClick={(e) => e.stopPropagation()}>
+              <div className="branch-modal-header">
+                <div className="branch-modal-title">
+                  <IconGitBranch size={16} />
+                  <span>Git 分支与远程同步</span>
+                </div>
+                <button onClick={() => setBranchModalOpen(false)}><IconX size={16} /></button>
               </div>
 
-              {branchActionMsg && (
-                <div className="branch-status-msg">{branchActionMsg}</div>
-              )}
+              <div className="branch-modal-body">
+                <div className="branch-sync-bar">
+                  <span className="branch-current-label">当前分支: <strong>{gitBranch}</strong></span>
+                  <button className="git-btn secondary" onClick={handleGitPull}>
+                    <IconRefresh size={13} /> 拉取远程代码 (Pull)
+                  </button>
+                </div>
 
-              <div className="branch-create-box">
-                <input
-                  type="text"
-                  className="branch-input"
-                  placeholder="输入新分支名称..."
-                  value={newBranchInput}
-                  onChange={(e) => setNewBranchInput(e.target.value)}
-                />
-                <button
-                  className="git-btn primary"
-                  disabled={!newBranchInput.trim()}
-                  onClick={() => handleCheckoutBranch(newBranchInput.trim(), true)}
-                >
-                  + 新建并切换
-                </button>
-              </div>
+                {branchActionMsg && (
+                  <div className="branch-status-msg">{branchActionMsg}</div>
+                )}
 
-              <div className="branch-list-section">
-                <div className="branch-list-title">本地分支列表</div>
-                <div className="branch-list">
-                  {branchList.map((b) => {
-                    const isCurrent = b === gitBranch;
-                    return (
-                      <div
-                        key={b}
-                        className={`branch-item ${isCurrent ? "active" : ""}`}
-                        onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
-                      >
-                        <IconGitBranch size={14} />
-                        <span>{b}</span>
-                        {isCurrent && <span className="current-pill">当前</span>}
-                      </div>
-                    );
-                  })}
+                <div className="branch-create-box">
+                  <input
+                    type="text"
+                    className="branch-input"
+                    placeholder="输入新分支名称..."
+                    value={newBranchInput}
+                    onChange={(e) => setNewBranchInput(e.target.value)}
+                  />
+                  <button
+                    className="git-btn primary"
+                    disabled={!newBranchInput.trim()}
+                    onClick={() => handleCheckoutBranch(newBranchInput.trim(), true)}
+                  >
+                    + 新建并切换
+                  </button>
+                </div>
+
+                <div className="branch-list-section">
+                  <div className="branch-list-title">本地分支列表</div>
+                  <div className="branch-list">
+                    {branchList.map((b) => {
+                      const isCurrent = b === gitBranch;
+                      return (
+                        <div
+                          key={b}
+                          className={`branch-item ${isCurrent ? "active" : ""}`}
+                          onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
+                        >
+                          <IconGitBranch size={14} />
+                          <span>{b}</span>
+                          {isCurrent && <span className="current-pill">当前</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

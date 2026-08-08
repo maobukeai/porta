@@ -1,4 +1,18 @@
-const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+export function getApiBase(): string {
+  const custom = localStorage.getItem("porta_custom_api_base");
+  if (custom && custom.trim()) {
+    return custom.trim().replace(/\/+$/, "");
+  }
+  return (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+}
+
+export function setCustomApiBase(url: string): void {
+  if (!url || !url.trim()) {
+    localStorage.removeItem("porta_custom_api_base");
+  } else {
+    localStorage.setItem("porta_custom_api_base", url.trim().replace(/\/+$/, ""));
+  }
+}
 
 function previewBody(text: string): string {
   const singleLine = text.replace(/\s+/g, " ").trim();
@@ -18,10 +32,30 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...((options.headers as Record<string, string>) ?? {}),
   };
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
+  const baseUrl = getApiBase();
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    const isNative = Boolean(
+      (window as any).Capacitor?.isNativePlatform?.() ||
+        (window as any).Capacitor?.platform === "android",
+    );
+    if (!baseUrl && isNative) {
+      throw new Error(
+        "无法发送消息：安卓 APK 未配置服务器地址。请点击设置 (⚙) 填入电脑端代理 IP (如 http://192.168.1.100:3000)",
+      );
+    }
+    if (baseUrl) {
+      throw new Error(
+        `无法连接代理服务 (${baseUrl})，请检查手机与电脑是否处于同一 WiFi/局域网`,
+      );
+    }
+    throw new Error("网络连接断开，请检查代理服务与局域网连接");
+  }
 
   if (!res.ok) {
     const body = await res.text();
@@ -229,6 +263,12 @@ export const api = {
         category?: "slash" | "skill" | "plugin" | "mcp";
       }>;
     }>("/api/commands"),
+
+  customizations: () =>
+    request<{
+      skills: Array<{ name: string; description: string; source: string }>;
+      mcpServers: Array<{ name: string; description: string }>;
+    }>("/api/customizations"),
 
   gitStatus: (workspaceUri?: string) => {
     const key = workspaceUri || "default";

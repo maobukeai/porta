@@ -41,8 +41,9 @@
   letter-spacing: -0.4px;
   background: linear-gradient(
     135deg,
-    #10A37F 0%,
-    #2563EB 100%
+    #10B981 0%,
+    #06B6D4 50%,
+    #6366F1 100%
   );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -50,9 +51,9 @@
 }
 
 .sidebar-brand-icon {
-  color: #10A37F;
+  color: #10B981;
   -webkit-text-fill-color: initial;
-  filter: drop-shadow(0 0 6px rgba(16, 163, 127, 0.4));
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));
   flex-shrink: 0;
 }
 

@@ -1,48 +1,50 @@
-/* ── Porta Design System (UI UX Pro Max Emerald & Obsidian) ── */
+/* ── Porta Design System (Codex & Antigravity 2.0 Obsidian Mesh) ── */
 
 :root {
-  /* ── Primitives — Codex Emerald & Obsidian ── */
-  --c-accent: 16 163 127;
+  /* ── Primitives — Codex Emerald, Cyan & Obsidian ── */
+  --c-accent: 16 185 129;
   --c-success: 16 185 129;
   --c-error: 239 68 68;
   --c-warning: 245 158 11;
-  --c-info: 59 130 246;
-  --c-lift: 255 255 255; /* Surface elevation tint */
+  --c-info: 6 182 212;
+  --c-lift: 255 255 255;
 
-  /* ── Backgrounds — Obsidian Onyx Hierarchy ── */
-  --bg-primary: #090A0F;
-  --bg-secondary: #111218;
-  --bg-tertiary: #171922;
-  --bg-surface: #1D202C;
-  --bg-surface-elevated: #242838;
-  --bg-hover: #262938;
-  --bg-active: #2E3346;
+  /* ── Backgrounds — Codex High-Tech Dark ── */
+  --bg-primary: #0B0D13;
+  --bg-secondary: #12141D;
+  --bg-tertiary: #191C28;
+  --bg-surface: #1E2232;
+  --bg-surface-elevated: #262B3F;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
 
   /* ── Glassmorphism ── */
-  --glass-bg: rgba(17, 18, 24, 0.75);
-  --glass-bg-elevated: rgba(29, 32, 44, 0.85);
-  --glass-border: rgba(255, 255, 255, 0.12);
-  --glass-blur: blur(16px) saturate(180%);
+  --glass-bg: rgba(18, 20, 29, 0.78);
+  --glass-bg-elevated: rgba(30, 34, 50, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-blur: blur(20px) saturate(190%);
 
-  /* ── Borders ── */
+  /* ── Borders & Highlights ── */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-default: rgba(255, 255, 255, 0.14);
-  --border-emphasis: rgba(255, 255, 255, 0.22);
-  --border-focus: #10A37F;
-  --focus-ring: 0 0 0 2px rgba(16, 163, 127, 0.4);
+  --border-emphasis: rgba(255, 255, 255, 0.24);
+  --border-focus: #10B981;
+  --focus-ring: 0 0 0 2px rgba(16, 185, 129, 0.4);
 
   /* ── Text (WCAG AA/AAA Compliant) ── */
   --text-primary: #F3F4F6;
-  --text-secondary: #A0AEC0;
-  --text-tertiary: #718096;
-  --text-accent: #10A37F;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  --text-accent: #10B981;
   --text-on-solid: #FFFFFF;
 
   /* ── Accent derived ── */
-  --accent: #10A37F;
-  --accent-hover: #12B98F;
-  --accent-active: #0D8A6C;
-  --accent-glow: rgba(16, 163, 127, 0.25);
+  --accent: #10B981;
+  --accent-hover: #34D399;
+  --accent-active: #059669;
+  --accent-glow: rgba(16, 185, 129, 0.28);
+  --accent-cyan: #06B6D4;
+  --accent-indigo: #6366F1;
 
   /* ── Typography ── */
   --font-sans:
@@ -51,7 +53,7 @@
 
   /* ── Layout & Touch Targets ── */
   --sidebar-width: 280px;
-  --header-height: 48px;
+  --header-height: 50px;
   --input-height: 56px;
   --min-touch-target: 44px;
 
@@ -68,7 +70,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 20px rgba(16, 163, 127, 0.25);
+  --shadow-glow: 0 0 24px rgba(16, 185, 129, 0.25);
 
   /* ── Transitions & Motion (UI UX Pro Max Spring Standards) ── */
   --transition-fast: 120ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -79,36 +81,36 @@
 }
 
 [data-theme="light"] {
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #F8F9FA;
-  --bg-tertiary: #F1F3F5;
+  --bg-primary: #FAFAFA;
+  --bg-secondary: #F4F4F5;
+  --bg-tertiary: #E4E4E7;
   --bg-surface: #FFFFFF;
-  --bg-surface-elevated: #F8F9FA;
-  --bg-hover: #E9ECEF;
-  --bg-active: #DEE2E6;
+  --bg-surface-elevated: #FFFFFF;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.08);
 
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-bg-elevated: rgba(248, 249, 250, 0.92);
+  --glass-bg: rgba(255, 255, 255, 0.88);
+  --glass-bg-elevated: rgba(244, 244, 245, 0.94);
   --glass-border: rgba(0, 0, 0, 0.1);
-  --glass-blur: blur(16px) saturate(180%);
+  --glass-blur: blur(20px) saturate(180%);
 
   --border-subtle: rgba(0, 0, 0, 0.08);
   --border-default: rgba(0, 0, 0, 0.14);
   --border-emphasis: rgba(0, 0, 0, 0.22);
-  --border-focus: #10A37F;
-  --focus-ring: 0 0 0 2px rgba(16, 163, 127, 0.35);
+  --border-focus: #10B981;
+  --focus-ring: 0 0 0 2px rgba(16, 185, 129, 0.35);
 
-  --text-primary: #0F172A;
-  --text-secondary: #475569;
-  --text-tertiary: #64748B;
-  --text-accent: #0D8A6C;
+  --text-primary: #09090B;
+  --text-secondary: #52525B;
+  --text-tertiary: #71717A;
+  --text-accent: #059669;
   --text-on-solid: #FFFFFF;
 
   --c-lift: 0 0 0;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.14);
-  --shadow-glow: 0 0 20px rgba(16, 163, 127, 0.18);
+  --shadow-glow: 0 0 20px rgba(16, 185, 129, 0.18);
 }
 
 /* ── Reset ── */
@@ -147,10 +149,23 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Keyframe Animations ── */
+@keyframes codexPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.85); }
+}
+
+@keyframes codexGlowShift {
+  0% { opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { opacity: 0.8; }
+}
+
 /* ── Scrollbar ── */
 
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -173,4 +188,18 @@ body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+.app-layout::before {
+  content: "";
+  position: fixed;
+  top: -160px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1200px;
+  height: 480px;
+  background: radial-gradient(ellipse 65% 50% at 50% 0%, rgba(16, 185, 129, 0.12), rgba(99, 102, 241, 0.06) 45%, transparent 80%);
+  pointer-events: none;
+  z-index: 0;
 }

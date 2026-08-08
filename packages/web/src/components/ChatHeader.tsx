@@ -66,7 +66,8 @@ export function ChatHeader({
         }}
         title="点击切换会话 / 双击滚到顶部"
       >
-        <span className="main-header-badge" title="Gemini">
+        <span className="main-header-badge" title="Antigravity Codex 2.0+">
+          <span className="codex-pulse-dot" />
           <IconGemini size={14} />
         </span>
         <span className="main-header-title">{title}</span>
@@ -93,7 +94,7 @@ export function ChatHeader({
 
         {projectName && (
           <button
-            className="main-header-project-btn"
+            className="main-header-project-btn desktop-only-action"
             onClick={() => {
               triggerHaptic("light");
               onQuickSwitch?.();
@@ -125,7 +126,7 @@ export function ChatHeader({
 
         {onOpenExport && (
           <button
-            className="header-icon-btn"
+            className="header-icon-btn desktop-only-action"
             onClick={() => {
               triggerHaptic("medium");
               onOpenExport();
@@ -139,7 +140,7 @@ export function ChatHeader({
 
         {onOpenReasoningTree && (
           <button
-            className="header-icon-btn"
+            className="header-icon-btn desktop-only-action"
             onClick={() => {
               triggerHaptic("medium");
               onOpenReasoningTree();

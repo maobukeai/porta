@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api/client";
+import { api, getApiBase } from "../api/client";
 import type { TrajectoryStep } from "../types";
 import { useAppResume } from "./useAppResume";
 
@@ -145,12 +145,19 @@ export function useStepsStream(
       console.debug(
         `[useStepsStream] initialFetch cascadeId=${cascadeId.slice(0, 8)} gen=${gen} total=${totalRef.current} isUnknown=${isUnknown} startOffset=${startOffset}`,
       );
-      const result = await api.getSteps(
-        cascadeId,
-        startOffset,
-        undefined,
-        isUnknown ? PAGE_SIZE : undefined,
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15_000);
+      let result: Awaited<ReturnType<typeof api.getSteps>>;
+      try {
+        result = await api.getSteps(
+          cascadeId,
+          startOffset,
+          undefined,
+          isUnknown ? PAGE_SIZE : undefined,
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
       console.debug(
         `[useStepsStream] initialFetch result: mounted=${mountedRef.current} gen=${gen}==${genRef.current} steps=${(result.steps ?? []).length} offset=${result.offset}`,
       );
@@ -188,10 +195,12 @@ export function useStepsStream(
         return;
       }
 
-      const apiBase = import.meta.env.VITE_API_BASE ?? "";
+      // Use getApiBase() so custom proxy address (set in SettingsPanel) also
+      // applies to the WebSocket connection, not just HTTP requests.
+      const apiBase = getApiBase();
       let url: string;
       if (apiBase) {
-        const wsBase = apiBase.replace(/^http/, "ws");
+        const wsBase = apiBase.replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"));
         url = `${wsBase}/api/conversations/${cascadeId}/ws`;
       } else {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -333,11 +342,22 @@ export function useStepsStream(
     setHasMore(false);
 
     (async () => {
+      // Launch WS immediately (parallel with HTTP) so the real-time channel
+      // is ready sooner. We'll re-sync after HTTP tells us the actual offset.
+      connectWs(0);
+
       const result = await initialFetch();
       if (!result || !mountedRef.current) return;
-      // Connect WS, starting deltas from the end of our loaded window
+
+      // If WS is already open, send a sync message with the correct offset
       const syncFrom = result.offset + result.count;
-      connectWs(syncFrom);
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "sync", fromOffset: syncFrom }));
+      } else if (!ws || ws.readyState >= WebSocket.CLOSING) {
+        // WS not yet open or already closed — reconnect with correct offset
+        connectWs(syncFrom);
+      }
     })();
 
     return () => {

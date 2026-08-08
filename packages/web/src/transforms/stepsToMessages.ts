@@ -55,11 +55,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
     }
 
     const askQuestion = getAskQuestionRequest(step);
-    if (
-      askQuestion &&
-      (type === "CORTEX_STEP_TYPE_ASK_QUESTION" ||
-        step.requestedInteraction?.askQuestion)
-    ) {
+    if (askQuestion) {
       messages.push({
         role: "system",
         content: "",
@@ -174,6 +170,27 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         });
       }
     } else if (type === "CORTEX_STEP_TYPE_CODE_ACTION" && step.codeAction) {
+      const ca = step.codeAction;
+      const fileUri = ca.actionResult?.edit?.absoluteUri ?? "";
+      const lastMsg = messages[messages.length - 1];
+
+      if (
+        fileUri &&
+        lastMsg &&
+        lastMsg.type === "CORTEX_STEP_TYPE_CODE_ACTION" &&
+        lastMsg.step?.codeAction?.actionResult?.edit?.absoluteUri === fileUri
+      ) {
+        const lastEdit = lastMsg.step.codeAction.actionResult?.edit;
+        const newLines = ca.actionResult?.edit?.diff?.unifiedDiff?.lines ?? [];
+        if (lastEdit?.diff?.unifiedDiff && newLines.length > 0) {
+          lastEdit.diff.unifiedDiff.lines = [
+            ...(lastEdit.diff.unifiedDiff.lines ?? []),
+            ...newLines,
+          ];
+        }
+        continue;
+      }
+
       messages.push({
         role: "system",
         content: "",
@@ -292,6 +309,34 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         stepIndex: i,
         type,
         icon: "search",
+      });
+    } else if (
+      type === "CORTEX_STEP_TYPE_CALL_MCP_TOOL" ||
+      type.includes("MCP") ||
+      Boolean((step as any).callMcpTool)
+    ) {
+      const mcpData = (step as any).callMcpTool ?? (step as any).mcpTool;
+      const server = mcpData?.serverName ?? (step.metadata?.toolCall as any)?.serverName ?? "MCP";
+      const tool = mcpData?.toolName ?? step.metadata?.toolCall?.name ?? "tool";
+      messages.push({
+        role: "system",
+        content: `⚡ 执行 MCP 工具 **${server}/${tool}**`,
+        stepIndex: i,
+        type,
+        icon: "box",
+      });
+    } else if (
+      type === "CORTEX_STEP_TYPE_REVERT" ||
+      type.includes("REVERT") ||
+      Boolean((step as any).revert)
+    ) {
+      const stepIdx = (step as any).revert?.stepIndex ?? step.metadata?.sourceTrajectoryStepInfo?.stepIndex;
+      messages.push({
+        role: "system",
+        content: `↩ 会话已回退至步骤 #${stepIdx !== undefined ? Number(stepIdx) + 1 : i + 1}`,
+        stepIndex: i,
+        type,
+        icon: "corner-up-left",
       });
     }
   }

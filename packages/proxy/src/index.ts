@@ -7,6 +7,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { compress } from "hono/compress";
 import { createAdaptorServer } from "@hono/node-server";
 
 import { discovery } from "./routing.js";
@@ -18,6 +19,7 @@ import { registerSearchRoutes } from "./routes/search.js";
 import { registerRpcPassthroughRoutes } from "./routes/rpcPassthrough.js";
 import { registerCommandRoutes } from "./routes/commands.js";
 import { registerGitRoutes } from "./routes/git.js";
+import { registerCustomizationsRoutes } from "./routes/customizations.js";
 import {
   assertSupportedListenHost,
   formatListenAddress,
@@ -37,10 +39,22 @@ const app = new Hono();
 
 const ALLOWED_ORIGINS = getAllowedOrigins();
 
+// Gzip compress JSON responses — reduces large step payloads by ~80% over WiFi
+app.use("*", compress());
+
 app.use(
   "*",
   cors({
     origin: (origin) => resolveCorsOrigin(origin, ALLOWED_ORIGINS),
+    maxAge: 600, // Cache preflight for 10 min — eliminates OPTIONS RTT on every request
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "X-Workspace-Uri",
+    ],
+    exposeHeaders: ["Content-Length", "X-Cascade-ID"],
   }),
 );
 
@@ -70,6 +84,7 @@ registerSearchRoutes(app);
 registerRpcPassthroughRoutes(app);
 registerCommandRoutes(app);
 registerGitRoutes(app);
+registerCustomizationsRoutes(app);
 
 // ── Start ──
 

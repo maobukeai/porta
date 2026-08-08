@@ -80,17 +80,22 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
     fetchModels();
   }, [fetchModels]);
 
-  // Close on outside click
+  // Close on outside click/tap (mousedown covers desktop, touchstart covers mobile)
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e instanceof TouchEvent ? e.touches[0]?.target : e.target;
+      if (ref.current && target && !ref.current.contains(target as Node)) {
         setOpen(false);
         setActiveGroupHover(null);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("mousedown", handler as EventListener);
+    document.addEventListener("touchstart", handler as EventListener, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", handler as EventListener);
+      document.removeEventListener("touchstart", handler as EventListener);
+    };
   }, [open]);
 
   const active =
@@ -100,12 +105,12 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
     models[0]?.modelOrAlias?.model ??
     "gemini-3.6-flash-high";
 
-  // Auto-bind default model if none selected
+  // Auto-bind default model if none selected — wait until models are loaded
   useEffect(() => {
-    if (!selectedModel && active) {
+    if (!selectedModel && active && models.length > 0) {
       onSelect(active);
     }
-  }, [active, selectedModel, onSelect]);
+  }, [active, selectedModel, models.length, onSelect]);
 
   const groups = useMemo<ModelGroup[]>(() => {
     const map = new Map<string, ParsedModel[]>();
@@ -158,6 +163,12 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
     return "Gemini 3.6 Flash (High)";
   }, [models, active]);
 
+  const shortLabel = useMemo(() => {
+    return activeLabel
+      .replace(/\s*\((High|Medium|Low|Thinking|Default|[^\)]+)\)/gi, "")
+      .trim() || activeLabel;
+  }, [activeLabel]);
+
   return (
     <div className="model-selector" ref={ref}>
       <button
@@ -169,7 +180,10 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
         }}
         title="选择模型"
       >
-        <span className="model-selector-label">{activeLabel}</span>
+        <span className="model-selector-label">
+          <span className="model-label-full">{activeLabel}</span>
+          <span className="model-label-short">{shortLabel}</span>
+        </span>
         <span className="model-selector-caret">▾</span>
       </button>
       {open && (
@@ -242,7 +256,9 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
               <div
                 key={group.baseName}
                 className="model-option-container"
-                onMouseEnter={() => setActiveGroupHover(group.baseName)}
+                // Desktop hover: only react to real mouse pointer, not touch synthesis
+                onPointerEnter={(e) => { if (e.pointerType === "mouse") setActiveGroupHover(group.baseName); }}
+                onPointerLeave={(e) => { if (e.pointerType === "mouse") setActiveGroupHover(null); }}
               >
                 <button
                   className={`model-option ${isGroupActive ? "active" : ""} ${

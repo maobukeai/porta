@@ -95,6 +95,7 @@ function ChatView() {
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [reasoningTreeOpen, setReasoningTreeOpen] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isMobile = () => window.innerWidth <= 480;
   const { conversations, loading, refresh, optimisticRemove } = useConversations(15_000);
   const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
@@ -521,7 +522,7 @@ function ChatView() {
                   onSend={handleSend}
                   onStop={handleStop}
                   isRunning={isRunning}
-                  disabled={false}
+                  disabled={!connected && !isRunning}
                   draft={draftText}
                   onDraftChange={handleDraftChange}
                   defaultModel={settings.defaultModel}
@@ -530,16 +531,46 @@ function ChatView() {
               </div>
 
               {artifactsOpen && (
-                <div className="artifacts-side-pane">
-                  <Suspense fallback={<div className="artifacts-loading"><IconGemini className="icon-spin" /></div>}>
-                    <ArtifactsConsole
-                      steps={steps}
-                      messages={optimisticMessages}
-                      workspaceUri={currentWorkspaceUri}
-                      onClose={() => setArtifactsOpen(false)}
-                    />
-                  </Suspense>
-                </div>
+                <>
+                  <div
+                    className="artifacts-backdrop"
+                    onClick={() => setArtifactsOpen(false)}
+                    onTouchStart={() => setArtifactsOpen(false)}
+                  />
+                  <div
+                    className="artifacts-side-pane"
+                    onTouchStart={(e) => {
+                      if (e.touches.length === 1) {
+                        touchStartRef.current = {
+                          x: e.touches[0].clientX,
+                          y: e.touches[0].clientY,
+                        };
+                      }
+                    }}
+                    onTouchEnd={(e) => {
+                      if (touchStartRef.current && e.changedTouches.length === 1) {
+                        const dx =
+                          e.changedTouches[0].clientX - touchStartRef.current.x;
+                        const dy = Math.abs(
+                          e.changedTouches[0].clientY - touchStartRef.current.y,
+                        );
+                        if (dx > 50 && dy < 60) {
+                          setArtifactsOpen(false);
+                        }
+                      }
+                      touchStartRef.current = null;
+                    }}
+                  >
+                    <Suspense fallback={<div className="artifacts-loading"><IconGemini className="icon-spin" /></div>}>
+                      <ArtifactsConsole
+                        steps={steps}
+                        messages={optimisticMessages}
+                        workspaceUri={currentWorkspaceUri}
+                        onClose={() => setArtifactsOpen(false)}
+                      />
+                    </Suspense>
+                  </div>
+                </>
               )}
             </>
           )}
