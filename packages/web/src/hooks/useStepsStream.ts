@@ -39,7 +39,18 @@ interface UseStepsStreamResult {
  *   5. HTTP GET /steps?offset=X → older page
  *   6. Prepend to steps array
  */
+const MAX_CACHE_SIZE = 50;
 const stepsMemoryCache = new Map<string, { steps: TrajectoryStep[]; baseOffset: number; endOffset: number }>();
+
+function setStepsCache(cascadeId: string, value: { steps: TrajectoryStep[]; baseOffset: number; endOffset: number }) {
+  if (stepsMemoryCache.has(cascadeId)) {
+    stepsMemoryCache.delete(cascadeId);
+  } else if (stepsMemoryCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = stepsMemoryCache.keys().next().value;
+    if (oldestKey) stepsMemoryCache.delete(oldestKey);
+  }
+  stepsMemoryCache.set(cascadeId, value);
+}
 
 export function getStepsFromCache(cascadeId: string): TrajectoryStep[] {
   return stepsMemoryCache.get(cascadeId)?.steps ?? [];
@@ -49,7 +60,7 @@ export function prefetchSteps(cascadeId: string): void {
   if (!cascadeId || stepsMemoryCache.has(cascadeId)) return;
   api.getSteps(cascadeId, 0, 100).then((res) => {
     if (res.steps) {
-      stepsMemoryCache.set(cascadeId, {
+      setStepsCache(cascadeId, {
         steps: res.steps,
         baseOffset: res.offset ?? 0,
         endOffset: (res.offset ?? 0) + res.steps.length,
@@ -100,7 +111,7 @@ export function useStepsStream(
 
   useEffect(() => {
     if (cascadeId && steps.length > 0) {
-      stepsMemoryCache.set(cascadeId, {
+      setStepsCache(cascadeId, {
         steps,
         baseOffset: baseOffsetRef.current,
         endOffset: endOffsetRef.current,

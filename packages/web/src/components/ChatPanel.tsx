@@ -708,10 +708,13 @@ export function ChatPanel({
     onConfirmOptimistic(confirmedOptimisticIds);
   }, [confirmedOptimisticIds, onConfirmOptimistic]);
 
-  const isLocked = wsRunning || hasUnconfirmedOptimistic;
-  const showTyping = wsRunning || hasUnconfirmedOptimistic;
+  const lastMsg = messages[messages.length - 1];
+  const lastIsAssistantWithContent =
+    lastMsg?.role === "assistant" && Boolean(lastMsg.content.trim());
+  const isLocked = wsRunning && !lastIsAssistantWithContent;
+  const showTyping = (wsRunning || hasUnconfirmedOptimistic) && !lastIsAssistantWithContent;
   const liveImplementationPlanActive =
-    showTyping && liveImplementationPlan !== null;
+    (wsRunning || hasUnconfirmedOptimistic) && liveImplementationPlan !== null;
   const pinnedImplementationPlan =
     liveImplementationPlan &&
     (liveImplementationPlanActive ||

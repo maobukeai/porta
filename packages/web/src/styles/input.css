@@ -42,13 +42,13 @@
 }
 
 .chat-input-wrap:focus-within {
-  border-color: var(--border-emphasis);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border-color: rgba(16, 163, 127, 0.45);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(16, 163, 127, 0.25);
 }
 
 [data-theme="light"] .chat-input-wrap:focus-within {
-  border-color: var(--border-emphasis);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  border-color: rgba(16, 163, 127, 0.5);
+  box-shadow: 0 6px 24px rgba(16, 163, 127, 0.15), 0 0 0 2px rgba(16, 163, 127, 0.2);
 }
 
 .chat-input-top {

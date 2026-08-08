@@ -8,6 +8,10 @@ function previewBody(text: string): string {
 
 const gitStatusCache = new Map<string, { data: any; time: number }>();
 
+export function clearGitStatusCache(): void {
+  gitStatusCache.clear();
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -265,46 +269,58 @@ export const api = {
       `/api/git/diff${file ? `?file=${encodeURIComponent(file)}` : "?"}${workspaceUri ? `&workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
     ),
 
-  gitCommit: (body: { workspaceUri?: string; message: string; push?: boolean; files?: string[] }) =>
-    request<{ success?: boolean; commitOutput?: string; pushOutput?: string; error?: string }>("/api/git/commit", {
+  gitCommit: (body: { workspaceUri?: string; message: string; push?: boolean; files?: string[] }) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; commitOutput?: string; pushOutput?: string; error?: string }>("/api/git/commit", {
       method: "POST",
       body: JSON.stringify(body),
-    }),
+    });
+  },
 
-  gitStage: (workspaceUri?: string, file?: string | string[]) =>
-    request<{ success?: boolean; output?: string; error?: string }>("/api/git/stage", {
+  gitStage: (workspaceUri?: string, file?: string | string[]) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/stage", {
       method: "POST",
       body: JSON.stringify({ workspaceUri, file }),
-    }),
+    });
+  },
 
-  gitUnstage: (workspaceUri?: string, file?: string | string[]) =>
-    request<{ success?: boolean; output?: string; error?: string }>("/api/git/unstage", {
+  gitUnstage: (workspaceUri?: string, file?: string | string[]) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/unstage", {
       method: "POST",
       body: JSON.stringify({ workspaceUri, file }),
-    }),
+    });
+  },
 
-  gitDiscard: (workspaceUri?: string, file?: string | string[]) =>
-    request<{ success?: boolean; error?: string }>("/api/git/discard", {
+  gitDiscard: (workspaceUri?: string, file?: string | string[]) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; error?: string }>("/api/git/discard", {
       method: "POST",
       body: JSON.stringify({ workspaceUri, file }),
-    }),
+    });
+  },
 
   gitBranches: (workspaceUri?: string) =>
     request<{ current: string; branches: string[]; error?: string }>(
       `/api/git/branches${workspaceUri ? `?workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
     ),
 
-  gitCheckout: (workspaceUri?: string, branch?: string, create = false) =>
-    request<{ success?: boolean; output?: string; error?: string }>("/api/git/checkout", {
+  gitCheckout: (workspaceUri?: string, branch?: string, create = false) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/checkout", {
       method: "POST",
       body: JSON.stringify({ workspaceUri, branch, create }),
-    }),
+    });
+  },
 
-  gitPull: (workspaceUri?: string) =>
-    request<{ success?: boolean; output?: string; error?: string }>("/api/git/pull", {
+  gitPull: (workspaceUri?: string) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/pull", {
       method: "POST",
       body: JSON.stringify({ workspaceUri }),
-    }),
+    });
+  },
 
   gitAiCommit: (workspaceUri?: string) =>
     request<{ message: string; diffStat?: string }>("/api/git/ai-commit-msg", {

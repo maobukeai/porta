@@ -12,6 +12,7 @@ import {
   IconGear,
   IconPencil,
   IconTrash,
+  IconGemini,
 } from "./Icons";
 
 interface Props {
@@ -399,7 +400,8 @@ export function Sidebar({
           className="sidebar-brand"
           title={connected ? "已连接" : "未连接"}
         >
-          猫步反重力
+          <IconGemini size={18} className="sidebar-brand-icon" />
+          <span>猫步反重力</span>
         </span>
         <button
           className="sidebar-icon-btn"

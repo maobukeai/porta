@@ -1,4 +1,4 @@
-import { IconMenu, IconFolder, IconGemini, IconChevron, IconPlus, IconGear, IconBox, IconGitBranch } from "./Icons";
+import { IconMenu, IconFolder, IconGemini, IconChevron, IconPlus, IconGear, IconBox, IconGitBranch, IconDownload, IconTerminal } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
 
 interface Props {
@@ -11,6 +11,8 @@ interface Props {
   onNewChat?: () => void;
   onOpenSettings?: () => void;
   onToggleArtifacts?: () => void;
+  onOpenExport?: () => void;
+  onOpenReasoningTree?: () => void;
   artifactsCount?: number;
   isArtifactsOpen?: boolean;
 }
