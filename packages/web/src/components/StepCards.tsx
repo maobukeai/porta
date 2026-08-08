@@ -684,38 +684,51 @@ export function SubagentCard({ step, data }: SubagentCardProps) {
           </span>
         )}
       </button>
-      <div className="subagent-list">
-        {display.items.map((item, itemIndex) => (
-          <div
-            className="subagent-entry"
-            key={`${item.role}-${item.typeName}-${itemIndex}`}
-          >
-            <div className="subagent-entry-header">
-              <span className="subagent-entry-role">{item.role}</span>
-              <span className="subagent-type-badge">{item.typeName}</span>
-              {item.model && (
-                <span className="subagent-model">{item.model}</span>
+      <div className="subagent-list subagent-tree-view" style={{ position: "relative", paddingLeft: "4px" }}>
+        {display.items.map((item, itemIndex) => {
+          const isLast = itemIndex === display.items.length - 1;
+          const treeConnector = display.items.length > 1 ? (isLast ? "└─ " : "├─ ") : "└── ";
+          return (
+            <div
+              className="subagent-entry subagent-tree-node"
+              key={`${item.role}-${item.typeName}-${itemIndex}`}
+              style={{
+                borderLeft: "2px solid rgba(255, 255, 255, 0.1)",
+                marginLeft: "8px",
+                paddingLeft: "10px",
+                marginTop: "6px",
+              }}
+            >
+              <div className="subagent-entry-header" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span className="tree-connector" style={{ fontFamily: "monospace", opacity: 0.5, fontSize: "12px" }}>
+                  {treeConnector}
+                </span>
+                <span className="subagent-entry-role" style={{ fontWeight: 600 }}>{item.role}</span>
+                <span className="subagent-type-badge">{item.typeName}</span>
+                {item.model && (
+                  <span className="subagent-model">{item.model}</span>
+                )}
+              </div>
+              {expanded && item.details.length > 0 && (
+                <div className="subagent-details" style={{ marginTop: "6px", marginLeft: "18px" }}>
+                  {item.details.map((itemDetail, detailIndex) => (
+                    <div
+                      className="subagent-detail"
+                      key={`${itemDetail.label}-${detailIndex}`}
+                    >
+                      <div className="subagent-prompt-label">
+                        {itemDetail.label}:
+                      </div>
+                      <pre className="subagent-prompt-text">
+                        {itemDetail.text}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            {expanded && item.details.length > 0 && (
-              <div className="subagent-details">
-                {item.details.map((itemDetail, detailIndex) => (
-                  <div
-                    className="subagent-detail"
-                    key={`${itemDetail.label}-${detailIndex}`}
-                  >
-                    <div className="subagent-prompt-label">
-                      {itemDetail.label}:
-                    </div>
-                    <pre className="subagent-prompt-text">
-                      {itemDetail.text}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

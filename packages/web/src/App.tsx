@@ -21,6 +21,7 @@ import { useWorkspaces, slugFromUri } from "./hooks/useWorkspaces";
 import { useDraftText } from "./hooks/useDraftText";
 import { useChatActions } from "./hooks/useChatActions";
 import { useClientSettings } from "./hooks/useClientSettings";
+import { useVisualViewport } from "./hooks/useVisualViewport";
 import { api } from "./api/client";
 import { isUnconfirmedOptimisticMessage } from "./utils/optimisticMessages";
 import type { AskQuestionEntry, HealthResponse, MediaAttachment } from "./types";
@@ -88,6 +89,7 @@ function ChatView() {
   );
   const { draftText, handleDraftChange } = useDraftText(activeId);
   const { settings, updateSettings } = useClientSettings();
+  useVisualViewport();
 
   // ── Global Theme Application ──
   useEffect(() => {
@@ -382,6 +384,11 @@ function ChatView() {
             isConversationRunning={isRunning}
             browserNotificationsEnabled={settings.browserNotificationsEnabled}
             conversationTitle={headerTitle}
+            onQuoteMessage={(text) =>
+              handleDraftChange(
+                draftText ? `${draftText}\n> ${text}\n` : `> ${text}\n`,
+              )
+            }
             onSidebarRefresh={refresh}
           />
         ) : (

@@ -159,7 +159,10 @@
   border-top: 1px solid var(--border-default);
   border-top-left-radius: 24px;
   border-top-right-radius: 24px;
-  padding: 6px 16px 28px;
+  padding-top: 6px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: max(28px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;

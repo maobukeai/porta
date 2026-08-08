@@ -75,14 +75,14 @@ type SettingsTab =
   | "app"
   | "status";
 
-const SETTINGS_MENU_ITEMS: { id: SettingsTab; label: string }[] = [
-  { id: "account", label: "Account" },
-  { id: "general", label: "General" },
-  { id: "appearance", label: "Appearance" },
-  { id: "models", label: "Models" },
-  { id: "customizations", label: "Customizations" },
-  { id: "browser", label: "Browser" },
-  { id: "app", label: "App" },
+const SETTINGS_MENU_ITEMS: { id: SettingsTab; label: string; mobileLabel: string }[] = [
+  { id: "account", label: "账户设置", mobileLabel: "账户" },
+  { id: "general", label: "常规设置", mobileLabel: "常规" },
+  { id: "appearance", label: "主题外观", mobileLabel: "外观" },
+  { id: "models", label: "模型与用量", mobileLabel: "模型" },
+  { id: "customizations", label: "扩展技能", mobileLabel: "技能" },
+  { id: "browser", label: "浏览器控制", mobileLabel: "浏览器" },
+  { id: "app", label: "应用与缓存", mobileLabel: "应用" },
 ];
 
 export function SettingsPanel({
@@ -232,11 +232,11 @@ export function SettingsPanel({
       <div className="settings-mobile-header">
         <button className="settings-mobile-back-btn" onClick={onBack}>
           <IconChevronLeft size={16} />
-          <span>Back</span>
+          <span>返回</span>
         </button>
         <div className="settings-mobile-header-right">
-          {savedFlash && <span className="settings-saved-badge">✓ Saved</span>}
-          <button className="settings-close-btn" onClick={onBack} aria-label="Close">
+          {savedFlash && <span className="settings-saved-badge">✓ 已保存</span>}
+          <button className="settings-close-btn" onClick={onBack} aria-label="关闭">
             <IconX size={16} />
           </button>
         </div>
@@ -253,7 +253,7 @@ export function SettingsPanel({
                 className={`settings-mobile-tab-btn ${isActive ? "active" : ""}`}
                 onClick={() => setActiveTab(item.id)}
               >
-                <span>{item.label}</span>
+                <span>{item.mobileLabel}</span>
               </button>
             );
           })}
@@ -265,7 +265,7 @@ export function SettingsPanel({
         <div className="settings-sidebar-top">
           {/* Section: Settings */}
           <div className="settings-nav-group">
-            <div className="settings-group-header">Settings</div>
+            <div className="settings-group-header">系统偏好设置</div>
             <nav className="settings-nav">
               {SETTINGS_MENU_ITEMS.map((item) => {
                 const isActive = activeTab === item.id;
@@ -285,7 +285,7 @@ export function SettingsPanel({
           {/* Section: Projects */}
           {workspaces.length > 0 && (
             <div className="settings-nav-group">
-              <div className="settings-group-header">Projects</div>
+              <div className="settings-group-header">工作区项目</div>
               <div className="settings-nav">
                 {displayedProjects.map((ws) => (
                   <button
@@ -304,7 +304,7 @@ export function SettingsPanel({
                     className="settings-nav-item show-all-btn"
                     onClick={() => setShowAllProjects((v) => !v)}
                   >
-                    <span>{showAllProjects ? "Show less" : "Show all"}</span>
+                    <span>{showAllProjects ? "收起" : "展开全部"}</span>
                   </button>
                 )}
               </div>
@@ -313,7 +313,7 @@ export function SettingsPanel({
 
           {/* Section: Not in Project */}
           <div className="settings-nav-group">
-            <div className="settings-group-header">Not in Project</div>
+            <div className="settings-group-header">未关联项目</div>
             <div className="settings-nav">
               <button
                 className="settings-nav-item"
@@ -324,7 +324,7 @@ export function SettingsPanel({
                   onBack();
                 }}
               >
-                <span>Conversations</span>
+                <span>历史对话记录</span>
               </button>
             </div>
           </div>
@@ -335,13 +335,13 @@ export function SettingsPanel({
             className="settings-quick-link"
             onClick={() => setShowShortcutsModal(true)}
           >
-            <span>Shortcuts</span>
+            <span>快捷键指南</span>
           </button>
           <button
             className="settings-quick-link"
             onClick={() => setShowFeedbackModal(true)}
           >
-            <span>Provide Feedback</span>
+            <span>意见与反馈</span>
           </button>
         </div>
       </div>
@@ -351,47 +351,47 @@ export function SettingsPanel({
         <div className="settings-content-header">
           <div>
             <h1 className="settings-main-title">
-              {activeTab === "account" && "Account"}
-              {activeTab === "general" && "General"}
-              {activeTab === "appearance" && "Appearance"}
-              {activeTab === "models" && "Models"}
-              {activeTab === "customizations" && "Customizations"}
-              {activeTab === "browser" && "Browser"}
-              {activeTab === "app" && "App"}
-              {activeTab === "status" && "Status & Health"}
+              {activeTab === "account" && "账户设置"}
+              {activeTab === "general" && "常规设置"}
+              {activeTab === "appearance" && "主题外观"}
+              {activeTab === "models" && "模型与用量"}
+              {activeTab === "customizations" && "扩展技能与指令"}
+              {activeTab === "browser" && "浏览器控制"}
+              {activeTab === "app" && "应用与离线缓存"}
+              {activeTab === "status" && "服务与节点状态"}
             </h1>
             <p className="settings-subtitle">
-              {activeTab === "account" && "Manage your plan, credentials, and general preferences."}
-              {activeTab === "general" && "Configure default planner mode, notifications, and cache."}
-              {activeTab === "appearance" && "Customize your interface theme, colors, and layout."}
-              {activeTab === "models" && "View real-time API models, vision support, and quota limits."}
-              {activeTab === "customizations" && "Manage Antigravity superpowers, MCP tools, and slash commands."}
-              {activeTab === "browser" && "Configure Chrome DevTools inspection and web automation."}
-              {activeTab === "app" && "Porta Web PWA application settings and offline sync."}
-              {activeTab === "status" && "Check language servers, daemon processes, and system workspace nodes."}
+              {activeTab === "account" && "管理您的订阅方案、开发者凭证与账户偏好。"}
+              {activeTab === "general" && "配置默认推理规划模式、桌面推送通知与全局偏好重置。"}
+              {activeTab === "appearance" && "选择界面显示主题（浅色模式、深色模式或跟随系统）。"}
+              {activeTab === "models" && "查看 API 推理模型额度、多模态支持与首选模型。"}
+              {activeTab === "customizations" && "配置 Antigravity 超级技能、MCP 工具服务与快捷指令。"}
+              {activeTab === "browser" && "管理 Chrome DevTools 网页自动化审查与控制引擎。"}
+              {activeTab === "app" && "查看客户端版本信息、Service Worker 缓存与草稿管理。"}
+              {activeTab === "status" && "查看语言服务代理长连接状态与实时项目节点。"}
             </p>
           </div>
           <div className="settings-desktop-header-actions">
-            {savedFlash && <span className="settings-saved-badge">✓ Saved</span>}
-            <button className="settings-close-btn" onClick={onBack} title="Close (Esc)">
+            {savedFlash && <span className="settings-saved-badge">✓ 已保存</span>}
+            <button className="settings-close-btn" onClick={onBack} title="关闭设置 (Esc)">
               <IconX size={18} />
             </button>
           </div>
         </div>
 
-        {/* ── Tab 1: Account (100% Benchmark with Official Software) ── */}
+        {/* ── Tab 1: Account ── */}
         {activeTab === "account" && (
           <div className="settings-section-container">
             {/* General Section */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">General</div>
+              <div className="settings-card-group-title">通用偏好</div>
               <div className="settings-official-card">
                 {/* Row 1: Enable Telemetry */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Enable Telemetry</div>
+                    <div className="settings-official-label">启用遥测数据</div>
                     <div className="settings-official-desc">
-                      When toggled on, Antigravity collects usage data to help Google enhance performance and features.
+                      开启后，Antigravity 将收集匿名使用数据以帮助 Google 提升产品性能与特性。
                     </div>
                   </div>
                   <label className="settings-switch">
@@ -402,7 +402,7 @@ export function SettingsPanel({
                         setEnableTelemetry(e.target.checked);
                         flashSaved();
                       }}
-                      aria-label="Enable Telemetry"
+                      aria-label="启用遥测数据"
                     />
                     <span className="settings-slider" />
                   </label>
@@ -411,9 +411,9 @@ export function SettingsPanel({
                 {/* Row 2: Marketing Emails */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Marketing Emails</div>
+                    <div className="settings-official-label">营销与更新邮件</div>
                     <div className="settings-official-desc">
-                      Receive product updates, tips, and promotions from Google Antigravity via email.
+                      通过电子邮件接收 Google Antigravity 的产品更新、技巧和优惠通知。
                     </div>
                   </div>
                   <label className="settings-switch">
@@ -424,7 +424,7 @@ export function SettingsPanel({
                         setMarketingEmails(e.target.checked);
                         flashSaved();
                       }}
-                      aria-label="Marketing Emails"
+                      aria-label="营销与更新邮件"
                     />
                     <span className="settings-slider" />
                   </label>
@@ -434,28 +434,28 @@ export function SettingsPanel({
 
             {/* Account Section */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Account</div>
+              <div className="settings-card-group-title">账户凭证</div>
               <div className="settings-official-card">
                 {/* Row 1: Your Plan */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Your Plan: Google AI Pro</div>
+                    <div className="settings-official-label">当前订阅方案：Google AI Pro</div>
                     <div className="settings-official-desc">
-                      You can upgrade to a Google AI Ultra plan to receive higher rate limits.
+                      您可以升级至 Google AI Ultra 方案以获取更高的速率限制与并发额度。
                     </div>
                   </div>
                   <button
                     className="btn-google-upgrade"
                     onClick={() => flashSaved()}
                   >
-                    Upgrade
+                    升级方案
                   </button>
                 </div>
 
                 {/* Row 2: Email */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Email</div>
+                    <div className="settings-official-label">绑定邮箱</div>
                     <div className="settings-official-desc email-text">
                       zs2026958851@gmail.com
                     </div>
@@ -464,7 +464,7 @@ export function SettingsPanel({
                     className="btn-google-signout"
                     onClick={() => flashSaved()}
                   >
-                    Sign Out
+                    退出登录
                   </button>
                 </div>
               </div>
@@ -472,14 +472,14 @@ export function SettingsPanel({
 
             {/* Footer terms */}
             <div className="settings-official-footer">
-              <span>By using this app, you agree to its </span>
+              <span>使用本应用即表示您同意其 </span>
               <a
                 href="https://policies.google.com/terms"
                 target="_blank"
                 rel="noreferrer"
                 className="settings-terms-link"
               >
-                Terms of Service
+                服务条款 (Terms of Service)
               </a>
             </div>
           </div>
@@ -546,25 +546,26 @@ export function SettingsPanel({
         {activeTab === "appearance" && (
           <div className="settings-section-container">
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Appearance</div>
+              <div className="settings-card-group-title">外观模式</div>
               <div className="settings-card-row">
                 <div className="settings-card-info">
-                  <div className="settings-card-label">Appearance</div>
+                  <div className="settings-card-label">主题外观</div>
                   <div className="settings-card-desc">
-                    Select light, dark, or inherit system settings.
+                    选择浅色、深色或跟随系统外观主题。
                   </div>
                 </div>
-                <div className="theme-segmented-control" role="radiogroup" aria-label="Appearance theme">
+                <div className="theme-segmented-control" role="radiogroup" aria-label="主题外观">
                   <button
                     type="button"
                     className={`theme-segment-btn ${
                       (settings.theme ?? "system") === "system" ? "active" : ""
                     }`}
                     onClick={() => handleThemeChange("system")}
-                    title="System"
-                    aria-label="System"
+                    title="跟随系统"
+                    aria-label="跟随系统"
                   >
                     <IconMonitor size={15} />
+                    <span>跟随系统</span>
                   </button>
                   <button
                     type="button"
@@ -572,10 +573,11 @@ export function SettingsPanel({
                       settings.theme === "light" ? "active" : ""
                     }`}
                     onClick={() => handleThemeChange("light")}
-                    title="Light"
-                    aria-label="Light"
+                    title="浅色"
+                    aria-label="浅色"
                   >
                     <IconSun size={15} />
+                    <span>浅色</span>
                   </button>
                   <button
                     type="button"
@@ -583,10 +585,11 @@ export function SettingsPanel({
                       settings.theme === "dark" ? "active" : ""
                     }`}
                     onClick={() => handleThemeChange("dark")}
-                    title="Dark"
-                    aria-label="Dark"
+                    title="深色"
+                    aria-label="深色"
                   >
                     <IconMoon size={15} />
+                    <span>深色</span>
                   </button>
                 </div>
               </div>
@@ -594,25 +597,25 @@ export function SettingsPanel({
           </div>
         )}
 
-        {/* ── Tab 4: Models & Usage (100% Parity with Official Screenshot) ── */}
+        {/* ── Tab 4: Models & Usage ── */}
         {activeTab === "models" && (
           <div className="settings-section-container">
             {/* Section 1: Plan */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Plan</div>
+              <div className="settings-card-group-title">订阅方案</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Your Plan: Google AI Pro</div>
+                    <div className="settings-official-label">当前订阅方案：Google AI Pro</div>
                     <div className="settings-official-desc">
-                      You can upgrade to a Google AI Ultra plan to receive higher rate limits.
+                      您可以升级至 Google AI Ultra 方案以获取更高的速率限制与并发额度。
                     </div>
                   </div>
                   <button
                     className="btn-google-upgrade"
                     onClick={() => flashSaved()}
                   >
-                    Upgrade
+                    升级方案
                   </button>
                 </div>
               </div>
@@ -620,13 +623,13 @@ export function SettingsPanel({
 
             {/* Section 2: Model Credits */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Model Credits</div>
+              <div className="settings-card-group-title">AI 模型积分</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Enable AI Credit Overages</div>
+                    <div className="settings-official-label">启用 AI 积分超额扣算</div>
                     <div className="settings-official-desc">
-                      When toggled on, Antigravity will use your AI credits to fulfill model requests once you're out of model quota. Antigravity will always use your model quota first before using AI credits.
+                      开启后，当模型用量额度耗尽时，Antigravity 将使用您的 AI 积分继续履行请求。系统始终优先扣除常规配额。
                     </div>
                   </div>
                   <label className="settings-switch">
@@ -634,7 +637,7 @@ export function SettingsPanel({
                       type="checkbox"
                       defaultChecked={false}
                       onChange={() => flashSaved()}
-                      aria-label="Enable AI Credit Overages"
+                      aria-label="启用 AI 积分超额扣算"
                     />
                     <span className="settings-slider" />
                   </label>
@@ -645,16 +648,16 @@ export function SettingsPanel({
             {/* Section 3: Gemini Models */}
             <div className="settings-card-group">
               <div className="settings-card-group-title header-with-icon">
-                <span>Gemini Models</span>
+                <span>Gemini 系列模型配额</span>
                 <IconInfo size={13} className="info-icon" />
               </div>
               <div className="settings-official-card">
                 {/* Row 1: Weekly Limit */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Weekly Limit Remaining</div>
+                    <div className="settings-official-label">每周剩余额度</div>
                     <div className="settings-official-desc">
-                      You have used some of your weekly limit, it will fully refresh in 6 days, 23 hours.
+                      您已使用部分每周额度，将在 6 天 23 小时后重置刷新。
                     </div>
                   </div>
                   <div className="quota-ring-container">
@@ -680,9 +683,9 @@ export function SettingsPanel({
                 {/* Row 2: Five Hour Limit */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Five Hour Limit Remaining</div>
+                    <div className="settings-official-label">5小时动态剩余额度</div>
                     <div className="settings-official-desc">
-                      You have used some of your 5-hour limit, it will fully refresh in 4 hours, 37 minutes.
+                      您已使用部分 5 小时额度，将在 4 小时 37 分钟后刷新。
                     </div>
                   </div>
                   <div className="quota-ring-container">
@@ -710,16 +713,16 @@ export function SettingsPanel({
             {/* Section 4: Claude and GPT models */}
             <div className="settings-card-group">
               <div className="settings-card-group-title header-with-icon">
-                <span>Claude and GPT models</span>
+                <span>Claude 与 GPT 系列模型配额</span>
                 <IconInfo size={13} className="info-icon" />
               </div>
               <div className="settings-official-card">
                 {/* Row 1: Weekly Limit */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Weekly Limit Remaining</div>
+                    <div className="settings-official-label">每周剩余额度</div>
                     <div className="settings-official-desc">
-                      You have not used any of your weekly limit, it will fully refresh in 7 days.
+                      您尚未动用每周额度，将在 7 天后完整重置。
                     </div>
                   </div>
                   <div className="quota-ring-container">
@@ -745,9 +748,9 @@ export function SettingsPanel({
                 {/* Row 2: Five Hour Limit */}
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Five Hour Limit Remaining</div>
+                    <div className="settings-official-label">5小时动态剩余额度</div>
                     <div className="settings-official-desc">
-                      You have not used any of your 5-hour limit, it will fully refresh in 5 hours.
+                      您尚未动用 5 小时额度，将在 5 小时后刷新。
                     </div>
                   </div>
                   <div className="quota-ring-container">
@@ -774,13 +777,13 @@ export function SettingsPanel({
 
             {/* Section 5: Default Model Preference */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Default Model Preference</div>
+              <div className="settings-card-group-title">默认模型偏好</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Default Model Selection</div>
+                    <div className="settings-official-label">首选模型选择</div>
                     <div className="settings-official-desc">
-                      Automatically bind this model for newly created conversation sessions
+                      新建对话会话时将自动优先绑定此模型
                     </div>
                   </div>
                   <select
@@ -788,7 +791,7 @@ export function SettingsPanel({
                     value={settings.defaultModel ?? "__none__"}
                     onChange={(e) => handleModelChange(e.target.value)}
                   >
-                    <option value="__none__">Auto Recommend (Gemini 3.6 Flash / 3.1 Pro)</option>
+                    <option value="__none__">自动智能推荐 (最新 3.6 Flash / 3.1 Pro)</option>
                     {parsedModels.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.fullName}
@@ -806,7 +809,7 @@ export function SettingsPanel({
           <div className="settings-section-container">
             {/* 1. Superpowers Skills */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Superpowers & Agent Skills</div>
+              <div className="settings-card-group-title">超级技能库 (Superpowers)</div>
               <div className="customizations-list">
                 {[
                   {
@@ -854,7 +857,7 @@ export function SettingsPanel({
                       </div>
                       <div className="customization-card-desc">{s.desc}</div>
                     </div>
-                    <span className="customization-status-badge">● Active</span>
+                    <span className="customization-status-badge">● 已激活</span>
                   </div>
                 ))}
               </div>
@@ -862,7 +865,7 @@ export function SettingsPanel({
 
             {/* 2. MCP Server Tools */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">MCP Servers & Tools (模型上下文协议)</div>
+              <div className="settings-card-group-title">MCP 服务与工具 (Model Context Protocol)</div>
               <div className="customizations-list">
                 {[
                   {
@@ -890,11 +893,11 @@ export function SettingsPanel({
                     <div className="customization-card-left">
                       <div className="customization-card-title">
                         <span className="mcp-name-text">{m.name}</span>
-                        <span className="mcp-tag">MCP Tool</span>
+                        <span className="mcp-tag">MCP 工具</span>
                       </div>
                       <div className="customization-card-desc">{m.desc}</div>
                     </div>
-                    <span className="customization-status-badge mcp">● Connected</span>
+                    <span className="customization-status-badge mcp">● 已连接</span>
                   </div>
                 ))}
               </div>
@@ -902,7 +905,7 @@ export function SettingsPanel({
 
             {/* 3. Slash Commands */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Slash Commands (快捷斜杠指令集)</div>
+              <div className="settings-card-group-title">快捷斜杠指令集 (Slash Commands)</div>
               <div className="customizations-grid">
                 {[
                   { cmd: "/goal", desc: "通宵超长任务自治推进，达成目标前绝不终止" },
@@ -943,39 +946,39 @@ export function SettingsPanel({
           <div className="settings-section-container">
             {/* Version & Build Info */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Application Info</div>
+              <div className="settings-card-group-title">应用与版本信息</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Porta Web Version</div>
+                    <div className="settings-official-label">Porta Web 客户端版本</div>
                     <div className="settings-official-desc">
-                      Progressive Web App (PWA) client for Google Antigravity & Codex
+                      专为 Google Antigravity & Codex 打造的渐进式 Web 应用 (PWA)
                     </div>
                   </div>
-                  <div className="settings-card-badge-val">v1.2.0 (Latest)</div>
+                  <div className="settings-card-badge-val">v1.2.0 (最新版)</div>
                 </div>
 
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Runtime Environment</div>
+                    <div className="settings-official-label">运行时环境</div>
                     <div className="settings-official-desc">
-                      React 19 · TypeScript · Vite PWA · Workbox Service Worker
+                      React 19 · TypeScript · Vite PWA · Workbox 离线内核
                     </div>
                   </div>
-                  <span className="settings-status-online">● Production</span>
+                  <span className="settings-status-online">● 正式生产环境</span>
                 </div>
               </div>
             </div>
 
             {/* Offline & Cache Management */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Offline & PWA Storage</div>
+              <div className="settings-card-group-title">离线缓存与存储</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Service Worker Offline Cache</div>
+                    <div className="settings-official-label">Service Worker 离线缓存</div>
                     <div className="settings-official-desc">
-                      Cache static assets and conversation UI for instant offline launch
+                      缓存静态资源与对话界面，实现离线秒级启动
                     </div>
                   </div>
                   <button
@@ -989,15 +992,15 @@ export function SettingsPanel({
                       flashSaved();
                     }}
                   >
-                    Clear Cache
+                    清除缓存
                   </button>
                 </div>
 
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Auto Check for Updates</div>
+                    <div className="settings-official-label">自动检测更新</div>
                     <div className="settings-official-desc">
-                      Automatically check and apply updates when a new version is published
+                      新版本发布时自动接收并应用更新
                     </div>
                   </div>
                   <label className="settings-switch">
@@ -1005,7 +1008,7 @@ export function SettingsPanel({
                       type="checkbox"
                       defaultChecked
                       onChange={() => flashSaved()}
-                      aria-label="Auto Check Updates"
+                      aria-label="自动检测更新"
                     />
                     <span className="settings-slider" />
                   </label>
@@ -1015,13 +1018,13 @@ export function SettingsPanel({
 
             {/* Data & Privacy */}
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Data & Storage</div>
+              <div className="settings-card-group-title">数据与本地存储</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Local Drafts & Settings</div>
+                    <div className="settings-official-label">本地草稿与偏好设置</div>
                     <div className="settings-official-desc">
-                      Preferences and uncommitted input text stored in browser localStorage
+                      存储在浏览器 localStorage 中的草稿与参数设置
                     </div>
                   </div>
                   <button
@@ -1031,7 +1034,7 @@ export function SettingsPanel({
                       flashSaved();
                     }}
                   >
-                    Reset Drafts
+                    重置草稿
                   </button>
                 </div>
               </div>
@@ -1043,26 +1046,26 @@ export function SettingsPanel({
         {activeTab === "status" && (
           <div className="settings-section-container">
             <div className="settings-card-group">
-              <div className="settings-card-group-title">Antigravity Service Nodes</div>
+              <div className="settings-card-group-title">Antigravity 服务端节点</div>
               <div className="settings-official-card">
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Language Server Proxy</div>
+                    <div className="settings-official-label">语言服务代理</div>
                     <div className="settings-official-desc">
-                      WebSocket and REST bridge connecting to local language server
+                      连接本地语言服务的 WebSocket 与 REST 代理通信桥
                     </div>
                   </div>
-                  <span className="settings-status-online">● Connected (200 OK)</span>
+                  <span className="settings-status-online">● 连接正常 (200 OK)</span>
                 </div>
 
                 <div className="settings-official-row">
                   <div className="settings-official-info">
-                    <div className="settings-official-label">Active Workspaces Count</div>
+                    <div className="settings-official-label">已监控工作区总数</div>
                     <div className="settings-official-desc">
-                      Total workspace repositories monitored by Language Server
+                      语言服务当前实时监控的项目工作区数量
                     </div>
                   </div>
-                  <div className="settings-card-badge-val">{workspaces.length} Workspaces</div>
+                  <div className="settings-card-badge-val">{workspaces.length} 个工作区</div>
                 </div>
               </div>
             </div>

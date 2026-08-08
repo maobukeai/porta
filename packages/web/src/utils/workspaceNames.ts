@@ -6,7 +6,7 @@ interface WorkspaceNameOptions {
   collapseAntigravityPlayground?: boolean;
 }
 
-function safeDecodeUriComponent(value: string): string {
+export function safeDecodeUriComponent(value: string): string {
   try {
     return decodeURIComponent(value);
   } catch {

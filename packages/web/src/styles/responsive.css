@@ -11,10 +11,75 @@
 @media (max-width: 480px) {
   :root {
     --sidebar-width: 80vw;
-    --header-height: 44px;
+    --header-height: 48px;
   }
 
-  /* ── Sidebar becomes a half-width drawer overlay ── */
+  /* ── Touch target & hit area expansion (minimum 44x44pt) ── */
+
+  .header-icon-btn,
+  .mobile-menu-btn,
+  .chat-action-icon-btn,
+  .chat-send-btn,
+  .chat-stop-btn,
+  .msg-action-btn,
+  .model-selector-btn {
+    position: relative;
+    touch-action: manipulation;
+  }
+
+  .header-icon-btn::before,
+  .mobile-menu-btn::before,
+  .chat-action-icon-btn::before,
+  .chat-send-btn::before,
+  .chat-stop-btn::before,
+  .msg-action-btn::before,
+  .model-selector-btn::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  /* Active press visual feedback */
+  .header-icon-btn:active,
+  .mobile-menu-btn:active,
+  .chat-action-icon-btn:active,
+  .chat-send-btn:active,
+  .chat-stop-btn:active,
+  .msg-action-btn:active,
+  .model-selector-btn:active,
+  .main-header-project-btn:active,
+  .main-header-title-wrap:active {
+    transform: scale(0.94);
+    opacity: 0.82;
+    transition: transform 0.08s ease, opacity 0.08s ease;
+  }
+
+  /* ── Always show item action buttons (pencil rename & trash delete) on touch devices / mobile ── */
+  .sidebar-item .sidebar-item-action-btn {
+    display: flex !important;
+    opacity: 0.75;
+    width: 26px;
+    height: 26px;
+  }
+
+  .sidebar-item-action-btn:active {
+    opacity: 1 !important;
+    background: var(--bg-hover);
+  }
+
+  .sidebar-item-action-btn.danger:active {
+    background: rgb(var(--c-error) / 0.16);
+    color: rgb(var(--c-error));
+  }
+
+  /* ── Sidebar becomes a half-width drawer overlay with safe area ── */
 
   .sidebar {
     position: fixed;
@@ -29,6 +94,8 @@
     border-right: 1px solid var(--border-subtle);
     transform: translateX(0);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .sidebar.sidebar-collapsed {
@@ -45,8 +112,11 @@
     position: fixed;
     inset: 0;
     z-index: 899;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     animation: fade-in 200ms ease-out;
+    touch-action: manipulation;
   }
 
   /* Hide the collapsed icon strip on mobile */
@@ -61,10 +131,13 @@
     display: flex;
   }
 
-  /* ── Main header ── */
+  /* ── Main header with iOS safe area top offset ── */
 
   .main-header {
-    padding: 0 12px;
+    padding-top: env(safe-area-inset-top);
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    height: calc(var(--header-height) + env(safe-area-inset-top));
     gap: 8px;
   }
 
@@ -193,10 +266,13 @@
     animation: fade-in 150ms ease-out;
   }
 
-  /* ── Chat input area ── */
+  /* ── Chat input area with safe-area-inset-bottom ── */
 
   .chat-input-area {
-    padding: 4px 8px 8px;
+    padding-top: 4px;
+    padding-left: max(8px, env(safe-area-inset-left));
+    padding-right: max(8px, env(safe-area-inset-right));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
   .chat-input-wrap {
@@ -207,9 +283,9 @@
   }
 
   .chat-input {
-    font-size: 14px; /* keep 14px minimum for iOS to prevent zoom on focus */
+    font-size: 16px; /* 16px minimum required on iOS mobile to prevent auto-zoom on focus */
     min-height: 22px;
-    max-height: 100px;
+    max-height: 120px;
     line-height: 1.4;
   }
 

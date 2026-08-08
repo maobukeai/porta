@@ -19,6 +19,8 @@ import {
 } from "../utils/optimisticMessages";
 import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
+import { useMessageTouchGesture } from "../hooks/useMessageTouchGesture";
+import { MessageActionSheet } from "./MessageActionSheet";
 import {
   AskQuestionCard,
   CommandCard,
@@ -74,6 +76,7 @@ interface Props {
   isConversationRunning?: boolean;
   browserNotificationsEnabled?: boolean;
   conversationTitle?: string;
+  onQuoteMessage?: (text: string) => void;
   /** Called when the WS reports the agent went idle — triggers sidebar refresh. */
   onSidebarRefresh?: () => void;
 }
@@ -411,6 +414,7 @@ interface MessageBubbleProps {
   suppressImplementationPlan?: boolean;
   onRevert: (stepIndex: number, editText?: string) => void;
   onImageClick: (src: string) => void;
+  onQuote?: (text: string) => void;
 }
 
 const MessageBubble = memo(
@@ -421,7 +425,13 @@ const MessageBubble = memo(
     suppressImplementationPlan = false,
     onRevert,
     onImageClick,
+    onQuote,
   }: MessageBubbleProps) {
+    const [actionSheetOpen, setActionSheetOpen] = useState(false);
+    const touchHandlers = useMessageTouchGesture({
+      onLongPress: () => setActionSheetOpen(true),
+    });
+
     const renderedContent = useMemo(
       () => (msg.content ? renderMarkdown(msg.content) : ""),
       [msg.content],
@@ -440,6 +450,7 @@ const MessageBubble = memo(
     return (
       <div
         className={`message ${msg.role}${isUnconfirmed ? " unconfirmed" : ""}`}
+        {...touchHandlers}
       >
         {msg.role === "assistant" && (
           <div className="message-avatar" title="Gemini AI">
@@ -498,6 +509,18 @@ const MessageBubble = memo(
             </div>
           )}
         </div>
+
+        {actionSheetOpen && (
+          <MessageActionSheet
+            open={actionSheetOpen}
+            onClose={() => setActionSheetOpen(false)}
+            messageText={msg.content || ""}
+            isUserMessage={msg.role === "user"}
+            stepIndex={msg.stepIndex}
+            onQuote={onQuote}
+            onRevert={onRevert}
+          />
+        )}
       </div>
     );
   },
@@ -580,6 +603,7 @@ export function ChatPanel({
   isConversationRunning = false,
   browserNotificationsEnabled = false,
   conversationTitle,
+  onQuoteMessage,
   onSidebarRefresh,
 }: Props) {
   const {
@@ -899,6 +923,7 @@ export function ChatPanel({
                 }
                 onRevert={onRevert}
                 onImageClick={setLightboxSrc}
+                onQuote={onQuoteMessage}
               />
             </Fragment>
           );

@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import {
   workspaceNameFromMetadata,
   workspaceNameFromUri,
+  safeDecodeUriComponent,
 } from "../utils/workspaceNames";
 
 /** Extract a short slug from a workspace URI: file:///home/user/work/porta → porta */
@@ -15,7 +16,35 @@ function uriFromSlug(
   slug: string,
   workspaces: { uri: string; name: string }[],
 ): string | undefined {
-  return workspaces.find((w) => slugFromUri(w.uri) === slug)?.uri;
+  if (!slug || workspaces.length === 0) return undefined;
+
+  const decodedSlug = safeDecodeUriComponent(slug).toLowerCase();
+
+  // 1. Direct match by workspace name or URI slug
+  const directMatch = workspaces.find((w) => {
+    const nameLower = safeDecodeUriComponent(w.name).toLowerCase();
+    const uriSlugLower = safeDecodeUriComponent(workspaceNameFromUri(w.uri)).toLowerCase();
+    return nameLower === decodedSlug || uriSlugLower === decodedSlug;
+  });
+
+  if (directMatch) return directMatch.uri;
+
+  // 2. Partial / substring match
+  const partialMatch = workspaces.find((w) => {
+    const nameLower = safeDecodeUriComponent(w.name).toLowerCase();
+    const uriSlugLower = safeDecodeUriComponent(workspaceNameFromUri(w.uri)).toLowerCase();
+    return (
+      nameLower.includes(decodedSlug) ||
+      decodedSlug.includes(nameLower) ||
+      uriSlugLower.includes(decodedSlug) ||
+      decodedSlug.includes(uriSlugLower)
+    );
+  });
+
+  if (partialMatch) return partialMatch.uri;
+
+  // 3. Fallback to active workspace so user is never created in unassociated 'brain' folder
+  return workspaces[0]?.uri;
 }
 
 interface ConversationEntry {

@@ -19,6 +19,7 @@ import {
 } from "./Icons";
 import type { MediaAttachment } from "../types";
 import { prepareAttachments } from "../utils/imageAttachments";
+import { useSpeechToText } from "../hooks/useSpeechToText";
 import { DEFAULT_MODEL } from "../constants";
 const ALLOWED_TYPES = [
   "image/png",
@@ -258,6 +259,14 @@ export function ChatInput({
   useEffect(() => {
     setPlannerType(effectivePlanner);
   }, [effectivePlanner]);
+
+  const { isListening, isSupported: isSpeechSupported, toggleListening } =
+    useSpeechToText({
+      onTranscript: (text) => {
+        onDraftChange(draft ? `${draft} ${text}` : text);
+      },
+    });
+
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -719,6 +728,23 @@ export function ChatInput({
             >
               <IconPaperclip size={18} />
             </button>
+
+            {isSpeechSupported && (
+              <button
+                className={`chat-action-icon-btn ${isListening ? "listening" : ""}`}
+                onClick={toggleListening}
+                title={
+                  isListening ? "正在语音识别（再次点击停止）" : "语音输入"
+                }
+                disabled={inputDisabled}
+                style={{
+                  color: isListening ? "#ef4444" : undefined,
+                  animation: isListening ? "pulse 1.5s infinite" : undefined,
+                }}
+              >
+                🎤
+              </button>
+            )}
             <input
               ref={fileInputRef}
               type="file"

@@ -1,5 +1,7 @@
 import { memo, useState, useMemo } from "react";
 import { IconCopy, IconCheck } from "./Icons";
+import { triggerHaptic } from "../utils/haptics";
+import { DiagramModal } from "./DiagramModal";
 
 /**
  * Split an HTML string into alternating segments of "non-pre" and "pre" blocks.
@@ -53,8 +55,6 @@ function splitPreBlocks(html: string): Segment[] {
   return segments;
 }
 
-import { triggerHaptic } from "../utils/haptics";
-
 /** Extract programming language from class or tag in html */
 function extractLanguage(html: string): string {
   const match = html.match(/class=["'][^"']*language-([a-zA-Z0-9_-]+)[^"']*["']/i);
@@ -72,36 +72,68 @@ function extractLanguage(html: string): string {
   return "CODE";
 }
 
-/** Copy button for code blocks */
-function CodeCopyBtn({ text, lang }: { text: string; lang: string }) {
+/** Copy & Zoom header for code blocks */
+function CodeHeader({
+  text,
+  lang,
+  rawHtml,
+}: {
+  text: string;
+  lang: string;
+  rawHtml: string;
+}) {
   const [copied, setCopied] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   return (
     <div className="code-block-header">
       <span className="code-lang-tag">{lang}</span>
-      <button
-        className={`code-copy-btn ${copied ? "copied" : ""}`}
-        title="复制代码"
-        onClick={(e) => {
-          e.stopPropagation();
-          triggerHaptic("success");
-          navigator.clipboard.writeText(text).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          });
-        }}
-      >
-        {copied ? (
-          <>
-            <IconCheck size={12} />
-            <span>已复制</span>
-          </>
-        ) : (
-          <>
-            <IconCopy size={12} />
-            <span>复制</span>
-          </>
-        )}
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <button
+          className="code-copy-btn"
+          title="全屏/手势缩放查看"
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerHaptic("medium");
+            setZoomOpen(true);
+          }}
+        >
+          🔍 缩放全屏
+        </button>
+        <button
+          className={`code-copy-btn ${copied ? "copied" : ""}`}
+          title="复制代码"
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerHaptic("success");
+            navigator.clipboard.writeText(text).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+        >
+          {copied ? (
+            <>
+              <IconCheck size={12} />
+              <span>已复制</span>
+            </>
+          ) : (
+            <>
+              <IconCopy size={12} />
+              <span>复制</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {zoomOpen && (
+        <DiagramModal
+          open={zoomOpen}
+          onClose={() => setZoomOpen(false)}
+          title={`${lang} 代码与结构图预览`}
+          code={text}
+          rawHtml={rawHtml}
+        />
+      )}
     </div>
   );
 }
@@ -139,9 +171,10 @@ export const MarkdownContent = memo(function MarkdownContent({
         return (
           <div key={i} className="code-block-wrapper" style={{ position: "relative" }}>
             {!skipCopyButtons && (
-              <CodeCopyBtn
+              <CodeHeader
                 text={seg.content}
                 lang={extractLanguage(seg.rawHtml)}
+                rawHtml={seg.rawHtml}
               />
             )}
             <pre
