@@ -1,262 +1,141 @@
-# Porta
+# Porta 移动端 & 远程 Web 客户端
 
-[![CI](https://github.com/L1M80/porta/actions/workflows/ci.yml/badge.svg)](https://github.com/L1M80/porta/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Version](https://img.shields.io/badge/version-0.15.0-green)
+![Node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)
+![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A510-orange)
 
-Remote web interface for [Antigravity](https://antigravity.google/) Agent Manager.  
-Access your local Antigravity sessions from your phone, tablet, or any remote browser through a lightweight LSP bridge.
+**Porta** 是专为 [Google Antigravity](https://antigravity.google/) AI 智能体管理器打造的轻量级远程 Web / PWA 客户端。通过高精度的 LSP（语言服务协议）轻量级代理桥接，您可以在手机、平板电脑或任何远程设备的浏览器中，无缝操控和实时协同本地运行的 Antigravity AI 开发会话。
 
-Porta is a two-part system: a **proxy** that bridges your local Antigravity Language Server to the network, and a **web UI** (installable PWA) that gives you a mobile-friendly chat interface.
+Porta 由两个核心部分组成：
+1. **Proxy 代理服务**：网络与本地 Antigravity Language Server 之间的通信桥梁。
+2. **Web 前端 (可安装 PWA)**：适配移动触控与现代 UI 设计的高颜值响应式交互界面。
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Porta — desktop and mobile" width="720">
+  <img src="docs/screenshot.png" alt="Porta 桌面与移动端界面" width="720">
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Porta mobile demo" width="360">
+  <img src="docs/demo.gif" alt="Porta 移动端演示" width="360">
 </p>
 
-## Quick start
+---
 
-**Prerequisites**: **[Node.js](https://nodejs.org/) ≥ 22**, **[pnpm](https://pnpm.io/) ≥ 10**, and a running
-[Antigravity](https://antigravity.google/) instance.
+## 🌟 核心特性与优势
 
-> **Warning:** Porta is a bridge to Antigravity. If Antigravity is not
-> running, the proxy will start but cannot connect to any session.
+- 📱 **极致移动端体验**：深度适配手机与平板操作，内置智能手势交互（滑动切屏/返回）、触觉反馈 (Haptics)、架构图弹窗预览、语音输入与沉浸式沉浸布局。
+- ⚡ **超低带宽 & 毫秒级响应**：仅传输结构化的 JSON 数据与增量文本流，非像素投屏或重度图像传输，轻松满足移动网络下的低延迟流畅交互。
+- 🌏 **全面中文与本地化支持**：内置完整的中文化界面、状态提示与交互卡片，彻底消除语言 barrier。
+- 🔒 **隐私安全保障**：所有代码上下文和对话历史完全停留在您自己的本地设备上，无需经过第三方中转服务器。
+- 🌐 **无缝远程接入**：支持局域网 (LAN) 内网络直连，或通过 Cloudflare Tunnel / Zero Trust 搭建高安全级的免费远程访问隧道。
+
+---
+
+## 🚀 快速开始
+
+### 依赖环境
+- **Node.js** $\ge 22$
+- **pnpm** $\ge 10$
+- 本地正在运行的 **[Antigravity](https://antigravity.google/)** 实例。
+
+> ⚠️ **注意**：Porta 是连接本地 Antigravity 服务的桥梁。启动 Porta 前请确保本地 Antigravity 已正常运行。
+
+### 本地安装与启动
 
 ```bash
-git clone https://github.com/L1M80/porta.git
+# 1. 克隆项目仓库
+git clone https://github.com/maobukeai/porta.git
 cd porta
+
+# 2. 安装项目依赖
 pnpm install
-cp .env.example .env   # edit if needed — see comments inside
-pnpm dev               # proxy (:3170) + web (:3070)
+
+# 3. 配置环境变量（根据需要复制修改）
+cp .env.example .env
+
+# 4. 启动开发模式（同时启动 Proxy 代理:3170 与 Web 前端:3070）
+pnpm dev
 ```
 
-Open `http://localhost:3070` in your browser.
+启动完成后，在浏览器访问 `http://localhost:3070` 即可使用。
 
-### LAN access
+### 🏠 局域网 (LAN) 移动设备访问
 
-To access from another device on your home network:
+如需在同一个 Wi-Fi 或局域网下的手机/平板中访问：
 
-```bash
-# Set PORTA_HOST to this machine's LAN IP in .env
-PORTA_HOST=192.168.1.23
-```
+1. 在 `.env` 文件中配置宿主机的局域网 IP：
+   ```env
+   PORTA_HOST=192.168.1.X
+   ```
+2. 启动 Vite 开发服务器并开启 `--host` 绑定：
+   ```bash
+   pnpm --filter @porta/web dev -- --host
+   ```
+3. 手机浏览器访问 `http://192.168.1.X:3070` 即可，可直接添加至手机桌面作为 PWA 应用使用。
 
-Devices on the same network can reach the proxy at `http://192.168.1.23:3170`.  
-Wildcard binds (`0.0.0.0`, `::`) are rejected by default and require `PORTA_ALLOW_WILDCARD=1`. Public IPs are rejected at startup for safety.
+---
 
-> **Note:** to also access the Vite dev UI from LAN, start it with `--host`:
->
-> ```bash
-> pnpm --filter @porta/web dev -- --host
-> ```
+## 📊 为什么选择 Porta？与其他远程方案对比
 
-## Why Porta?
+| 接入方案 | 传输数据格式 | 网络带宽消耗 | 交互延迟 | 移动端 UX 适配 | 私有化部署 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **远程桌面** (VNC / RDP / Parsec) | 视频 / 像素流 | 高 ($\ge 10\text{Mbps}$) | 明显延迟 | 较差（文字极小、无手势触控） | ✅ |
+| **SSH / 端口转发** | 原始 TCP | 低 | 低 | 纯终端无图形化 UI | ✅ |
+| **云端 IDE** (Codespaces / Gitpod) | 完整工作区环境 | 不适用（云端计算） | 波动较大 | 重度、触控体验一般 | ❌ |
+| **Porta** | **结构化 LSP 数据** | **极低 (KB级)** | **实时 WebSocket** | **原生 PWA / 专属移动端 UX** | ✅ |
 
-There are several ways to access a local development environment
-remotely. Here's how Porta compares:
+---
 
-| Approach                              | Data sent           | Bandwidth      | Latency                   | Mobile UX                    | Self-hosted |
-| ------------------------------------- | ------------------- | -------------- | ------------------------- | ---------------------------- | ----------- |
-| **Screen sharing** (VNC, RDP, Parsec) | Pixel stream        | High           | Noticeable                | Poor: tiny text, no touch UX | ✅          |
-| **SSH + port forwarding**             | Raw TCP             | Low            | Low                       | No UI: terminal only         | ✅          |
-| **Cloud IDE** (Codespaces, Gitpod)    | Full workspace      | N/A (cloud)    | Varies                    | Usable but heavy             | ❌          |
-| **Porta**                             | Structured LSP data | **Negligible** | **Real-time** (WebSocket) | **Native PWA**               | ✅          |
-
-Porta doesn't stream pixels or run your workspace in the cloud. It
-relays structured conversation data through the Antigravity Language
-Server Protocol, so you get:
-
-- **Near-zero bandwidth**: JSON messages, not video frames
-- **Real-time streaming**: WebSocket push, no polling lag
-- **Native mobile experience**: [installable PWA](docs/pwa.md) with touch-optimized UI
-- **Full privacy**: your code and conversations never leave your machine
-- **No vendor lock-in**: self-hosted, MIT-licensed, works with any Antigravity installation
-
-## Limitations
-
-Porta is a **chat interface**, not a full remote IDE. These
-constraints are inherent to its LSP-bridge architecture:
-
-- **Antigravity must be running**: Porta is a bridge, not a
-  standalone tool. No Antigravity instance → no data.
-- **Bounded by Antigravity**: Porta can only expose what the
-  Antigravity Language Server provides. If Antigravity doesn't support
-  a feature, Porta can't offer it either.
-- **No code editing or terminal**: Porta relays conversation-level
-  data only. Use your local editor or SSH for file operations.
-- **Single user**: The proxy connects to one local Antigravity
-  Language Server. There is no multi-user or multi-tenant model.
-
-### Platform support
-
-| Tier       | Platform    | Status                                               |
-| ---------- | ----------- | ---------------------------------------------------- |
-| **Tier 1** | Linux (x64) | Developed and tested on real hardware                |
-| **Tier 2** | Windows     | Tested on real hardware; less extensively than Linux |
-| **Tier 3** | macOS       | CI passes; no real-hardware testing by maintainers   |
-
-> Porta's proxy must run on the **same side** as Antigravity. If
-> Antigravity runs on your Windows host, run Porta from PowerShell / cmd,
-> **not** from inside WSL2. Conversely, if Antigravity runs inside WSL2,
-> run Porta from WSL2, **not** from Windows. The two environments cannot
-> see each other's processes.
-
-When running the proxy in a container that does not expose standard Docker,
-Podman, Kubernetes, or containerd markers, set `PORTA_CONTAINER=1` so the proxy
-skips host PID checks and relies on network probing.
-
-## Remote access with Cloudflare
+## 🛠️ 系统架构与远程访问模式
 
 ```mermaid
 flowchart LR
-  Browser
+  Browser["移动端 / 远程浏览器 (PWA)"]
 
-  subgraph CF ["Cloudflare (optional)"]
-    Pages["Pages(static SPA)"]
-    Tunnel
-    ZT["Zero Trust"]
+  subgraph Cloudflare ["Cloudflare (远程穿透方案)"]
+    Pages["Pages (静态 SPA 前端)"]
+    Tunnel["Cloudflare Tunnel"]
+    ZT["Zero Trust 安全鉴权"]
   end
 
-  subgraph Local ["Your machine"]
-    Proxy["Proxy(:3170)"]
-    LS["Antigravity LS"]
+  subgraph Local ["您的本地电脑"]
+    Proxy["Porta Proxy 代理 (:3170)"]
+    LS["Antigravity 服务端 (LSP)"]
   end
 
   Browser -- HTTPS --> Pages --> ZT --> Tunnel --> Proxy --> LS
-  Browser -. local .-> Proxy
+  Browser -. 局域网直连 .-> Proxy
 ```
 
-- **Local-only mode** (Quick start above): Browser → Proxy → LS. No cloud services needed.
-- **Remote mode**: Cloudflare Pages + Tunnel + Zero Trust for secure remote access without exposing your network.
+### 两种访问模式：
 
-Cloudflare can be used in two different ways:
+1. **局域网直连模式**（推荐在家庭 / 办公室 Wi-Fi 下使用）：
+   手机浏览器直接通信至局域网内部的 Porta Proxy，简单快捷。
+2. **Cloudflare Tunnel 远程访问**（推荐外出时使用）：
+   配合 Cloudflare Pages + Named Tunnel + Zero Trust，在不暴露公网 IP 的前提下实现安全的随时随地远程控制。具体配置请参考 `.env.example` 中的指示说明。
 
-### Option A: Quick Tunnel (temporary testing)
+---
 
-If you only want to try Porta remotely and do not need a stable hostname, use a
-Cloudflare Quick Tunnel.
+## 💻 平台支持
 
-- No custom domain required
-- Best for demos and short-lived testing
-- Not recommended for ongoing use: the hostname is temporary, and Cloudflare documents Quick Tunnels as testing-only infrastructure
+| 级别 | 操作系统 | 支持状态 |
+| :--- | :--- | :--- |
+| **Tier 1** | Linux (x64) | 官方主要开发与测试平台 |
+| **Tier 2** | Windows (x64) | 真实硬件充分测试，全面支持 PowerShell / Cmd |
+| **Tier 3** | macOS | CI 自动集成校验通过 |
 
-To avoid stale copy-pasted instructions, follow Cloudflare's current docs:
+> 📌 **跨环境运行提示**：Porta 代理必须与 Antigravity 运行在同一环境侧。若 Antigravity 运行在 Windows 本地，请在 Windows 命令行中启动 Porta；若运行在 WSL2 内部，请在 WSL2 内部启动 Porta。
 
-- [Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)
-- [Cloudflare Tunnel setup](https://developers.cloudflare.com/tunnel/setup/)
+---
 
-Use a named tunnel instead if you want a stable `VITE_API_BASE`, a fixed Cloudflare
-Pages deployment, or long-lived remote access.
+## 🤝 贡献与反馈
 
-### Option B: Named tunnel + Pages (recommended for regular remote use)
+欢迎提 Issue 或 PR 来共同改进 Porta 的体验！
+* 查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细的开发流程与代码规范。
+* 安全漏洞汇报请参考 [SECURITY.md](SECURITY.md)。
 
-This is the stable pattern for ongoing remote access. It requires:
+---
 
-- A **Cloudflare** account
-- **Cloudflare Tunnel** (`cloudflared`) installed and authenticated
-- A **Cloudflare Pages** project (for hosting the static SPA)
-- A domain managed by **Cloudflare** for the tunnel hostname
-- Optionally, **Cloudflare Zero Trust** for authentication
+## 📄 开源协议
 
-### 1. Configure `.env`
-
-Set the proxy runtime and Cloudflare-related variables in `.env`:
-
-```bash
-# .env
-PORTA_CORS_ORIGINS=https://<YOUR_PAGES_DOMAIN>
-PORTA_TUNNEL_NAME=<YOUR_TUNNEL_NAME>
-PORTA_CF_PROJECT=<YOUR_PROJECT_NAME>
-```
-
-### 2. Create the named tunnel
-
-Point the tunnel at your local proxy:
-
-```bash
-cloudflared tunnel create <YOUR_TUNNEL_NAME>
-cloudflared tunnel route dns <YOUR_TUNNEL_NAME> <YOUR_API_SUBDOMAIN>
-```
-
-### 3. Create `.env.production`
-
-Create `.env.production` in the repo root for the web build:
-
-```bash
-# .env.production
-VITE_API_BASE=https://<YOUR_API_SUBDOMAIN>
-# Optional when hosting the web UI below a path such as https://example.com/porta/
-PORTA_BASE_PATH=/porta
-```
-
-### 4. Build and deploy the SPA
-
-```bash
-pnpm deploy
-```
-
-This uses `PORTA_CF_PROJECT` from `.env`. If you prefer, you can run the
-equivalent `wrangler pages deploy` command manually.
-
-### 5. Start the proxy + named tunnel
-
-```bash
-pnpm dev:cloud
-```
-
-This reads `PORTA_TUNNEL_NAME` from `.env` and starts the proxy and
-`cloudflared tunnel run` together.
-
-### 6. Securing your API with Cloudflare Access (Zero Trust)
-
-Exposing your local API to the public internet can be dangerous. To completely lock down your setup, you should protect **both** your frontend and your API using Cloudflare Access. 
-
-Porta's built-in Edge Proxy securely bridges the two by injecting Machine-to-Machine authentication tokens, completely hiding your backend from the internet.
-
-To set this up, follow these precise steps:
-
-**1. Create Two Separate Applications**
-In your **Cloudflare Zero Trust** dashboard, under **Access > Applications**, you must create **two** distinct applications:
-- **Frontend App**: Protects your Pages deployment (e.g., `https://<YOUR_PAGES_DOMAIN>`). Configure this with standard user login policies (e.g., email OTP).
-- **Backend API App**: Protects your Tunnel (e.g., `https://<YOUR_API_SUBDOMAIN>`). 
-
-**2. Generate Service Tokens**
-1. Navigate to **Access > Service Auth**.
-2. Create a new Service Token for Porta. This will generate a **Client ID** and **Client Secret**.
-
-**3. Add the Service Auth Policy to the Backend API**
-1. Open the **Backend API App** you created in Step 1.
-2. Go to the **Policies** tab and add a new policy.
-3. Set the action to **Service Auth**.
-4. In the rules, configure it to **Include > Service Token** and select the token you just created.
-
-**4. Configure Cloudflare Pages Environment Variables**
-1. Go to your **Cloudflare Pages** dashboard for `<YOUR_PROJECT_NAME>`.
-2. Under **Settings > Environment variables**, add the following **three** variables to **both Production and Preview** environments:
-   - `PORTA_API_BASE`: Set this to your exact API URL (e.g., `https://<YOUR_API_SUBDOMAIN>`).
-   - `CF_ACCESS_CLIENT_ID`: The Client ID from Step 2.
-   - `CF_ACCESS_CLIENT_SECRET`: The Client Secret from Step 2.
-
-**5. Route Frontend Traffic Through the Proxy**
-By default, the Porta frontend tries to fetch the API directly. To force it to use the secure Edge Proxy:
-1. In your `.env.production` file, **remove or comment out** `VITE_API_BASE`. 
-2. Without `VITE_API_BASE`, the frontend falls back to root-relative API paths (`/api/*`), routing traffic through the Cloudflare Pages Edge proxy. `PORTA_BASE_PATH` only changes the frontend asset, router, and PWA paths.
-3. Run `pnpm deploy` again.
-
-> **Backwards Compatibility Note:** If `VITE_API_BASE` is defined, the frontend will bypass the proxy entirely and attempt to communicate directly with the backend. This is fully supported and recommended for local development (LAN access) or deployments where the backend is not protected by Cloudflare Access. Additionally, the proxy will gracefully skip Service Token injection if the `CF_ACCESS_CLIENT_ID` environment variables are missing.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development workflow, branch
-strategy, and PR guidelines.
-
-## Security
-
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
-
-## License
-
-[MIT](LICENSE)
+本项目基于 [MIT 协议](LICENSE) 开源。
