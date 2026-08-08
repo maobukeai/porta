@@ -916,11 +916,96 @@
 /* VS Code Split Main Commit Button */
 
 .vscode-split-commit-btn-group {
+  position: relative;
   display: flex;
   align-items: center;
   width: 100%;
   border-radius: 4px;
-  overflow: hidden;
+}
+
+.vscode-commit-dropdown-menu {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  left: 0;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.vscode-commit-dropdown-menu button {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: #cccccc;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.12s ease;
+}
+
+.vscode-commit-dropdown-menu button:hover {
+  background: #04395e;
+  color: #ffffff;
+}
+
+.vscode-accordion-chevron {
+  color: #858585;
+  transition: transform 0.2s ease;
+}
+
+.vscode-accordion-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.vscode-file-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.vscode-file-row:hover .vscode-file-hover-tools {
+  display: flex;
+}
+
+.vscode-file-hover-tools {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.vscode-file-hover-tools button {
+  background: transparent;
+  border: none;
+  color: #858585;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vscode-file-hover-tools button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.vscode-tool-text-btn.active {
+  color: #38bdf8;
+  font-weight: 600;
 }
 
 .vscode-main-commit-btn {

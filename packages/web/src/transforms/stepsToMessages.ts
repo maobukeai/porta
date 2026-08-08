@@ -13,8 +13,14 @@ function textFromItems(items?: { text?: string }[]): string {
     .join("\n\n");
 }
 
+const stepsToMessagesCache = new WeakMap<TrajectoryStep[], ChatMessage[]>();
+
 /** Extract displayable messages from raw trajectory steps */
 export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
+  if (stepsToMessagesCache.has(steps)) {
+    return stepsToMessagesCache.get(steps)!;
+  }
+
   const messages: ChatMessage[] = [];
   const pendingInvokeToolCalls: ToolCallData[] = [];
 
@@ -272,5 +278,6 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
     collapsed.push({ ...msg });
   }
 
+  stepsToMessagesCache.set(steps, collapsed);
   return collapsed;
 }

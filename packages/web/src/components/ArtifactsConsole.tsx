@@ -113,6 +113,12 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
   const [newBranchInput, setNewBranchInput] = useState("");
   const [branchActionMsg, setBranchActionMsg] = useState<string | null>(null);
 
+  // Accordion & Dropdown States
+  const [commitDropdownOpen, setCommitDropdownOpen] = useState(false);
+  const [changesCollapsed, setChangesCollapsed] = useState(false);
+  const [graphCollapsed, setGraphCollapsed] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+
   const fetchGitData = useCallback(async () => {
     setGitLoading(true);
     try {
@@ -450,12 +456,41 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
                   </button>
                   <button
                     className="vscode-commit-dropdown-trigger"
-                    disabled={committing || !commitMsg.trim()}
-                    onClick={() => handleCommit(true)}
-                    title="一键提交并推送 (Commit & Push)"
+                    onClick={() => setCommitDropdownOpen(!commitDropdownOpen)}
+                    title="更多提交方式 (Commit Options)"
                   >
-                    <IconChevron size={12} />
+                    <IconChevron size={12} className={commitDropdownOpen ? "icon-spin-180" : ""} />
                   </button>
+
+                  {commitDropdownOpen && (
+                    <div className="vscode-commit-dropdown-menu">
+                      <button
+                        onClick={() => {
+                          setCommitDropdownOpen(false);
+                          handleCommit(false);
+                        }}
+                      >
+                        ✓ 提交 (Commit)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCommitDropdownOpen(false);
+                          handleCommit(true);
+                        }}
+                      >
+                        ✓ 提交并推送 (Commit & Push)
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCommitDropdownOpen(false);
+                          handleStageFile();
+                          handleCommit(true);
+                        }}
+                      >
+                        ✓ 暂存所有并提交 (Stage All & Commit)
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {commitStatusMsg && (
                   <div className={`vscode-status-toast ${commitStatusMsg.startsWith("✓") ? "success" : "error"}`}>
@@ -466,150 +501,195 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
 
               {/* Changes Section (更改) */}
               <div className="vscode-section">
-                <div className="vscode-section-header">
+                <div
+                  className="vscode-section-header"
+                  onClick={() => setChangesCollapsed(!changesCollapsed)}
+                >
                   <div className="vscode-section-title-wrap">
-                    <IconChevron size={12} className="vscode-accordion-chevron" />
+                    <IconChevron size={12} className={`vscode-accordion-chevron ${changesCollapsed ? "collapsed" : ""}`} />
                     <span>更改</span>
                   </div>
-                  <div className="vscode-section-tools">
-                    <button onClick={() => handleStageFile()} title="全部暂存 (+)">
+                  <div className="vscode-section-tools" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => {
+                        handleStageFile();
+                        setCommitStatusMsg("✓ 已暂存所有改动");
+                      }}
+                      title="全部暂存 (+)"
+                    >
                       <IconPlus size={13} />
                     </button>
                     <button onClick={() => handleDiscardFile()} title="放弃全部改动 (↩)">
                       <IconUndo size={13} />
                     </button>
-                    <button onClick={() => handleStageFile()} title="暂存">
+                    <button
+                      onClick={() => {
+                        handleStageFile();
+                        setCommitStatusMsg("✓ 已暂存更改");
+                      }}
+                      title="暂存"
+                    >
                       <IconPlus size={13} />
                     </button>
                     <span className="vscode-count-badge">{gitFiles.length}</span>
                   </div>
                 </div>
 
-                {gitFiles.length === 0 ? (
-                  <div className="vscode-empty-hint">工作区无修改点</div>
-                ) : (
-                  <div className="vscode-file-list">
-                    {gitFiles.map((file) => {
-                      const parsed = parseFilename(file.path);
-                      const isDiffOpen = activeDiffFile === file.path;
-                      const dirPath = file.path.includes("/") || file.path.includes("\\")
-                        ? file.path.substring(0, file.path.lastIndexOf(file.path.includes("/") ? "/" : "\\"))
-                        : "src";
+                {!changesCollapsed && (
+                  gitFiles.length === 0 ? (
+                    <div className="vscode-empty-hint">工作区无修改点</div>
+                  ) : (
+                    <div className="vscode-file-list">
+                      {gitFiles.map((file) => {
+                        const parsed = parseFilename(file.path);
+                        const isDiffOpen = activeDiffFile === file.path;
+                        const dirPath = file.path.includes("/") || file.path.includes("\\")
+                          ? file.path.substring(0, file.path.lastIndexOf(file.path.includes("/") ? "/" : "\\"))
+                          : "src";
 
+                        return (
+                          <div key={file.path} className="vscode-file-item-wrap">
+                            <div
+                              className="vscode-file-row"
+                              onClick={() => handleInspectDiff(file.path)}
+                            >
+                              <span className={`vscode-file-badge ${parsed.ext.toUpperCase()}`}>
+                                {getFileBadge(file.path)}
+                              </span>
+                              <span className="vscode-file-name">{parsed.filename}</span>
+                              <span className="vscode-file-dir">{dirPath}</span>
+                              <div className="vscode-file-hover-tools" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => {
+                                    handleStageFile(file.path);
+                                    setCommitStatusMsg(`✓ 已暂存 ${parsed.filename}`);
+                                  }}
+                                  title="暂存该文件 (+)"
+                                >
+                                  <IconPlus size={12} />
+                                </button>
+                                <button
+                                  onClick={() => handleDiscardFile(file.path)}
+                                  title="放弃该文件改动 (↩)"
+                                >
+                                  <IconUndo size={12} />
+                                </button>
+                              </div>
+                              <span className={`vscode-file-status ${file.status}`}>{file.status}</span>
+                            </div>
+
+                            {isDiffOpen && (
+                              <div className="git-diff-preview-box">
+                                <div className="git-diff-preview-header">
+                                  <span>差异对比: {parsed.filename}</span>
+                                  <div className="git-diff-mode-toggle">
+                                    <button
+                                      className={diffViewMode === "split" ? "active" : ""}
+                                      onClick={() => setDiffViewMode("split")}
+                                    >
+                                      双栏对比
+                                    </button>
+                                    <button
+                                      className={diffViewMode === "unified" ? "active" : ""}
+                                      onClick={() => setDiffViewMode("unified")}
+                                    >
+                                      单栏
+                                    </button>
+                                    <button onClick={() => setActiveDiffFile(null)}><IconX size={12} /></button>
+                                  </div>
+                                </div>
+
+                                {diffViewMode === "split" ? (
+                                  <div className="git-diff-split-view">
+                                    {sideBySideLines.map((l, idx) => (
+                                      <div key={idx} className={`diff-line-row ${l.type}`}>
+                                        <div className="diff-col left">
+                                          <span className="line-num">{l.leftNum || ""}</span>
+                                          <span className="line-text">{l.leftText}</span>
+                                        </div>
+                                        <div className="diff-col right">
+                                          <span className="line-num">{l.rightNum || ""}</span>
+                                          <span className="line-text">{l.rightText}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <pre className="artifact-code-preview">
+                                    <code>{activeDiffText ?? "加载中..."}</code>
+                                  </pre>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                )}
+              </div>
+
+              {/* Git Branch Commit Graph Section (图形) */}
+              <div className="vscode-section graph">
+                <div
+                  className="vscode-section-header"
+                  onClick={() => setGraphCollapsed(!graphCollapsed)}
+                >
+                  <div className="vscode-section-title-wrap">
+                    <IconChevron size={12} className={`vscode-accordion-chevron ${graphCollapsed ? "collapsed" : ""}`} />
+                    <span>图形</span>
+                  </div>
+                  <div className="vscode-section-tools" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      className={`vscode-tool-text-btn ${autoRefreshEnabled ? "active" : ""}`}
+                      onClick={() => setAutoRefreshEnabled(!autoRefreshEnabled)}
+                      title={autoRefreshEnabled ? "已开启自动刷新" : "自动刷新已关"}
+                    >
+                      {autoRefreshEnabled ? "自动" : "手动"}
+                    </button>
+                    <button onClick={fetchGitData} title="刷新图形">
+                      <IconRefresh size={13} className={gitLoading ? "icon-spin" : ""} />
+                    </button>
+                    <button onClick={handleOpenBranchModal} title="图表视图与分支选项">
+                      <IconMoreHorizontal size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {!graphCollapsed && (
+                  <div className="vscode-graph-timeline">
+                    {gitLogs.map((log, idx) => {
+                      const isHead = idx === 0;
                       return (
-                        <div key={file.path} className="vscode-file-item-wrap">
-                          <div
-                            className="vscode-file-row"
-                            onClick={() => handleInspectDiff(file.path)}
-                          >
-                            <span className={`vscode-file-badge ${parsed.ext.toUpperCase()}`}>
-                              {getFileBadge(file.path)}
-                            </span>
-                            <span className="vscode-file-name">{parsed.filename}</span>
-                            <span className="vscode-file-dir">{dirPath}</span>
-                            <span className={`vscode-file-status ${file.status}`}>{file.status}</span>
+                        <div key={log.hash} className="vscode-graph-item">
+                          <div className="vscode-graph-track">
+                            <span className="vscode-track-line" />
+                            <span className={`vscode-graph-node ${isHead ? "head" : ""}`} />
                           </div>
 
-                          {isDiffOpen && (
-                            <div className="git-diff-preview-box">
-                              <div className="git-diff-preview-header">
-                                <span>差异对比: {parsed.filename}</span>
-                                <div className="git-diff-mode-toggle">
-                                  <button
-                                    className={diffViewMode === "split" ? "active" : ""}
-                                    onClick={() => setDiffViewMode("split")}
-                                  >
-                                    双栏对比
-                                  </button>
-                                  <button
-                                    className={diffViewMode === "unified" ? "active" : ""}
-                                    onClick={() => setDiffViewMode("unified")}
-                                  >
-                                    单栏
-                                  </button>
-                                  <button onClick={() => setActiveDiffFile(null)}><IconX size={12} /></button>
-                                </div>
-                              </div>
-
-                              {diffViewMode === "split" ? (
-                                <div className="git-diff-split-view">
-                                  {sideBySideLines.map((l, idx) => (
-                                    <div key={idx} className={`diff-line-row ${l.type}`}>
-                                      <div className="diff-col left">
-                                        <span className="line-num">{l.leftNum || ""}</span>
-                                        <span className="line-text">{l.leftText}</span>
-                                      </div>
-                                      <div className="diff-col right">
-                                        <span className="line-num">{l.rightNum || ""}</span>
-                                        <span className="line-text">{l.rightText}</span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <pre className="artifact-code-preview">
-                                  <code>{activeDiffText ?? "加载中..."}</code>
-                                </pre>
+                          <div className="vscode-graph-content">
+                            <span className="vscode-graph-msg" title={log.message}>{log.message}</span>
+                            <div className="vscode-graph-badges">
+                              {isHead && (
+                                <span className="vscode-branch-pill local">
+                                  <IconGitBranch size={10} /> {gitBranch}
+                                </span>
+                              )}
+                              {isHead && (
+                                <span className="vscode-branch-pill remote">
+                                  <IconCloud size={10} /> origin/{gitBranch}
+                                </span>
                               )}
                             </div>
-                          )}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
               </div>
-
-              {/* Git Branch Commit Graph Section (图形) */}
-              <div className="vscode-section graph">
-                <div className="vscode-section-header">
-                  <div className="vscode-section-title-wrap">
-                    <IconChevron size={12} className="vscode-accordion-chevron" />
-                    <span>图形</span>
-                  </div>
-                  <div className="vscode-section-tools">
-                    <button className="vscode-tool-text-btn">自动</button>
-                    <button onClick={fetchGitData} title="刷新图形">
-                      <IconRefresh size={13} />
-                    </button>
-                    <button title="图表视图选项">
-                      <IconMoreHorizontal size={13} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="vscode-graph-timeline">
-                  {gitLogs.map((log, idx) => {
-                    const isHead = idx === 0;
-                    return (
-                      <div key={log.hash} className="vscode-graph-item">
-                        <div className="vscode-graph-track">
-                          <span className="vscode-track-line" />
-                          <span className={`vscode-graph-node ${isHead ? "head" : ""}`} />
-                        </div>
-
-                        <div className="vscode-graph-content">
-                          <span className="vscode-graph-msg" title={log.message}>{log.message}</span>
-                          <div className="vscode-graph-badges">
-                            {isHead && (
-                              <span className="vscode-branch-pill local">
-                                <IconGitBranch size={10} /> {gitBranch}
-                              </span>
-                            )}
-                            {isHead && (
-                              <span className="vscode-branch-pill remote">
-                                <IconCloud size={10} /> origin/{gitBranch}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
             </div>
-          </div>
-        )}
+          )}
 
         {filtered.length === 0 && selectedType !== "diff" ? (
           <div className="artifacts-empty-state">

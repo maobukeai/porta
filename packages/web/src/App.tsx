@@ -425,7 +425,6 @@ function ChatView() {
               <div className="chat-view-pane">
                 {activeId ? (
                   <ChatPanel
-                    key={activeId}
                     cascadeId={activeId}
                     onRevert={handleRevert}
                     onFilePermission={handleFilePermission}
