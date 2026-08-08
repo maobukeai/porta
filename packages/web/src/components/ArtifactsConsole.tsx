@@ -23,6 +23,7 @@ import {
 import { triggerHaptic } from "../utils/haptics";
 import type { TrajectoryStep, ChatMessage } from "../types";
 import { api } from "../api/client";
+import { ConfirmModal } from "./ConfirmModal";
 import {
   extractArtifactsFromSteps,
   parseFilename,
@@ -192,23 +193,11 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
     }
   };
 
-  const handleDiscardFile = async (path?: string) => {
-    triggerHaptic("medium");
-    const confirmText = path
-      ? `确定要放弃对 "${path.split("/").pop()}" 的本地改动吗？此操作无法撤销。`
-      : "确定要放弃工作区所有未提交的本地代码改动吗？";
-    if (!window.confirm(confirmText)) return;
+  const [discardTarget, setDiscardTarget] = useState<{ path?: string } | null>(null);
 
-    try {
-      await api.gitDiscard(workspaceUri, path);
-      fetchGitData();
-      if (activeDiffFile === path) {
-        setActiveDiffFile(null);
-        setActiveDiffText(null);
-      }
-    } catch (err) {
-      console.error("Failed to discard file:", err);
-    }
+  const handleDiscardFile = (path?: string) => {
+    triggerHaptic("medium");
+    setDiscardTarget({ path });
   };
 
   const handleInspectDiff = async (file: string) => {
@@ -820,6 +809,35 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
           </div>,
           document.body,
         )}
+      <ConfirmModal
+        isOpen={discardTarget !== null}
+        onClose={() => setDiscardTarget(null)}
+        onConfirm={async () => {
+          if (discardTarget !== null) {
+            const path = discardTarget.path;
+            try {
+              await api.gitDiscard(workspaceUri, path);
+              fetchGitData();
+              if (activeDiffFile === path) {
+                setActiveDiffFile(null);
+                setActiveDiffText(null);
+              }
+            } catch (err) {
+              console.error("Failed to discard file:", err);
+            }
+          }
+        }}
+        title="⚠️ 确认放弃代码改动"
+        message={
+          discardTarget?.path
+            ? `确定要放弃对文件 "${discardTarget.path.split("/").pop()}" 的修改吗？`
+            : "确定要放弃工作区所有未提交的本地代码改动吗？"
+        }
+        subMessage="此操作不可逆，已作出的修改将被还原至上一次提交的状态。"
+        confirmText="确认放弃修改"
+        cancelText="取消"
+        type="danger"
+      />
     </div>
   );
 }

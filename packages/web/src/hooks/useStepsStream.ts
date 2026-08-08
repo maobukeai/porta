@@ -9,6 +9,8 @@ const PAGE_SIZE = 100;
 interface UseStepsStreamResult {
   /** All loaded steps (ordered oldest → newest). */
   steps: TrajectoryStep[];
+  /** Absolute offset of steps[0] in the full trajectory (used for correct revert stepIndex). */
+  baseOffset: number;
   loading: boolean;
   error: string | null;
   /** Whether older steps exist above the currently loaded window. */
@@ -555,6 +557,7 @@ export function useStepsStream(
 
   return {
     steps,
+    baseOffset: baseOffsetRef.current,
     loading,
     error,
     hasMore,

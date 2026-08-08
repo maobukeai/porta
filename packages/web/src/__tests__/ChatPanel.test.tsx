@@ -17,6 +17,7 @@ const mockUseStepsStream = vi.mocked(useStepsStream);
 function mockSteps(steps: TrajectoryStep[], wsRunning = false) {
   mockUseStepsStream.mockReturnValue({
     steps,
+    baseOffset: 0,
     loading: false,
     error: null,
     hasMore: false,

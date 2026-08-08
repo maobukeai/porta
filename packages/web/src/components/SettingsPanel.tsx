@@ -1247,8 +1247,7 @@ export function SettingsPanel({
                         <label className="settings-switch">
                           <input
                             type="checkbox"
-                            checked={isEnabled && isLsOnline}
-                            disabled={!isLsOnline}
+                            checked={isEnabled}
                             onChange={() => toggleSkill(s.name)}
                             aria-label={`开关 ${s.name}`}
                           />
@@ -1297,8 +1296,7 @@ export function SettingsPanel({
                         <label className="settings-switch">
                           <input
                             type="checkbox"
-                            checked={isEnabled && isLsOnline}
-                            disabled={!isLsOnline}
+                            checked={isEnabled}
                             onChange={() => toggleMcpTool(m.name)}
                             aria-label={`开关 ${m.name}`}
                           />

@@ -21,6 +21,7 @@ import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
 import { useMessageTouchGesture } from "../hooks/useMessageTouchGesture";
 import { MessageActionSheet } from "./MessageActionSheet";
+import { ConfirmModal } from "./ConfirmModal";
 import { useVisualViewport } from "../hooks/useVisualViewport";
 import {
   AskQuestionCard,
@@ -433,6 +434,7 @@ interface MessageBubbleProps {
   isUnconfirmed: boolean;
   suppressImplementationPlan?: boolean;
   onRevert: (stepIndex: number, editText?: string) => void;
+  onOpenRevertConfirm?: (stepIndex: number, draftContent?: string) => void;
   onImageClick: (src: string) => void;
   onQuote?: (text: string) => void;
 }
@@ -444,6 +446,7 @@ const MessageBubble = memo(
     isUnconfirmed,
     suppressImplementationPlan = false,
     onRevert,
+    onOpenRevertConfirm,
     onImageClick,
     onQuote,
   }: MessageBubbleProps) {
@@ -508,10 +511,12 @@ const MessageBubble = memo(
                   className={`msg-action-btn ${isLocked ? "locked" : ""}`}
                   onClick={() => {
                     if (!isLocked) {
-                      const confirmed = window.confirm(
-                        "⚠️ 警告：撤回操作会将项目文件和代码恢复至该历史节点的状态，之后的所有代码修改将被清空！\n\n如果仅需重新发送提示词，请使用左侧的“编辑”按钮。\n\n确定要回滚代码和对话吗？",
-                      );
-                      if (confirmed) {
+                      if (onOpenRevertConfirm) {
+                        onOpenRevertConfirm(
+                          msg.stepIndex,
+                          msg.role === "user" ? msg.content : undefined,
+                        );
+                      } else {
                         onRevert(
                           msg.stepIndex,
                           msg.role === "user" ? msg.content : undefined,
@@ -647,6 +652,7 @@ export function ChatPanel({
 }: Props) {
   const {
     steps: rawSteps,
+    baseOffset,
     loading,
     refresh,
     hardRefresh,
@@ -677,6 +683,11 @@ export function ChatPanel({
     setPinnedImplementationPlanStepIndex,
   ] = useState<number | null>(null);
 
+  const [revertConfirmTarget, setRevertConfirmTarget] = useState<{
+    stepIndex: number;
+    draftContent?: string;
+  } | null>(null);
+
   // Soft re-fetch when refreshKey changes (e.g. after send)
   const prevKeyRef = useRef(refreshKey);
   useEffect(() => {
@@ -705,7 +716,7 @@ export function ChatPanel({
     }
   }, [cascadeId]);
 
-  const serverMessages = useMemo(() => stepsToMessages(rawSteps), [rawSteps]);
+  const serverMessages = useMemo(() => stepsToMessages(rawSteps, baseOffset), [rawSteps, baseOffset]);
   const liveImplementationPlan = useMemo(
     () => latestImplementationPlan(rawSteps),
     [rawSteps],
@@ -988,6 +999,9 @@ export function ChatPanel({
                   pinnedImplementationPlan?.stepIndex === msg.stepIndex
                 }
                 onRevert={onRevert}
+                onOpenRevertConfirm={(stepIndex, draftContent) =>
+                  setRevertConfirmTarget({ stepIndex, draftContent })
+                }
                 onImageClick={setLightboxSrc}
                 onQuote={onQuoteMessage}
               />
@@ -1026,6 +1040,24 @@ export function ChatPanel({
           <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />,
           document.body,
         )}
+      <ConfirmModal
+        isOpen={revertConfirmTarget !== null}
+        onClose={() => setRevertConfirmTarget(null)}
+        onConfirm={() => {
+          if (revertConfirmTarget) {
+            onRevert(
+              revertConfirmTarget.stepIndex,
+              revertConfirmTarget.draftContent,
+            );
+          }
+        }}
+        title="⚠️ 确认撤回并回滚代码"
+        message="撤回操作会将项目文件和代码恢复至该历史节点的状态，之后的所有代码修改将被清空！"
+        subMessage="💡 提示：如果仅需重新发送提示词，请使用左侧的“编辑”按钮。"
+        confirmText="确认回滚代码"
+        cancelText="取消"
+        type="danger"
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { ChatMessage, ToolCallData, TrajectoryStep } from "../types";
+﻿import type { ChatMessage, ToolCallData, TrajectoryStep } from "../types";
 import { getAskQuestionRequest, getFilePermissionRequest } from "../utils/stepCards";
 import {
   isSubagentToolName,
@@ -13,18 +13,28 @@ function textFromItems(items?: { text?: string }[]): string {
     .join("\n\n");
 }
 
-const stepsToMessagesCache = new WeakMap<TrajectoryStep[], ChatMessage[]>();
+/** Cache keyed by steps array + baseOffset to handle paginated windows correctly */
+const stepsToMessagesCache = new Map<string, ChatMessage[]>();
+const stepsToMessagesCacheKeys = new WeakMap<TrajectoryStep[], string>();
 
-/** Extract displayable messages from raw trajectory steps */
-export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
-  if (stepsToMessagesCache.has(steps)) {
-    return stepsToMessagesCache.get(steps)!;
+/** Extract displayable messages from raw trajectory steps.
+ * @param baseOffset Absolute offset of steps[0] in the full trajectory.
+ *   Pass 0 (default) if you always load from the beginning.
+ *   Required for correct revert stepIndex when using paginated lazy loading.
+ */
+export function stepsToMessages(steps: TrajectoryStep[], baseOffset = 0): ChatMessage[] {
+  // Build a cache key: WeakMap entry tracks the array identity, combined with baseOffset
+  const existingKey = stepsToMessagesCacheKeys.get(steps);
+  const cacheKey = `${existingKey ?? ""}:${baseOffset}`;
+  if (existingKey !== undefined && stepsToMessagesCache.has(cacheKey)) {
+    return stepsToMessagesCache.get(cacheKey)!;
   }
 
   const messages: ChatMessage[] = [];
   const pendingInvokeToolCalls: ToolCallData[] = [];
 
   for (let i = 0; i < steps.length; i++) {
+    const absoluteIndex = baseOffset + i; // �?absolute offset in the full trajectory
     const step = steps[i];
     const type = step.type;
 
@@ -47,7 +57,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: "",
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type: "CORTEX_STEP_TYPE_FILE_PERMISSION",
         step,
       });
@@ -59,7 +69,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: "",
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type: "CORTEX_STEP_TYPE_ASK_QUESTION",
         step,
       });
@@ -87,7 +97,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         messages.push({
           role: "system",
           content: String(rawText),
-          stepIndex: i,
+          stepIndex: absoluteIndex,
           type: "error",
           icon: "alert",
           step,
@@ -113,7 +123,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: "",
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type: "CORTEX_STEP_TYPE_SUBAGENT",
         step,
         subagent,
@@ -129,7 +139,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         messages.push({
           role: "user",
           content: text,
-          stepIndex: i,
+          stepIndex: absoluteIndex,
           type,
           optimisticId: step.clientMessageId,
           media,
@@ -148,7 +158,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         messages.push({
           role: "assistant",
           content: text,
-          stepIndex: i,
+          stepIndex: absoluteIndex,
           type,
           thinking: thinking || undefined,
           thinkingDuration: thinkingDuration || undefined,
@@ -164,7 +174,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
         messages.push({
           role: "system",
           content: "",
-          stepIndex: i,
+          stepIndex: absoluteIndex,
           type,
           step,
         });
@@ -194,7 +204,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: "",
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type,
         step,
       });
@@ -222,8 +232,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       if (step.sendCommandInput.terminate) {
         messages.push({
           role: "system",
-          content: `⏹ Sending termination to command`,
-          stepIndex: i,
+          content: `�?Sending termination to command`,
+          stepIndex: absoluteIndex,
           type,
         });
       }
@@ -235,8 +245,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const pathLabel = searchPath.split("/").pop() ?? searchPath;
       messages.push({
         role: "system",
-        content: `Searched \`${query}\` in **${pathLabel}** — ${results.length} result${results.length !== 1 ? "s" : ""}`,
-        stepIndex: i,
+        content: `Searched \`${query}\` in **${pathLabel}** �?${results.length} result${results.length !== 1 ? "s" : ""}`,
+        stepIndex: absoluteIndex,
         type,
         icon: "search",
       });
@@ -249,7 +259,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: `Viewed **${name}**${range}`,
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type,
         icon: "eye",
       });
@@ -265,7 +275,7 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       messages.push({
         role: "system",
         content: `Outlined **${name}**`,
-        stepIndex: i,
+        stepIndex: absoluteIndex,
         type,
         icon: "list",
       });
@@ -279,8 +289,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const nodes = vci.nodePaths ?? [];
       messages.push({
         role: "system",
-        content: `Analyzed **${name}**${nodes.length ? ` → ${nodes.join(", ")}` : ""}`,
-        stepIndex: i,
+        content: `Analyzed **${name}**${nodes.length ? ` �?${nodes.join(", ")}` : ""}`,
+        stepIndex: absoluteIndex,
         type,
         icon: "file-search",
       });
@@ -294,8 +304,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const results = ld.results ?? [];
       messages.push({
         role: "system",
-        content: `Listed **${name}/** — ${results.length} items`,
-        stepIndex: i,
+        content: `Listed **${name}/** �?${results.length} items`,
+        stepIndex: absoluteIndex,
         type,
         icon: "folder",
       });
@@ -305,8 +315,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const results = f.results ?? [];
       messages.push({
         role: "system",
-        content: `Find \`${pattern}\` — ${results.length} result${results.length !== 1 ? "s" : ""}`,
-        stepIndex: i,
+        content: `Find \`${pattern}\` �?${results.length} result${results.length !== 1 ? "s" : ""}`,
+        stepIndex: absoluteIndex,
         type,
         icon: "search",
       });
@@ -320,8 +330,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const tool = mcpData?.toolName ?? step.metadata?.toolCall?.name ?? "tool";
       messages.push({
         role: "system",
-        content: `⚡ 执行 MCP 工具 **${server}/${tool}**`,
-        stepIndex: i,
+        content: `�?执行 MCP 工具 **${server}/${tool}**`,
+        stepIndex: absoluteIndex,
         type,
         icon: "box",
       });
@@ -333,8 +343,8 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
       const stepIdx = (step as any).revert?.stepIndex ?? step.metadata?.sourceTrajectoryStepInfo?.stepIndex;
       messages.push({
         role: "system",
-        content: `↩ 会话已回退至步骤 #${stepIdx !== undefined ? Number(stepIdx) + 1 : i + 1}`,
-        stepIndex: i,
+        content: `�?会话已回退至步�?#${stepIdx !== undefined ? Number(stepIdx) + 1 : i + 1}`,
+        stepIndex: absoluteIndex,
         type,
         icon: "corner-up-left",
       });
@@ -354,6 +364,10 @@ export function stepsToMessages(steps: TrajectoryStep[]): ChatMessage[] {
     collapsed.push({ ...msg });
   }
 
-  stepsToMessagesCache.set(steps, collapsed);
+    // Cache against (array identity + baseOffset)
+  const newKey = Math.random().toString(36).slice(2);
+  stepsToMessagesCacheKeys.set(steps, newKey);
+  stepsToMessagesCache.set(newKey + ':' + baseOffset, collapsed);
   return collapsed;
 }
+

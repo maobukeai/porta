@@ -522,7 +522,7 @@ function ChatView() {
                   onSend={handleSend}
                   onStop={handleStop}
                   isRunning={isRunning}
-                  disabled={!connected && !isRunning}
+                  disabled={false}
                   draft={draftText}
                   onDraftChange={handleDraftChange}
                   defaultModel={settings.defaultModel}
