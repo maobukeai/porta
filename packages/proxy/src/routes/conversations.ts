@@ -27,6 +27,7 @@ import {
 } from "../metadata.js";
 import { handleRPCError } from "../errors.js";
 import { runConversationMutation } from "../conversation-mutations.js";
+import { resolveModelIdentifier } from "./models.js";
 import {
   oversizedStepOffset,
   isRecoverableStepError,
@@ -622,14 +623,13 @@ export function registerConversationRoutes(app: Hono): void {
         const typeConfig =
           plannerType === "planning" ? { planning: {} } : { conversational: {} };
 
-        if (model || plannerType) {
-          req.cascadeConfig = {
-            plannerConfig: {
-              plannerTypeConfig: typeConfig,
-              ...(model ? { requestedModel: { model } } : {}),
-            },
-          };
-        }
+        const resolvedModel = await resolveModelIdentifier(model);
+        req.cascadeConfig = {
+          plannerConfig: {
+            plannerTypeConfig: typeConfig,
+            requestedModel: { model: resolvedModel },
+          },
+        };
 
         const data = await rpcForConversation(
           "SendUserCascadeMessage",
@@ -799,21 +799,50 @@ export function registerConversationRoutes(app: Hono): void {
         );
       }
 
-      const data = await rpcForConversation(
-        "HandleCascadeUserInteraction",
-        id,
-        {
-          cascadeId: id,
-          interaction: {
-            trajectoryId,
-            stepIndex: Number(stepIndex),
-            askQuestion: {
-              responses: Array.isArray(responses) ? responses : [],
-              cancelled: !!cancelled,
+      const firstResponse = Array.isArray(responses) ? responses[0] : undefined;
+      const selectedId = firstResponse?.selectedOptionIds?.[0] ?? "1";
+      const isDeny =
+        selectedId === "5" ||
+        selectedId === "deny" ||
+        selectedId === "no" ||
+        cancelled;
+      const scopeNum = parseInt(selectedId, 10) || 1;
+
+      let data: unknown;
+      try {
+        data = await rpcForConversation(
+          "HandleCascadeUserInteraction",
+          id,
+          {
+            cascadeId: id,
+            interaction: {
+              trajectoryId,
+              stepIndex: Number(stepIndex),
+              askQuestion: {
+                responses: Array.isArray(responses) ? responses : [],
+                cancelled: !!cancelled,
+              },
             },
           },
-        },
-      );
+        );
+      } catch {
+        // Fallback for permission-style interactions (e.g. URL/resource permissions)
+        data = await rpcForConversation(
+          "HandleCascadeUserInteraction",
+          id,
+          {
+            cascadeId: id,
+            interaction: {
+              trajectoryId,
+              stepIndex: Number(stepIndex),
+              permission: {
+                allow: !isDeny,
+                scope: isDeny ? 0 : scopeNum,
+              },
+            },
+          },
+        );
+      }
 
       conversationSignals.emit("activate", id);
 
@@ -836,14 +865,13 @@ export function registerConversationRoutes(app: Hono): void {
           metadata,
         };
 
-        if (body.model) {
-          req.overrideConfig = {
-            plannerConfig: {
-              plannerTypeConfig: { conversational: {} },
-              requestedModel: { model: body.model },
-            },
-          };
-        }
+        const resolvedModel = await resolveModelIdentifier(body.model);
+        req.overrideConfig = {
+          plannerConfig: {
+            plannerTypeConfig: { conversational: {} },
+            requestedModel: { model: resolvedModel },
+          },
+        };
 
         const data = await rpcForConversation("RevertToCascadeStep", id, req);
         messageTracker.clearConversation(id);

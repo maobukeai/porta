@@ -2,12 +2,19 @@ import path from "node:path";
 import {
   commandName,
   ensureLogsDir,
+  getLocalLanIps,
+  loadEnvFile,
   spawnLoggedProcess,
   terminateChild,
   waitForExit,
 } from "./common.mjs";
 
+loadEnvFile();
+
+const webPort = process.env.PORTA_WEB_PORT || "3070";
+const lanIps = getLocalLanIps();
 const logsDir = ensureLogsDir();
+
 const runners = [
   spawnLoggedProcess(
     "proxy",
@@ -23,7 +30,20 @@ const runners = [
   ),
 ];
 
-console.log("✓ Porta dev - tail logs/proxy.log and logs/web.log");
+console.log("\n============================================================");
+console.log("  🚀 Porta 正在运行 (局域网 + 本机直连模式)");
+console.log("============================================================");
+console.log(`  💻 电脑本机访问:    http://localhost:${webPort}`);
+if (lanIps.length > 0) {
+  for (const ip of lanIps) {
+    console.log(`  📱 手机局域网访问:  http://${ip}:${webPort}`);
+  }
+} else {
+  console.log(`  📱 手机局域网访问:  http://<电脑局域网IP>:${webPort}`);
+}
+console.log("============================================================");
+console.log("  💡 提示: 手机与电脑连接同一 Wi-Fi 即可秒开体验低延迟控制。");
+console.log("  📄 日志已输出至: logs/proxy.log 与 logs/web.log\n");
 
 let shuttingDown = false;
 
@@ -32,9 +52,14 @@ async function shutdown(code = 0) {
   shuttingDown = true;
 
   await Promise.all(runners.map(({ child }) => terminateChild(child)));
-  await Promise.all(runners.map(({ logStream }) => new Promise((resolve) => {
-    logStream.end(resolve);
-  })));
+  await Promise.all(
+    runners.map(
+      ({ logStream }) =>
+        new Promise((resolve) => {
+          logStream.end(resolve);
+        }),
+    ),
+  );
   process.exit(code);
 }
 

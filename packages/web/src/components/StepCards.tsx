@@ -224,10 +224,14 @@ export function AskQuestionCard({
     Record<number, string[]>
   >(() =>
     Object.fromEntries(
-      questions.map((question, index) => [
-        index,
-        question.selectedOptionIds ?? [],
-      ]),
+      questions.map((question, index) => {
+        const defaultIds = question.selectedOptionIds ?? [];
+        if (defaultIds.length === 0 && question.options && question.options.length > 0 && !question.isMultiSelect) {
+          // Pre-select first option (e.g. Allow this time)
+          return [index, [optionId(index, 0, question.options[0])]];
+        }
+        return [index, defaultIds];
+      }),
     ),
   );
   const [writeIns, setWriteIns] = useState<Record<number, string>>(() =>
@@ -251,6 +255,12 @@ export function AskQuestionCard({
     step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? fallbackStepIndex;
   const canRespond =
     isWaiting && !responded && !!onAskQuestion && !!trajectoryId;
+
+  const isPermissionStyle = questions.some(
+    (q) =>
+      /allow|permission|url|mcp|access/i.test(q.question ?? "") ||
+      step.requestedInteraction?.permission !== undefined,
+  );
 
   const hasAnswer =
     questions.length > 0 &&
@@ -309,9 +319,11 @@ export function AskQuestionCard({
     >
       <div className="step-card-header ask-question-header">
         <span className="step-card-icon">
-          <IconMessageCircle size={12} />
+          {isPermissionStyle ? <IconLock size={12} /> : <IconMessageCircle size={12} />}
         </span>
-        <span className="step-card-desc">Input requested</span>
+        <span className="step-card-desc">
+          {isPermissionStyle ? "安全审批与权限确认" : "Input requested"}
+        </span>
       </div>
       <div className="ask-question-body">
         {questions.map((question, questionIndex) => {

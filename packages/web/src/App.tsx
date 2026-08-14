@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from "react";
+import { createPortal } from "react-dom";
 import {
   Routes,
   Route,
@@ -40,15 +41,36 @@ import { api } from "./api/client";
 import { isUnconfirmedOptimisticMessage } from "./utils/optimisticMessages";
 import type { AskQuestionEntry, HealthResponse, MediaAttachment } from "./types";
 import type { PlannerType } from "./components/ChatInput";
+import { SetupWizard } from "./components/SetupWizard";
 
 export default function App() {
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+
+  useEffect(() => {
+    const cap = (window as any).Capacitor;
+    const isNative = Boolean(
+      cap?.isNativePlatform?.() ||
+      cap?.platform === "android" ||
+      cap?.platform === "ios",
+    );
+    if (isNative && !localStorage.getItem("porta_custom_api_base")) {
+      setShowSetupWizard(true);
+    }
+  }, []);
+
   return (
-    <Routes>
-      <Route path="/" element={<RootRedirect />} />
-      <Route path="/:projectSlug/settings" element={<ChatView />} />
-      <Route path="/:projectSlug" element={<ChatView />} />
-      <Route path="/:projectSlug/:chatId" element={<ChatView />} />
-    </Routes>
+    <>
+      {showSetupWizard && createPortal(
+        <SetupWizard onClose={() => setShowSetupWizard(false)} />,
+        document.body,
+      )}
+      <Routes>
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="/:projectSlug/settings" element={<ChatView />} />
+        <Route path="/:projectSlug" element={<ChatView />} />
+        <Route path="/:projectSlug/:chatId" element={<ChatView />} />
+      </Routes>
+    </>
   );
 }
 
@@ -97,7 +119,7 @@ function ChatView() {
   const [reasoningTreeOpen, setReasoningTreeOpen] = useState(false);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isMobile = () => window.innerWidth <= 480;
-  const { conversations, loading, refresh, optimisticRemove } = useConversations(15_000);
+  const { conversations, loading, refresh, optimisticRemove } = useConversations(8_000);
   const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
 
   // ── Steps Cache for Artifacts Extraction ──

@@ -5,10 +5,36 @@ import {
   mkdirSync,
   readFileSync,
 } from "node:fs";
-import { EOL } from "node:os";
+import os, { EOL } from "node:os";
 import path from "node:path";
 
 export const isWindows = process.platform === "win32";
+
+export function getLocalLanIps() {
+  const nets = os.networkInterfaces();
+  const results = [];
+  for (const name of Object.keys(nets)) {
+    const lower = name.toLowerCase();
+    if (lower.includes("virtual") || lower.includes("vethernet") || lower.includes("loopback")) {
+      continue;
+    }
+    for (const net of nets[name] || []) {
+      const familyV4 = typeof net.family === "string" ? net.family === "IPv4" : net.family === 4;
+      if (familyV4 && !net.internal) {
+        const ip = net.address;
+        const [a, b] = ip.split(".").map(Number);
+        if (a === 192 && b === 168) {
+          results.unshift(ip);
+        } else if (a === 10 || (a === 172 && b >= 16 && b <= 31)) {
+          results.push(ip);
+        } else {
+          results.push(ip);
+        }
+      }
+    }
+  }
+  return [...new Set(results)];
+}
 
 export function commandName(base) {
   return isWindows ? `${base}.cmd` : base;

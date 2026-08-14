@@ -265,6 +265,9 @@ export function ChatInput({
     setPlannerType(effectivePlanner);
   }, [effectivePlanner]);
 
+  // Stable ref so onTranscript (called before setDomAndSync is declared) can always call the latest version
+  const setDomAndSyncRef = useRef<((next: string, opts?: { showSlash?: boolean; showMention?: boolean; closeMention?: boolean; closeSlash?: boolean }) => void) | null>(null);
+
   const {
     isListening,
     isSupported: isSpeechSupported,
@@ -272,7 +275,10 @@ export function ChatInput({
     error: speechError,
   } = useSpeechToText({
     onTranscript: (text) => {
-      onDraftChange(draft ? `${draft} ${text}` : text);
+      // Read current DOM value (not stale draft) and append
+      const current = textareaRef.current?.value ?? "";
+      const next = current ? `${current} ${text}` : text;
+      setDomAndSyncRef.current?.(next);
     },
   });
 
@@ -302,12 +308,85 @@ export function ChatInput({
 
   const fileErrorTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // hasLocalText drives the send button — updated by native DOM listener, never by React re-renders.
+  const [hasLocalText, setHasLocalText] = useState(() => draft.trim().length > 0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Parse slash command query
-  const slashQuery = useMemo(() => {
-    const match = draft.match(/(?:^|\s)\/([^\s]*)$/);
-    return match ? match[1] : null;
+  // Keep a stable ref to onDraftChange so native listeners can always call the latest version
+  // without being re-created (which would require non-[] deps and cause re-render loops).
+  const onDraftChangeRef = useRef(onDraftChange);
+  useEffect(() => { onDraftChangeRef.current = onDraftChange; });
+
+  // Helper to read the current textarea DOM value
+  const getDomValue = useCallback(() => textareaRef.current?.value ?? "", []);
+
+  // ── Parse slash/mention query state (driven by DOM, not React draft) ──
+  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+
+  // ── Single native input listener, mounted once. NEVER re-created. ──
+  // This is the ONLY place we read textarea input during typing.
+  // We do NOT call onDraftChange here — that causes parent re-renders which fight Android IME.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+
+    // Set initial DOM value from draft prop (pre-filled drafts, draft store)
+    if (draft) {
+      el.value = draft;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    }
+
+    const onInput = () => {
+      const val = el.value;
+      // 1. Auto-resize
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+      // 2. Enable/disable send button
+      setHasLocalText(val.trim().length > 0);
+      // 3. Slash / mention autocomplete menus
+      const slashMatch = val.match(/(?:^|\s)\/([^\s]*)$/);
+      setSlashQuery(slashMatch ? slashMatch[1] : null);
+      const mentionMatch = val.match(/(?:^|\s)@([^\s]*)$/);
+      setMentionQuery(mentionMatch ? mentionMatch[1] : null);
+      // 4. Persist draft — throttled to avoid re-render storms on every keystroke
+      // We use a microtask so the browser can paint first
+      const snapshot = val;
+      Promise.resolve().then(() => {
+        if (el.value === snapshot) onDraftChangeRef.current(snapshot);
+      });
+    };
+
+    const onBlur = () => {
+      // On keyboard dismiss, commit whatever is in the DOM
+      const val = el.value;
+      setHasLocalText(val.trim().length > 0);
+      onDraftChangeRef.current(val);
+    };
+
+    el.addEventListener("input", onInput);
+    el.addEventListener("blur", onBlur);
+    return () => {
+      el.removeEventListener("input", onInput);
+      el.removeEventListener("blur", onBlur);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps — NEVER re-mount. Stable ref (onDraftChangeRef) used for callback.
+
+  // ── External draft sync (preset insert, send clear, revert) ──
+  // Only runs when parent explicitly changes draft to something different from what's in the DOM.
+  const lastExternalDraft = useRef(draft);
+  useEffect(() => {
+    // Skip if this matches what we last wrote ourselves (avoids echo-clearing)
+    if (draft === lastExternalDraft.current) return;
+    lastExternalDraft.current = draft;
+    const el = textareaRef.current;
+    if (!el || el.value === draft) return;
+    el.value = draft;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    setHasLocalText(draft.trim().length > 0);
   }, [draft]);
 
   const filteredSlashCommands = useMemo(() => {
@@ -316,40 +395,29 @@ export function ChatInput({
     return commands.filter((cmd) => cmd.name.toLowerCase().includes(q));
   }, [slashQuery, commands]);
 
-  // Parse mention query
-  const mentionQuery = useMemo(() => {
-    const match = draft.match(/(?:^|\s)@([^\s]*)$/);
-    return match ? match[1] : null;
-  }, [draft]);
-
   const filteredMentionOptions = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
     return MENTION_OPTIONS.filter((opt) => opt.name.toLowerCase().includes(q));
   }, [mentionQuery]);
 
+
+
   useEffect(() => {
     setSlashSelectedIndex(0);
-    if (slashQuery !== null) {
-      setShowSlashMenu(true);
-    }
+    if (slashQuery !== null) setShowSlashMenu(true);
   }, [slashQuery]);
-
-  const [quickCommandSheetOpen, setQuickCommandSheetOpen] = useState(false);
 
   useEffect(() => {
     setMentionSelectedIndex(0);
-    if (mentionQuery !== null) {
-      setShowMentionMenu(true);
-    }
+    if (mentionQuery !== null) setShowMentionMenu(true);
   }, [mentionQuery]);
 
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  }, [draft]);
+  const [quickCommandSheetOpen, setQuickCommandSheetOpen] = useState(false);
+
+  // ── No controlled useEffect needed: textarea is now uncontrolled ──
+  // The textarea DOM element is the source of truth while the user is typing.
+  // We sync back to parent via onDraftChange only on input/blur events.
 
   const showFileError = useCallback((msg: string) => {
     setFileError(msg);
@@ -382,52 +450,70 @@ export function ChatInput({
     });
   }, []);
 
+  const setDomAndSync = useCallback(
+    (next: string, opts?: { showSlash?: boolean; showMention?: boolean; closeMention?: boolean; closeSlash?: boolean }) => {
+      const el = textareaRef.current;
+      if (el) {
+        el.value = next;
+        el.style.height = "auto";
+        el.style.height = Math.min(el.scrollHeight, 200) + "px";
+      }
+      lastExternalDraft.current = next;
+      setHasLocalText(next.trim().length > 0);
+      const slashMatch = next.match(/(?:^|\s)\/([^\s]*)$/);
+      setSlashQuery(slashMatch ? slashMatch[1] : null);
+      const mentionMatch = next.match(/(?:^|\s)@([^\s]*)$/);
+      setMentionQuery(mentionMatch ? mentionMatch[1] : null);
+      if (opts?.showSlash) setShowSlashMenu(true);
+      if (opts?.showMention) setShowMentionMenu(true);
+      if (opts?.closeSlash) setShowSlashMenu(false);
+      if (opts?.closeMention) setShowMentionMenu(false);
+      onDraftChange(next);
+    },
+    [onDraftChange],
+  );
+
+  // Wire the ref so onTranscript can always call the latest setDomAndSync
+  setDomAndSyncRef.current = setDomAndSync;
+
   const appendTextToInput = useCallback(
     (textToAppend: string) => {
-      onDraftChange(draft ? `${draft.trimEnd()} ${textToAppend}` : textToAppend);
-      setShowSlashMenu(true);
-      setShowMentionMenu(true);
+      const current = textareaRef.current?.value ?? draft;
+      const next = current ? `${current.trimEnd()} ${textToAppend}` : textToAppend;
+      setDomAndSync(next, { showSlash: true, showMention: true });
       setTimeout(() => textareaRef.current?.focus(), 50);
     },
-    [draft, onDraftChange],
+    [draft, setDomAndSync],
   );
 
   const insertSlashCommand = useCallback(
     (cmdName: string) => {
-      const match = draft.match(/^(.*(?:^|\s))\/[a-zA-Z0-9_:-]*$/);
-      if (match) {
-        onDraftChange(`${match[1]}/${cmdName} `);
-      } else {
-        onDraftChange(`/${cmdName} `);
-      }
-      setShowSlashMenu(false);
+      const current = textareaRef.current?.value ?? draft;
+      const match = current.match(/^(.*(?:^|\s))\/[a-zA-Z0-9_:-]*$/);
+      const next = match ? `${match[1]}/${cmdName} ` : `/${cmdName} `;
+      setDomAndSync(next, { closeSlash: true });
       setTimeout(() => textareaRef.current?.focus(), 50);
     },
-    [draft, onDraftChange],
+    [draft, setDomAndSync],
   );
 
   const insertMention = useCallback(
     (mentionName: string) => {
-      const match = draft.match(/^(.*(?:^|\s))@[^\s]*$/);
-      if (match) {
-        onDraftChange(`${match[1]}@${mentionName} `);
-      } else {
-        onDraftChange(`@${mentionName} `);
-      }
-      setShowMentionMenu(false);
+      const current = textareaRef.current?.value ?? draft;
+      const match = current.match(/^(.*(?:^|\s))@[^\s]*$/);
+      const next = match ? `${match[1]}@${mentionName} ` : `@${mentionName} `;
+      setDomAndSync(next, { closeMention: true });
       setTimeout(() => textareaRef.current?.focus(), 50);
     },
-    [draft, onDraftChange],
+    [draft, setDomAndSync],
   );
 
   const handleSubmit = useCallback(async () => {
-    const trimmed = draft.trim();
-    if ((!trimmed && attachments.length === 0) || disabled || isPreparingAttachments) {
-      return;
-    }
+    // Always read from DOM directly — never stale React state
+    const trimmed = getDomValue().trim();
+    if ((!trimmed && attachments.length === 0) || disabled || isPreparingAttachments) return;
 
     setIsPreparingAttachments(true);
-
     try {
       let media: MediaAttachment[] | undefined;
       if (attachments.length > 0) {
@@ -437,25 +523,26 @@ export function ChatInput({
           inlineData: attachment.inlineData,
         }));
       }
-
       onSend(trimmed || " ", model, media, plannerType);
-      onDraftChange("");
-      attachments.forEach((attachment) => {
-        URL.revokeObjectURL(attachment.dataUrl);
-      });
-      setAttachments([]);
+      // Immediately wipe DOM and state — do NOT wait for parent draft to change
       if (textareaRef.current) {
+        textareaRef.current.value = "";
         textareaRef.current.style.height = "auto";
       }
+      lastExternalDraft.current = "";
+      setHasLocalText(false);
+      setSlashQuery(null);
+      setMentionQuery(null);
+      onDraftChange("");
+      attachments.forEach((a) => URL.revokeObjectURL(a.dataUrl));
+      setAttachments([]);
     } catch (err) {
-      showFileError(
-        err instanceof Error ? err.message : "处理附件失败",
-      );
+      showFileError(err instanceof Error ? err.message : "处理附件失败");
     } finally {
       setIsPreparingAttachments(false);
     }
   }, [
-    draft,
+    getDomValue,
     attachments,
     disabled,
     isPreparingAttachments,
@@ -541,12 +628,8 @@ export function ChatInput({
     }
   };
 
-  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onDraftChange(e.target.value);
-    const el = e.target;
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
-  };
+  // No React synthetic event handlers for input/blur/composition.
+  // All of these are handled by the native listener in useEffect([]) above.
 
   // Paste handler for images
   const handlePaste = useCallback(
@@ -719,8 +802,6 @@ export function ChatInput({
             ref={textareaRef}
             className="chat-input"
             placeholder="发送消息..."
-            value={draft}
-            onChange={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             rows={1}
@@ -806,9 +887,11 @@ export function ChatInput({
               className="chat-send-btn"
               onClick={handleSubmit}
               disabled={
-                (!draft.trim() && attachments.length === 0) || inputDisabled
+                (!hasLocalText && attachments.length === 0) || inputDisabled
               }
-              title={isPreparingAttachments ? "正在处理图片..." : "发送 (Enter)"}
+              title={
+                isPreparingAttachments ? "正在处理图片..." : "发送 (Enter)"
+              }
             >
               ↑
             </button>
@@ -819,8 +902,8 @@ export function ChatInput({
         isOpen={quickCommandSheetOpen}
         onClose={() => setQuickCommandSheetOpen(false)}
         onSelectPreset={(preset) => {
-          onDraftChange(preset.prompt);
-          textareaRef.current?.focus();
+          setDomAndSync(preset.prompt);
+          setTimeout(() => textareaRef.current?.focus(), 50);
         }}
       />
     </div>

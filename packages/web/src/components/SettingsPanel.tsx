@@ -4,6 +4,8 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
+
 import {
   IconCheck,
   IconMonitor,
@@ -20,6 +22,7 @@ import {
   IconRefresh,
 } from "./Icons";
 import { api, getApiBase, setCustomApiBase } from "../api/client";
+import { SetupWizard } from "./SetupWizard";
 import {
   requestBrowserNotificationPermission,
   showBrowserNotification,
@@ -108,6 +111,7 @@ export function SettingsPanel({
   const [customServerUrl, setCustomServerUrl] = useState<string>(() => getApiBase());
   const [proxyStatus, setProxyStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [healthData, setHealthData] = useState<import("../types").HealthResponse | null>(null);
+  const [showSetupWizardLocal, setShowSetupWizardLocal] = useState(false);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
@@ -443,6 +447,7 @@ export function SettingsPanel({
   const displayedProjects = showAllProjects ? workspaces : workspaces.slice(0, 4);
 
   return (
+    <>
     <div className="settings-panel">
       {/* ── Mobile Navigation Header (Shown only on <=768px) ── */}
       <div className="settings-mobile-header">
@@ -903,10 +908,32 @@ export function SettingsPanel({
                     </div>
                   )}
 
-                  {/* Current active address hint */}
+                   {/* Current active address hint */}
                   <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
                     当前使用地址：<code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{getApiBase() || window.location.origin + "（同源）"}</code>
                   </div>
+
+                  {/* Re-open setup wizard (native only) */}
+                  {Boolean((window as any).Capacitor?.isNativePlatform?.() || (window as any).Capacitor?.platform) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSetupWizardLocal(true)}
+                      style={{
+                        marginTop: 4,
+                        padding: "8px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        borderRadius: 8,
+                        border: "1px solid var(--border-default)",
+                        background: "var(--bg-tertiary)",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                        alignSelf: "flex-start",
+                      }}
+                    >
+                      📡 重新打开连接向导
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1574,5 +1601,13 @@ export function SettingsPanel({
         </div>
       )}
     </div>
+    {showSetupWizardLocal && createPortal(
+      <SetupWizard onClose={() => {
+        setShowSetupWizardLocal(false);
+        setCustomServerUrl(getApiBase());
+      }} />,
+      document.body,
+    )}
+    </>
   );
 }

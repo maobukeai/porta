@@ -103,6 +103,6 @@ describe("useStepsStream", () => {
       expect(MockWebSocket.instances).toHaveLength(2);
     });
 
-    expect(getConversation).not.toHaveBeenCalled();
+    expect(getConversation).toHaveBeenCalledWith("cascade-1");
   });
 });

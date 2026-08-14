@@ -34,11 +34,18 @@ describe("ChatInput", () => {
     ).toBeInTheDocument();
   });
 
-  it("calls onDraftChange when typing", () => {
+  it("calls onDraftChange when typing", async () => {
     render(<ChatInput {...defaultProps} />);
-    const textarea = screen.getByPlaceholderText("发送消息...");
-    fireEvent.change(textarea, { target: { value: "hello" } });
-    expect(mockOnDraftChange).toHaveBeenCalledWith("hello");
+    const textarea = screen.getByPlaceholderText("发送消息...") as HTMLTextAreaElement;
+    // The textarea is now uncontrolled and uses a native DOM 'input' listener.
+    // We must set the value on the DOM element and fire a native 'input' event.
+    textarea.value = "hello";
+    fireEvent.input(textarea);
+    // onDraftChange is called inside a microtask (Promise.resolve().then(...))
+    // so we wait for the next tick before asserting.
+    await waitFor(() => {
+      expect(mockOnDraftChange).toHaveBeenCalledWith("hello");
+    });
   });
 
   it("blocks oversized svg attachments before sending", async () => {

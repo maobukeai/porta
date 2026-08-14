@@ -1,4 +1,4 @@
-﻿import type { ChatMessage, ToolCallData, TrajectoryStep } from "../types";
+import type { ChatMessage, ToolCallData, TrajectoryStep } from "../types";
 import { getAskQuestionRequest, getFilePermissionRequest } from "../utils/stepCards";
 import {
   isSubagentToolName,
@@ -51,6 +51,19 @@ export function stepsToMessages(steps: TrajectoryStep[], baseOffset = 0): ChatMe
       }
     }
 
+    // Ask Question (including URL / MCP permission choice prompts) must take precedence when options exist!
+    const askQuestion = getAskQuestionRequest(step);
+    if (askQuestion) {
+      messages.push({
+        role: "system",
+        content: "",
+        stepIndex: absoluteIndex,
+        type: "CORTEX_STEP_TYPE_ASK_QUESTION",
+        step,
+      });
+      continue;
+    }
+
     // File permission request: emit as a dedicated message type
     const fpr = getFilePermissionRequest(step);
     if (fpr) {
@@ -59,18 +72,6 @@ export function stepsToMessages(steps: TrajectoryStep[], baseOffset = 0): ChatMe
         content: "",
         stepIndex: absoluteIndex,
         type: "CORTEX_STEP_TYPE_FILE_PERMISSION",
-        step,
-      });
-      continue;
-    }
-
-    const askQuestion = getAskQuestionRequest(step);
-    if (askQuestion) {
-      messages.push({
-        role: "system",
-        content: "",
-        stepIndex: absoluteIndex,
-        type: "CORTEX_STEP_TYPE_ASK_QUESTION",
         step,
       });
       continue;

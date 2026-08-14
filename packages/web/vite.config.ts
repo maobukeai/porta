@@ -77,7 +77,7 @@ export default defineConfig(({ mode }) => {
     ],
     envDir: repoRoot,
     server: {
-      host: env.PORTA_HOST || process.env.PORTA_HOST || "127.0.0.1",
+      host: env.PORTA_WEB_HOST || process.env.PORTA_WEB_HOST || "0.0.0.0",
       port: Number(env.PORTA_WEB_PORT || process.env.PORTA_WEB_PORT || 3070),
       watch: {
         ignored: [

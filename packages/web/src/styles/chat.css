@@ -5,8 +5,12 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Fallback chain: JS-tracked visual viewport > dynamic viewport > static viewport.
+     --visual-viewport-height is set by useVisualViewport.ts and correctly accounts
+     for the Android soft keyboard height, preventing input from being covered. */
   height: 100vh;
-  height: 100dvh; /* Dynamic viewport: excludes address bar & keyboard on mobile */
+  height: 100dvh;
+  height: var(--visual-viewport-height, 100dvh);
   overflow: hidden;
   background: var(--bg-primary);
 }

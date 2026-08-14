@@ -541,9 +541,12 @@
   /* ── Header title overflow truncation ── */
 
   .main-header {
+    padding-top: max(4px, env(safe-area-inset-top));
     padding-left: max(8px, env(safe-area-inset-left));
     padding-right: max(8px, env(safe-area-inset-right));
     gap: 4px;
+    height: auto;
+    min-height: var(--header-height);
   }
 
   .main-header-title-wrap {
@@ -581,5 +584,16 @@
     white-space: nowrap;
   }
 
-
+  /* Thin glass scrollbar for mobile webview */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }

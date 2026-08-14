@@ -11,9 +11,84 @@ import type {
  * The LS embeds filePermissionRequest in 6 step types:
  * CodeAction, ViewFile, ListDirectory, GrepSearch, ViewFileOutline, ViewCodeItem.
  */
+export function getAskQuestionRequest(
+  step: TrajectoryStep,
+): AskQuestionRequest | undefined {
+  const directRequest =
+    step.askQuestion ?? step.requestedInteraction?.askQuestion;
+  if (directRequest?.questions && directRequest.questions.length > 0) {
+    return directRequest;
+  }
+
+  // Extract URL / MCP tool permission / options questions (e.g. Allow reading this URL? zcode.z.ai)
+  const reqInteraction = step.requestedInteraction as any;
+  const perm =
+    reqInteraction?.permission ??
+    reqInteraction?.mcpPermission ??
+    reqInteraction?.urlPermission ??
+    reqInteraction;
+  const options =
+    perm?.options ?? reqInteraction?.options ?? reqInteraction?.choices;
+
+  if (Array.isArray(options) && options.length > 0) {
+    const res = perm?.resource ?? reqInteraction?.resource;
+    const target =
+      res?.target ??
+      res?.url ??
+      res?.toolName ??
+      res?.serverName ??
+      perm?.target ??
+      perm?.url ??
+      perm?.title ??
+      reqInteraction?.target ??
+      "";
+    const actionStr = res?.action ?? perm?.action ?? "access";
+    const title =
+      perm?.title ??
+      reqInteraction?.title ??
+      (target ? `Allow reading / accessing this URL?` : `Allow using this ${actionStr}?`);
+
+    return {
+      questions: [
+        {
+          question:
+            target && target !== title && !title.includes(target)
+              ? `${title}\n${target}`
+              : title,
+          options: options.map((opt: any, idx: number) => {
+            if (typeof opt === "string") {
+              return { id: String(idx + 1), text: opt };
+            }
+            return {
+              id: String(opt.id ?? idx + 1),
+              text: opt.text ?? opt.label ?? String(opt),
+            };
+          }),
+          isMultiSelect: false,
+        },
+      ],
+    };
+  }
+
+  return undefined;
+}
+
 export function getFilePermissionRequest(
   step: TrajectoryStep,
 ): FilePermissionRequest | undefined {
+  // If the step has interactive options / choice questions, it's an AskQuestion
+  const reqInteraction = step.requestedInteraction as any;
+  const hasOptions =
+    Array.isArray(reqInteraction?.permission?.options) ||
+    Array.isArray(reqInteraction?.options) ||
+    Array.isArray(reqInteraction?.choices) ||
+    Boolean(step.askQuestion) ||
+    Boolean(reqInteraction?.askQuestion);
+
+  if (hasOptions) {
+    return undefined;
+  }
+
   let fpr =
     step.filePermissionRequest ??
     step.viewFile?.filePermissionRequest ??
@@ -30,10 +105,11 @@ export function getFilePermissionRequest(
         fpr.action ?? (step.codeAction ? "write_file" : "read_file"),
       responseKind: "filePermission",
     };
+    return fpr;
   }
 
-  if (!fpr && step.requestedInteraction?.permission) {
-    const perm = (step.requestedInteraction as any).permission;
+  if (reqInteraction?.permission) {
+    const perm = reqInteraction.permission;
     const res = perm?.resource;
     const target =
       res?.target ??
@@ -49,57 +125,9 @@ export function getFilePermissionRequest(
       action: action,
       responseKind: "permission",
     };
-  }
-
-  return fpr;
-}
-
-export function getAskQuestionRequest(
-  step: TrajectoryStep,
-): AskQuestionRequest | undefined {
-  const directRequest = step.askQuestion ?? step.requestedInteraction?.askQuestion;
-  if (directRequest?.questions && directRequest.questions.length > 0) {
-    return directRequest;
-  }
-
-  // Extract MCP tool permission / options questions (e.g. blender-mcp/get_scene_info)
-  const reqInteraction = step.requestedInteraction as any;
-  const perm = reqInteraction?.permission ?? reqInteraction?.mcpPermission;
-  const options = perm?.options ?? reqInteraction?.options;
-
-  if (Array.isArray(options) && options.length > 0) {
-    const res = perm?.resource;
-    const target =
-      res?.target ??
-      res?.toolName ??
-      perm?.target ??
-      perm?.title ??
-      reqInteraction?.target ??
-      "MCP Tool";
-    const actionStr = res?.action ?? perm?.action ?? "MCP tool";
-    const title =
-      perm?.title ??
-      reqInteraction?.title ??
-      `Allow using this ${actionStr}?`;
-
-    return {
-      questions: [
-        {
-          question: target && target !== title ? `${title}\n\`${target}\`` : title,
-          options: options.map((opt: any, idx: number) => {
-            if (typeof opt === "string") {
-              return { id: String(idx + 1), text: opt };
-            }
-            return {
-              id: opt.id ?? String(idx + 1),
-              text: opt.text ?? String(opt),
-            };
-          }),
-          isMultiSelect: false,
-        },
-      ],
-    };
+    return fpr;
   }
 
   return undefined;
 }
+

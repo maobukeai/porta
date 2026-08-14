@@ -149,6 +149,14 @@ export function useChatActions({
         draftStore.delete(cascadeId);
         setStepsRefreshKey((k) => k + 1);
         refresh();
+
+        // Burst refresh every 1s for 5s to guarantee fast initial streaming sync
+        for (let delay = 1000; delay <= 5000; delay += 1000) {
+          setTimeout(() => {
+            setStepsRefreshKey((k) => k + 1);
+            refresh();
+          }, delay);
+        }
       } catch (err) {
         console.error("Failed to send message:", err);
         setOptimisticMessages((prev) =>

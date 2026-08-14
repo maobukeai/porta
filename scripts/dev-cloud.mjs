@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   commandName,
@@ -16,13 +17,21 @@ if (!tunnelName) {
   process.exit(1);
 }
 const cloudflaredConfig = process.env.PORTA_CLOUDFLARED_CONFIG;
+const tunnelProtocol = process.env.PORTA_TUNNEL_PROTOCOL || "http2";
 const cloudflaredArgs = [
   ...(cloudflaredConfig ? ["--config", cloudflaredConfig] : []),
   "tunnel",
+  ...(tunnelProtocol ? ["--protocol", tunnelProtocol] : []),
   "run",
   tunnelName,
 ];
 
+const localCloudflared = path.resolve("cloudflared.exe");
+const useLocalBinary = existsSync(localCloudflared);
+const tunnelCommand = useLocalBinary ? `"${localCloudflared}"` : commandName("npx");
+const tunnelExecArgs = useLocalBinary ? cloudflaredArgs : ["cloudflared", ...cloudflaredArgs];
+
+const runnerLabels = ["proxy", "web", "tunnel"];
 const logsDir = ensureLogsDir();
 const runners = [
   spawnLoggedProcess(
@@ -39,8 +48,8 @@ const runners = [
   ),
   spawnLoggedProcess(
     "tunnel",
-    commandName("npx"),
-    ["cloudflared", ...cloudflaredArgs],
+    tunnelCommand,
+    tunnelExecArgs,
     path.join(logsDir, "tunnel.log"),
   ),
 ];
@@ -73,8 +82,9 @@ const exits = runners.map(async ({ child }, index) => ({
 
 const firstExit = await Promise.race(exits);
 if (!shuttingDown) {
-  const label = firstExit.index === 0 ? "proxy" : "tunnel";
+  const label = runnerLabels[firstExit.index] || "process";
   const code = typeof firstExit.code === "number" ? firstExit.code : 1;
   console.error(`${label} exited early`);
   await shutdown(code);
 }
+
