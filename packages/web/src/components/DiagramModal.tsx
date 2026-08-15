@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { IconCheck, IconCopy } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
+import { copyText } from "../utils/clipboard";
 
 interface DiagramModalProps {
   open: boolean;
@@ -36,9 +37,11 @@ export function DiagramModal({
 
   const handleCopy = () => {
     triggerHaptic("success");
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+    void copyText(code).then((success) => {
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
     });
   };
 

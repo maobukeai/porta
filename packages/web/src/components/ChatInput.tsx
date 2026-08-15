@@ -20,12 +20,14 @@ import {
   IconMicOff,
   IconStop,
   IconSparkles,
+  IconArrowUp,
 } from "./Icons";
 import { QuickCommandSheet } from "./QuickCommandSheet";
-import type { MediaAttachment } from "../types";
-import { prepareAttachments } from "../utils/imageAttachments";
+import { ExecutionModeSelector } from "./ExecutionModeSelector";
+import type { PromptPreset } from "../utils/promptPresets";
+import type { MediaAttachment, ExecutionMode } from "../types";
 import { useSpeechToText } from "../hooks/useSpeechToText";
-import { DEFAULT_MODEL } from "../constants";
+import { Lightbox } from "./Lightbox";
 const ALLOWED_TYPES = [
   "image/png",
   "image/jpeg",
@@ -36,27 +38,36 @@ const ALLOWED_TYPES = [
 
 export type PlannerType = "conversational" | "planning";
 
+import {
+  type AttachmentPreview,
+  ensureMediaAttachment,
+} from "../utils/imageAttachments";
+
 interface Props {
   onSend: (
     text: string,
     model: string | null,
     media?: MediaAttachment[],
     plannerType?: PlannerType,
+    executionMode?: ExecutionMode,
   ) => void;
   onStop: () => void;
   isRunning: boolean;
   disabled?: boolean;
   draft: string;
   onDraftChange: (text: string) => void;
+  draftAttachments?: AttachmentPreview[];
+  onDraftAttachmentsChange?: (attachments: AttachmentPreview[]) => void;
   /** Default model from client settings; used as initial selection. */
   defaultModel?: string | null;
   /** Default planner type from client settings. */
   defaultPlannerType?: PlannerType;
-}
-
-interface AttachmentPreview {
-  file: File;
-  dataUrl: string;
+  /** Default execution mode from client settings. */
+  defaultExecutionMode?: ExecutionMode;
+  /** Current active workspace URI */
+  workspaceUri?: string | null;
+  /** Optional handler for enlarging preview image */
+  onImageClick?: (src: string) => void;
 }
 
 interface SlashCommand {
@@ -79,23 +90,20 @@ const MENTION_OPTIONS: MentionOption[] = [
 ];
 
 const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
-  { name: "btw", desc: "不中断主对话的情况下快速提问" },
-  { name: "mcp:blender-mcp:asset_creation_strategy", desc: "定义在 Blender 中创建资产的策略" },
-  { name: "goal", desc: "持续运行直至完全完成指定的开发目标" },
-  { name: "schedule", desc: "按周期定时计划或一次性定时器运行指令" },
-  { name: "browser", desc: "调用浏览器 Agent 执行网页任务" },
-  { name: "grill-me", desc: "通过交互对话对齐并确认实施计划" },
-  { name: "teamwork-preview", desc: "调用多智能体团队协同解决大型项目" },
-  { name: "learn", desc: "总结复盘近期经验并沉淀为可复用技能" },
-];
-
-const PLANNER_OPTIONS: { value: PlannerType; label: string; desc: string }[] = [
-  {
-    value: "conversational",
-    label: "快速",
-    desc: "直接、单步响应",
-  },
-  { value: "planning", label: "规划", desc: "多步结构化方法" },
+  { name: "btw", desc: "不中断主对话的情况下快速提问", category: "slash" },
+  { name: "goal", desc: "持续运行直至完全完成指定的开发目标", category: "slash" },
+  { name: "schedule", desc: "按周期定时计划或一次性定时器运行指令", category: "slash" },
+  { name: "browser", desc: "调用浏览器 Agent 执行网页任务", category: "slash" },
+  { name: "grill-me", desc: "通过交互对话对齐并确认实施计划", category: "slash" },
+  { name: "teamwork-preview", desc: "调用多智能体团队协同解决大型项目", category: "slash" },
+  { name: "learn", desc: "总结复盘近期经验并沉淀为可复用技能", category: "slash" },
+  { name: "brainstorming", desc: "在开发前深入探索用户意图、需求和设计方案", category: "skill" },
+  { name: "chinese-code-review", desc: "中文代码审查与规范建议", category: "skill" },
+  { name: "systematic-debugging", desc: "系统化调试与根因排查", category: "skill" },
+  { name: "test-driven-development", desc: "测试驱动开发与单测编写", category: "skill" },
+  { name: "frontend_design", desc: "构建兼具高端设计感与生产级别的前端界面", category: "skill" },
+  { name: "ui-ux-pro-max", desc: "高级 UI/UX 设计智能与排版指南", category: "skill" },
+  { name: "mcp:blender-mcp:asset_creation_strategy", desc: "定义在 Blender 中创建资产的策略", category: "mcp" },
 ];
 
 function AddContextSelector({
@@ -128,6 +136,7 @@ function AddContextSelector({
   return (
     <div className="add-context-selector" ref={ref}>
       <button
+        type="button"
         className="chat-action-icon-btn"
         onClick={() => setOpen((v) => !v)}
         title="添加上下文"
@@ -139,6 +148,7 @@ function AddContextSelector({
         <div className="add-context-dropdown">
           <div className="add-context-header">添加上下文</div>
           <button
+            type="button"
             className="add-context-item"
             onClick={() => {
               onSelectMedia();
@@ -149,6 +159,7 @@ function AddContextSelector({
             <span>媒体</span>
           </button>
           <button
+            type="button"
             className="add-context-item"
             onClick={() => {
               onSelectMention();
@@ -159,6 +170,7 @@ function AddContextSelector({
             <span>提及 (@)</span>
           </button>
           <button
+            type="button"
             className="add-context-item"
             onClick={() => {
               onSelectAction();
@@ -169,6 +181,7 @@ function AddContextSelector({
             <span>快捷指令 (/)</span>
           </button>
           <button
+            type="button"
             className="add-context-item"
             onClick={() => {
               onSelectBrowser();
@@ -184,61 +197,6 @@ function AddContextSelector({
   );
 }
 
-function PlannerTypeSelector({
-  plannerType,
-  onSelect,
-}: {
-  plannerType: PlannerType;
-  onSelect: (v: PlannerType) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const activeLabel =
-    PLANNER_OPTIONS.find((o) => o.value === plannerType)?.label ?? "快速";
-
-  return (
-    <div className="model-selector" ref={ref}>
-      <button
-        className="model-selector-btn"
-        onClick={() => setOpen((v) => !v)}
-        title="选择规划器模式"
-      >
-        <span className="model-selector-label">{activeLabel}</span>
-        <span className="model-selector-caret">▾</span>
-      </button>
-      {open && (
-        <div className="model-selector-dropdown">
-          {PLANNER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              className={`model-option ${plannerType === opt.value ? "active" : ""}`}
-              onClick={() => {
-                onSelect(opt.value);
-                setOpen(false);
-              }}
-            >
-              <span className="model-option-label">{opt.label}</span>
-              <span className="model-option-meta">{opt.desc}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function ChatInput({
   onSend,
   onStop,
@@ -246,10 +204,16 @@ export function ChatInput({
   disabled,
   draft,
   onDraftChange,
+  draftAttachments,
+  onDraftAttachmentsChange,
   defaultModel,
   defaultPlannerType,
+  defaultExecutionMode,
+  workspaceUri,
+  onImageClick,
 }: Props) {
-  const effectiveDefault = defaultModel ?? DEFAULT_MODEL;
+  const [previewLightboxSrc, setPreviewLightboxSrc] = useState<string | null>(null);
+  const effectiveDefault = defaultModel ?? null;
   const [model, setModel] = useState<string | null>(effectiveDefault);
 
   // Sync model when settings change
@@ -257,13 +221,33 @@ export function ChatInput({
     setModel(effectiveDefault);
   }, [effectiveDefault]);
 
-  const effectivePlanner = defaultPlannerType ?? "conversational";
-  const [plannerType, setPlannerType] = useState<PlannerType>(effectivePlanner);
+  const initialMode = useMemo<ExecutionMode>(() => {
+    try {
+      const saved = localStorage.getItem("porta_execution_mode") as ExecutionMode;
+      if (saved && ["review_before_edit", "auto_edit", "planning", "full_access"].includes(saved)) {
+        return saved;
+      }
+    } catch {}
+    if (defaultExecutionMode) return defaultExecutionMode;
+    if (defaultPlannerType === "planning") return "planning";
+    return "full_access";
+  }, [defaultExecutionMode, defaultPlannerType]);
 
-  // Sync planner type when settings change
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(initialMode);
+
   useEffect(() => {
-    setPlannerType(effectivePlanner);
-  }, [effectivePlanner]);
+    if (defaultExecutionMode) {
+      setExecutionMode(defaultExecutionMode);
+    }
+  }, [defaultExecutionMode]);
+
+  const handleSelectExecutionMode = useCallback((m: ExecutionMode) => {
+    setExecutionMode(m);
+    try {
+      localStorage.setItem("porta_execution_mode", m);
+    } catch {}
+    api.setExecutionMode(m).catch(() => {});
+  }, []);
 
   // Stable ref so onTranscript (called before setDomAndSync is declared) can always call the latest version
   const setDomAndSyncRef = useRef<((next: string, opts?: { showSlash?: boolean; showMention?: boolean; closeMention?: boolean; closeSlash?: boolean }) => void) | null>(null);
@@ -282,7 +266,14 @@ export function ChatInput({
     },
   });
 
-  const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentPreview[]>(() => draftAttachments || []);
+
+  // Sync attachments when draftAttachments prop changes externally (e.g. on revert/edit)
+  useEffect(() => {
+    if (draftAttachments !== undefined) {
+      setAttachments(draftAttachments);
+    }
+  }, [draftAttachments]);
   const [dragOver, setDragOver] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
@@ -292,19 +283,23 @@ export function ChatInput({
   const [mentionSelectedIndex, setMentionSelectedIndex] = useState(0);
   const [commands, setCommands] = useState<SlashCommand[]>(DEFAULT_SLASH_COMMANDS);
 
-  // Fetch dynamic commands from API on mount
+  // Fetch dynamic commands from API on mount & when workspace changes
   useEffect(() => {
+    let active = true;
     api
-      .commands()
+      .commands(workspaceUri || undefined)
       .then((res) => {
-        if (res.commands && res.commands.length > 0) {
+        if (active && res.commands && res.commands.length > 0) {
           setCommands(res.commands);
         }
       })
       .catch(() => {
         // Keep default commands fallback on network/API error
       });
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [workspaceUri]);
 
   const fileErrorTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -436,19 +431,26 @@ export function ChatInput({
         const dataUrl = URL.createObjectURL(file);
         setAttachments((prev) => {
           if (prev.length >= 5) return prev; // max 5 attachments
-          return [...prev, { file, dataUrl }];
+          const next = [...prev, { file, dataUrl, mimeType: file.type }];
+          onDraftAttachmentsChange?.(next);
+          return next;
         });
       }
     },
-    [showFileError],
+    [showFileError, onDraftAttachmentsChange],
   );
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => {
-      URL.revokeObjectURL(prev[index].dataUrl);
-      return prev.filter((_, i) => i !== index);
+      const target = prev[index];
+      if (target?.dataUrl && target.dataUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(target.dataUrl);
+      }
+      const next = prev.filter((_, i) => i !== index);
+      onDraftAttachmentsChange?.(next);
+      return next;
     });
-  }, []);
+  }, [onDraftAttachmentsChange]);
 
   const setDomAndSync = useCallback(
     (next: string, opts?: { showSlash?: boolean; showMention?: boolean; closeMention?: boolean; closeSlash?: boolean }) => {
@@ -489,7 +491,7 @@ export function ChatInput({
   const insertSlashCommand = useCallback(
     (cmdName: string) => {
       const current = textareaRef.current?.value ?? draft;
-      const match = current.match(/^(.*(?:^|\s))\/[a-zA-Z0-9_:-]*$/);
+      const match = current.match(/^(.*(?:^|\s))\/[^\s]*$/);
       const next = match ? `${match[1]}/${cmdName} ` : `/${cmdName} `;
       setDomAndSync(next, { closeSlash: true });
       setTimeout(() => textareaRef.current?.focus(), 50);
@@ -517,13 +519,20 @@ export function ChatInput({
     try {
       let media: MediaAttachment[] | undefined;
       if (attachments.length > 0) {
-        const prepared = await prepareAttachments(attachments.map((a) => a.file));
-        media = prepared.map((attachment) => ({
-          mimeType: attachment.mimeType,
-          inlineData: attachment.inlineData,
-        }));
+        const mediaList: MediaAttachment[] = [];
+        for (const att of attachments) {
+          const resolved = await ensureMediaAttachment(att);
+          if (resolved) {
+            mediaList.push(resolved);
+          }
+        }
+        if (mediaList.length > 0) {
+          media = mediaList;
+        }
       }
-      onSend(trimmed || " ", model, media, plannerType);
+      const effectivePlannerType: PlannerType =
+        executionMode === "planning" ? "planning" : "conversational";
+      onSend(trimmed || " ", model, media, effectivePlannerType, executionMode);
       // Immediately wipe DOM and state — do NOT wait for parent draft to change
       if (textareaRef.current) {
         textareaRef.current.value = "";
@@ -534,8 +543,13 @@ export function ChatInput({
       setSlashQuery(null);
       setMentionQuery(null);
       onDraftChange("");
-      attachments.forEach((a) => URL.revokeObjectURL(a.dataUrl));
+      attachments.forEach((a) => {
+        if (a.dataUrl && a.dataUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(a.dataUrl);
+        }
+      });
       setAttachments([]);
+      onDraftAttachmentsChange?.([]);
     } catch (err) {
       showFileError(err instanceof Error ? err.message : "处理附件失败");
     } finally {
@@ -548,8 +562,9 @@ export function ChatInput({
     isPreparingAttachments,
     onSend,
     model,
-    plannerType,
+    executionMode,
     onDraftChange,
+    onDraftAttachmentsChange,
     showFileError,
   ]);
 
@@ -620,6 +635,12 @@ export function ChatInput({
       }
     }
 
+    if (e.key === "Escape" && isRunning && onStop) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       // On mobile, Enter inserts a newline — send via button only
       if (window.innerWidth <= 480 || inputDisabled) return;
@@ -627,6 +648,19 @@ export function ChatInput({
       handleSubmit();
     }
   };
+
+  // Global Escape key listener to stop generation
+  useEffect(() => {
+    if (!isRunning || !onStop) return;
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onStop();
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isRunning, onStop]);
 
   // No React synthetic event handlers for input/blur/composition.
   // All of these are handled by the native listener in useEffect([]) above.
@@ -682,11 +716,14 @@ export function ChatInput({
     [addFiles],
   );
 
-  const renderSlashIcon = (name: string) => {
+  const renderSlashIcon = (name: string, category?: string) => {
+    if (category === "skill" || name.includes("brainstorming") || name.includes("design") || name.includes("test") || name.includes("debugging") || name.includes("review") || name.includes("plan") || name.includes("chinese")) {
+      return <IconSparkles size={14} />;
+    }
     if (name.includes("browser")) return <IconGlobe size={14} />;
     if (name.includes("grill")) return <IconEdit size={14} />;
     if (name.includes("teamwork")) return <IconUsers size={14} />;
-    if (name.includes("mcp")) return <IconChat size={14} />;
+    if (name.includes("mcp") || category === "mcp") return <IconChat size={14} />;
     if (name.includes("btw")) return <IconMessageCircle size={14} />;
     return <IconZap size={14} />;
   };
@@ -748,7 +785,7 @@ export function ChatInput({
                 onMouseEnter={() => setSlashSelectedIndex(idx)}
               >
                 <span className="slash-command-icon">
-                  {renderSlashIcon(cmd.name)}
+                  {renderSlashIcon(cmd.name, cmd.category)}
                 </span>
                 <span className="slash-command-name">{cmd.name}</span>
                 <span className="slash-command-desc">{cmd.desc}</span>
@@ -762,11 +799,27 @@ export function ChatInput({
       {attachments.length > 0 && (
         <div className="attachment-previews">
           {attachments.map((a, i) => (
-            <div key={a.dataUrl} className="attachment-thumb">
+            <div
+              key={a.dataUrl}
+              className="attachment-thumb"
+              onClick={() => {
+                if (onImageClick) {
+                  onImageClick(a.dataUrl);
+                } else {
+                  setPreviewLightboxSrc(a.dataUrl);
+                }
+              }}
+              style={{ cursor: "pointer" }}
+              title="点击放大查看"
+            >
               <img src={a.dataUrl} alt="attachment" />
               <button
                 className="attachment-remove"
-                onClick={() => removeAttachment(i)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeAttachment(i);
+                }}
+                title="删除图片"
               >
                 ×
               </button>
@@ -791,6 +844,7 @@ export function ChatInput({
             target.tagName !== "INPUT" &&
             target.closest("button") === null &&
             target.closest(".model-selector") === null &&
+            target.closest(".planner-type-selector") === null &&
             target.closest(".add-context-selector") === null
           ) {
             textareaRef.current?.focus();
@@ -801,7 +855,7 @@ export function ChatInput({
           <textarea
             ref={textareaRef}
             className="chat-input"
-            placeholder="发送消息..."
+            placeholder="提出后续修改要求，输入 @ 引用或 / 快捷指令..."
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             rows={1}
@@ -817,6 +871,11 @@ export function ChatInput({
               onSelectMention={() => appendTextToInput("@")}
               onSelectAction={() => appendTextToInput("/")}
               onSelectBrowser={() => appendTextToInput("/browser")}
+            />
+            <ExecutionModeSelector
+              mode={executionMode}
+              onSelect={handleSelectExecutionMode}
+              disabled={inputDisabled}
             />
             <button
               className="chat-action-icon-btn"
@@ -870,18 +929,20 @@ export function ChatInput({
 
           <div className="chat-input-bottom-right">
             <ModelSelector selectedModel={model} onSelect={setModel} />
-            <PlannerTypeSelector
-              plannerType={plannerType}
-              onSelect={setPlannerType}
-            />
             {isRunning && (
-              <button
-                className="chat-stop-btn"
-                onClick={onStop}
-                title="停止生成"
-              >
-                <IconStop size={13} />
-              </button>
+              <div className="chat-stop-btn-wrapper">
+                <button
+                  className="chat-stop-btn"
+                  onClick={onStop}
+                  aria-label="停止生成"
+                >
+                  <IconStop size={14} />
+                </button>
+                <div className="chat-stop-tooltip" role="tooltip">
+                  <span className="chat-stop-tooltip-text">停止生成</span>
+                  <kbd className="chat-stop-tooltip-kbd">Esc</kbd>
+                </div>
+              </div>
             )}
             <button
               className="chat-send-btn"
@@ -893,7 +954,7 @@ export function ChatInput({
                 isPreparingAttachments ? "正在处理图片..." : "发送 (Enter)"
               }
             >
-              ↑
+              <IconArrowUp size={16} />
             </button>
           </div>
         </div>
@@ -901,11 +962,17 @@ export function ChatInput({
       <QuickCommandSheet
         isOpen={quickCommandSheetOpen}
         onClose={() => setQuickCommandSheetOpen(false)}
-        onSelectPreset={(preset) => {
+        onSelectPreset={(preset: PromptPreset) => {
           setDomAndSync(preset.prompt);
           setTimeout(() => textareaRef.current?.focus(), 50);
         }}
       />
+      {previewLightboxSrc && (
+        <Lightbox
+          src={previewLightboxSrc}
+          onClose={() => setPreviewLightboxSrc(null)}
+        />
+      )}
     </div>
   );
 }

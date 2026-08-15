@@ -13,6 +13,7 @@
   "dependencies": {
     "@hono/node-server": "^2.0.10",
     "hono": "^4.12.27",
+    "node-pty": "^1.1.0",
     "ws": "^8.20.1"
   },
   "devDependencies": {

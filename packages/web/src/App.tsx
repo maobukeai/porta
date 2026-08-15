@@ -929,7 +929,7 @@ function ChatView() {
                     ref={panelElRef}
                     className={`artifacts-side-pane ${isResizingSidePanel ? "is-resizing" : ""}`}
                     style={
-                      window.innerWidth > 480
+                      window.innerWidth > 768
                         ? { width: `${sidePanelWidth}px`, maxWidth: "85vw" }
                         : undefined
                     }

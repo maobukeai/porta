@@ -192,10 +192,10 @@
   }
 
   .message.user .message-body {
-    max-width: 88%;
-    font-size: clamp(13.5px, 3.8vw, 15px);
-    padding: 10px 14px;
-    border-radius: 16px 16px 4px 16px;
+    max-width: 90%;
+    font-size: clamp(13.5px, 3.8vw, 14.5px);
+    padding: 9px 13px;
+    border-radius: 10px;
   }
 
   .message-body pre {
@@ -235,12 +235,15 @@
   }
 
   .message-body img {
-    max-height: 250px;
+    max-height: 200px;
   }
 
-  .message-media-thumb {
-    max-width: 140px;
-    max-height: 140px;
+  .message-media-thumb,
+  .message.user .message-body img {
+    width: 60px;
+    height: 44px;
+    max-width: 68px;
+    max-height: 50px;
   }
 
   .msg-action-btn {
@@ -360,8 +363,9 @@
   .chat-action-icon-btn,
   .chat-send-btn,
   .chat-stop-btn {
-    width: 26px;
-    height: 26px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
   }
 
   /* ── Step cards ── */
@@ -596,4 +600,229 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+
+  /* ── Plan Progress Mobile Adaptation ── */
+  .zcode-plan-card-root {
+    right: 10px;
+    top: max(8px, calc(env(safe-area-inset-top) + 4px));
+    width: calc(100% - 20px);
+    max-width: 350px;
+  }
+
+  .zcode-plan-popover {
+    right: 0;
+    top: calc(100% + 8px);
+    width: 100%;
+    max-width: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    transform: none;
+  }
+
+  /* ── Turn Completion Summary Card Mobile Adaptation ── */
+  .turn-summary-container {
+    margin: 8px 0 2px;
+    width: 100%;
+  }
+
+  .turn-artifacts-list {
+    gap: 6px;
+  }
+
+  .turn-artifact-pill-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .turn-files-summary-card {
+    border-radius: 8px;
+  }
+
+  .turn-files-header {
+    padding: 8px 10px;
+  }
+
+  .turn-files-count-text {
+    font-size: 12px;
+  }
+
+  .turn-stat-add,
+  .turn-stat-del {
+    font-size: 11px;
+  }
+
+  .turn-review-btn {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    min-height: 30px;
+  }
+
+  .turn-file-row {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .turn-file-name {
+    font-size: 12px;
+    max-width: 55%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .turn-file-path {
+    font-size: 10.5px;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Mobile Code Blocks, Math & Tables ── */
+  .vscode-markdown-preview-container table,
+  .message-body table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 8px 0;
+    font-size: 12px;
+  }
+
+  .katex-display,
+  .katex {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 0;
+  }
+
+  .mermaid {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .code-block-header {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .code-block-copy-btn {
+    padding: 4px 8px;
+    min-height: 28px;
+  }
+
+  /* ── Mobile Modals & Bottom Sheets (Account Quota, Export, Diagram, Revert) ── */
+  .quota-modal-card {
+    width: 95vw;
+    max-width: 95vw;
+    max-height: 85vh;
+    padding: 16px 14px;
+    border-radius: 16px;
+    margin: auto 10px max(16px, env(safe-area-inset-bottom));
+  }
+
+  .quota-gauges-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .quota-gauge-card {
+    padding: 10px 8px;
+  }
+
+  .quota-gauge-title {
+    font-size: 12px;
+  }
+
+  .export-modal-card {
+    width: 95vw;
+    max-width: 95vw;
+    padding: 18px 16px;
+    border-radius: 16px;
+  }
+
+  .revert-confirm-modal {
+    width: 94vw;
+    max-width: 94vw;
+    padding: 16px 14px;
+    border-radius: 14px;
+  }
+
+  /* ── Mobile SidePanel & Code Review Editor ── */
+  .side-panel-resize-handle {
+    display: none !important;
+  }
+
+  .vscode-editor-breadcrumb-bar {
+    padding: 6px 10px;
+    font-size: 11px;
+    gap: 4px;
+  }
+
+  .vscode-breadcrumb-path {
+    max-width: calc(100% - 100px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vscode-breadcrumb-actions {
+    flex-shrink: 0;
+  }
+
+  .vscode-mode-pill {
+    padding: 3px 8px;
+    font-size: 11px;
+    min-height: 26px;
+  }
+
+  .vscode-editor-line-num {
+    min-width: 32px;
+    font-size: 11.5px;
+    padding: 0 6px;
+  }
+
+  .vscode-editor-line-text {
+    font-size: 12px;
+    padding-left: 6px;
+  }
+
+  /* Unified Diff on mobile */
+  .vscode-diff-line {
+    font-size: 11.5px;
+  }
+
+  .vscode-diff-num {
+    min-width: 28px;
+    font-size: 11px;
+    padding: 0 4px;
+  }
+
+  /* Subagent Detail View Header on mobile */
+  .zcode-subagent-tabs-header {
+    padding: 8px 10px;
+    padding-top: max(8px, calc(env(safe-area-inset-top) + 4px));
+  }
+
+  .zcode-subagent-tab-item {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+
+  .zcode-subagent-back-btn {
+    padding: 4px 8px;
+    font-size: 11.5px;
+    min-height: 28px;
+  }
+
+  .zcode-subagent-chat-area {
+    padding: 10px 8px;
+  }
 }
+

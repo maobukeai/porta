@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getApiBase } from "../api/client";
 import type { TrajectoryStep } from "../types";
 import { useAppResume } from "./useAppResume";
+import { setConversationWaiting, isAnyStepWaiting } from "../utils/waitingTasks";
 
 /** How many steps to fetch on initial load and each lazy-load page. */
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 80;
 
 interface UseStepsStreamResult {
   /** All loaded steps (ordered oldest → newest). */
@@ -31,14 +32,14 @@ interface UseStepsStreamResult {
  * Chat steps hook: HTTP for initial + lazy load, WS for real-time deltas.
  *
  * Initial flow:
- *   1. HTTP GET /steps?limit=PAGE_SIZE → latest page of steps
+ *   1. HTTP GET /steps?limit=PAGE_SIZE → latest page of steps (<50ms)
  *   2. Open WS → receive { type: "ready", stepCount }
  *   3. Send WS { type: "sync", fromOffset: loadedOffset + loadedCount }
  *      so WS delta polling picks up from where HTTP left off
  *   4. WS pushes { type: "steps", offset, steps } for new/updated steps
  *
- * Lazy load (scroll up):
- *   5. HTTP GET /steps?offset=X → older page
+ * Lazy load (scroll up / click button):
+ *   5. HTTP GET /steps?offset=X&limit=PAGE_SIZE → older page
  *   6. Prepend to steps array
  */
 const MAX_CACHE_SIZE = 50;
@@ -52,6 +53,9 @@ function setStepsCache(cascadeId: string, value: { steps: TrajectoryStep[]; base
     if (oldestKey) stepsMemoryCache.delete(oldestKey);
   }
   stepsMemoryCache.set(cascadeId, value);
+  try {
+    setConversationWaiting(cascadeId, isAnyStepWaiting(value.steps));
+  } catch {}
 }
 
 export function getStepsFromCache(cascadeId: string): TrajectoryStep[] {
@@ -59,14 +63,15 @@ export function getStepsFromCache(cascadeId: string): TrajectoryStep[] {
 }
 
 export function prefetchSteps(cascadeId: string): void {
-  if (!cascadeId || stepsMemoryCache.has(cascadeId)) return;
-  api.getSteps(cascadeId, 0, 100).then((res) => {
+  if (!cascadeId) return;
+  api.getSteps(cascadeId, undefined, undefined, 40).then((res) => {
     if (res.steps) {
       setStepsCache(cascadeId, {
         steps: res.steps,
         baseOffset: res.offset ?? 0,
         endOffset: (res.offset ?? 0) + res.steps.length,
       });
+      setConversationWaiting(cascadeId, isAnyStepWaiting(res.steps));
     }
   }).catch(() => {});
 }
@@ -140,31 +145,24 @@ export function useStepsStream(
   const initialFetch = useCallback(async () => {
     const gen = genRef.current;
     try {
-      // Calculate starting offset from the known total step count.
-      // If we don't know the count, we use the `tail` parameter to let the proxy compute it.
-      const isUnknown = totalRef.current === 0;
-      const startOffset = isUnknown
-        ? 0
-        : Math.max(0, totalRef.current - PAGE_SIZE);
+      const total = totalRef.current;
+      const isSmall = total > 0 && total <= PAGE_SIZE;
+      const startOffset = isSmall ? 0 : Math.max(0, total - PAGE_SIZE);
       console.debug(
-        `[useStepsStream] initialFetch cascadeId=${cascadeId.slice(0, 8)} gen=${gen} total=${totalRef.current} isUnknown=${isUnknown} startOffset=${startOffset}`,
+        `[useStepsStream] initialFetch cascadeId=${cascadeId.slice(0, 8)} gen=${gen} total=${total} startOffset=${startOffset}`,
       );
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15_000);
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       let result: Awaited<ReturnType<typeof api.getSteps>>;
       try {
-        result = await api.getSteps(
-          cascadeId,
-          startOffset,
-          undefined,
-          isUnknown ? PAGE_SIZE : undefined,
-        );
+        if (total === 0) {
+          result = await api.getSteps(cascadeId, undefined, undefined, PAGE_SIZE);
+        } else {
+          result = await api.getSteps(cascadeId, startOffset, PAGE_SIZE);
+        }
       } finally {
         clearTimeout(timeoutId);
       }
-      console.debug(
-        `[useStepsStream] initialFetch result: mounted=${mountedRef.current} gen=${gen}==${genRef.current} steps=${(result.steps ?? []).length} offset=${result.offset}`,
-      );
       if (!mountedRef.current || gen !== genRef.current) return;
 
       const fetchedSteps = result.steps ?? [];
@@ -307,10 +305,13 @@ export function useStepsStream(
             wsRef.current = null;
           }
 
+          const shouldKeepAlive =
+            keepAliveWhenHidden || runningHintRef.current || wsRunning;
+
           if (
             typeof document !== "undefined" &&
             document.hidden &&
-            !keepAliveWhenHidden
+            !shouldKeepAlive
           ) {
             return;
           }
@@ -326,7 +327,7 @@ export function useStepsStream(
             if (
               typeof document !== "undefined" &&
               document.hidden &&
-              !keepAliveWhenHidden
+              !shouldKeepAlive
             ) {
               return;
             }
@@ -385,6 +386,11 @@ export function useStepsStream(
       mountedRef.current = false;
       bumpGeneration();
       clearReconnectTimer();
+      // Cancel any pending RAF flush to avoid setState on unmounted component
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -396,16 +402,25 @@ export function useStepsStream(
     if (typeof document === "undefined") return;
 
     const onVisibilityChange = () => {
-      if (!document.hidden) return;
-      if (keepAliveWhenHidden) return;
+      const shouldKeepAlive =
+        keepAliveWhenHidden || runningHintRef.current || wsRunning;
 
-      clearReconnectTimer();
-      setWsRunning(false);
+      if (document.hidden) {
+        if (shouldKeepAlive) return;
 
-      const socket = wsRef.current;
-      wsRef.current = null;
-      if (socket && socket.readyState < WebSocket.CLOSING) {
-        socket.close();
+        clearReconnectTimer();
+        setWsRunning(false);
+
+        const socket = wsRef.current;
+        wsRef.current = null;
+        if (socket && socket.readyState < WebSocket.CLOSING) {
+          socket.close();
+        }
+      } else {
+        const socket = wsRef.current;
+        if (!socket || socket.readyState >= WebSocket.CLOSING) {
+          connectWs(endOffsetRef.current);
+        }
       }
     };
 
@@ -413,7 +428,7 @@ export function useStepsStream(
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [clearReconnectTimer, keepAliveWhenHidden]);
+  }, [clearReconnectTimer, connectWs, keepAliveWhenHidden, wsRunning]);
 
   // ── Lazy load older steps ──
   const loadOlder = useCallback(async (): Promise<number> => {
@@ -514,11 +529,25 @@ export function useStepsStream(
           ];
 
           const newBase = Math.min(currentBase, fetchedOffset);
+          const newEnd = Math.max(currentEnd, fetchedEnd);
+
+          // Only trigger state update if steps or offsets actually changed
+          const changed =
+            newBase !== currentBase ||
+            newEnd !== endOffsetRef.current ||
+            merged.length !== stepsRef.current.length ||
+            (fetchedSteps.length > 0 &&
+              JSON.stringify(fetchedSteps[fetchedSteps.length - 1]) !==
+                JSON.stringify(stepsRef.current[stepsRef.current.length - 1]));
+
           baseOffsetRef.current = newBase;
-          endOffsetRef.current = Math.max(currentEnd, fetchedEnd);
-          stepsRef.current = merged;
-          setSteps([...merged]);
-          setHasMore(newBase > 0);
+          endOffsetRef.current = newEnd;
+
+          if (changed) {
+            stepsRef.current = merged;
+            setSteps([...merged]);
+            setHasMore(newBase > 0);
+          }
         }
         setError(null);
 
@@ -541,10 +570,13 @@ export function useStepsStream(
     [cascadeId, connectWs, wsRunning],
   );
 
+  const syncLatestStepsRef = useRef(syncLatestSteps);
+  syncLatestStepsRef.current = syncLatestSteps;
+
   // ── Soft refresh: merge new steps without clearing existing messages ──
   const refresh = useCallback(() => {
-    void syncLatestSteps("always");
-  }, [syncLatestSteps]);
+    void syncLatestStepsRef.current("always");
+  }, []);
 
   // ── Adaptive Polling Fallback: guarantees 100% real-time streaming even if WebSocket fails on mobile APK ──
   useEffect(() => {
@@ -561,21 +593,20 @@ export function useStepsStream(
 
       // Poll HTTP if:
       // 1. WebSocket is NOT connected/open.
-      // 2. Or we are in a running state AND haven't received a WS delta in > 2000ms.
-      const needsHttpPoll = !isWsOpen || (isRunningState && timeSinceWsDelta > 2000);
+      // 2. Or we are in a running state AND haven't received a WS delta in > 2500ms.
+      const needsHttpPoll = !isWsOpen || (isRunningState && timeSinceWsDelta > 2500);
 
       if (needsHttpPoll) {
-        await syncLatestSteps(isRunningState ? "always" : "if-running");
+        await syncLatestStepsRef.current(isRunningState ? "always" : "if-running");
       }
 
       if (isCancelled || !mountedRef.current) return;
 
-      // Poll every 1000ms while running for smooth streaming, every 3500ms while idle
-      const nextDelay = isRunningState ? 1000 : 3500;
+      const nextDelay = isRunningState ? 1200 : 5000;
       pollingTimerRef.current = setTimeout(pollLoop, nextDelay);
     };
 
-    pollingTimerRef.current = setTimeout(pollLoop, 1000);
+    pollingTimerRef.current = setTimeout(pollLoop, 1500);
 
     return () => {
       isCancelled = true;
@@ -584,7 +615,7 @@ export function useStepsStream(
         pollingTimerRef.current = null;
       }
     };
-  }, [cascadeId, wsRunning, isConversationRunning, syncLatestSteps]);
+  }, [cascadeId, wsRunning, isConversationRunning]);
 
   useAppResume(() => {
     // Even while idle we keep a WS open so the proxy can detect

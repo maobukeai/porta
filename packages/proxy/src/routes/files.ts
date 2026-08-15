@@ -137,8 +137,19 @@ export function registerFileRoutes(app: Hono): void {
       return c.json({ error: "Missing 'uri' or 'path' query param" }, 400);
     }
 
-    // Security: only serve files under home dir
-    const resolved = resolveSafeHomeFilePath(fileRef);
+    // Security: check home dir, or allow valid local image files on disk
+    let resolved = resolveSafeHomeFilePath(fileRef);
+    if (!resolved) {
+      const cleanPath = fileRef.startsWith("file://")
+        ? fileUriToPath(fileRef, process.platform === "win32")
+        : normalizeLegacyPath(fileRef, process.platform === "win32");
+      if (cleanPath && existsSync(cleanPath)) {
+        const ext = extname(cleanPath).toLowerCase();
+        if (IMAGE_EXTS[ext]) {
+          resolved = cleanPath;
+        }
+      }
+    }
     if (!resolved) {
       return c.json({ error: "Access denied" }, 403);
     }
@@ -161,5 +172,95 @@ export function registerFileRoutes(app: Hono): void {
         "Cache-Control": "public, max-age=3600",
       },
     });
+  });
+
+  app.get("/api/files/text", async (c) => {
+    let fileRef = c.req.query("uri") ?? c.req.query("path");
+    const workspaceUri = c.req.query("workspaceUri") ?? c.req.query("workspace");
+    if (!fileRef) {
+      return c.json({ error: "Missing 'uri' or 'path' query param" }, 400);
+    }
+    try {
+      fileRef = decodeURIComponent(fileRef);
+    } catch {}
+
+    let resolved: string | null = null;
+    const { resolve, normalize } = await import("node:path");
+    const { existsSync, statSync, readFileSync } = await import("node:fs");
+
+    // 1. Direct candidate normalization (supporting file:// protocol and absolute Windows/POSIX paths)
+    let candidatePath = fileRef;
+    if (candidatePath.startsWith("file://")) {
+      try {
+        const { fileURLToPath } = await import("node:url");
+        candidatePath = fileURLToPath(candidatePath);
+      } catch {
+        candidatePath = candidatePath.replace(/^file:\/\/\/?/, "");
+        if (/^[A-Za-z]:[\\/]/.test(candidatePath)) {
+          // Windows drive path like C:/...
+        } else if (!candidatePath.startsWith("/")) {
+          candidatePath = `/${candidatePath}`;
+        }
+      }
+    }
+
+    const cleanCandidate = candidatePath.replace(/^file:\/\/\/?/, "");
+    if (existsSync(cleanCandidate)) {
+      resolved = cleanCandidate;
+    } else if (existsSync(normalize(cleanCandidate))) {
+      resolved = normalize(cleanCandidate);
+    }
+
+    // 2. Resolve with workspaceUri if given and not yet resolved
+    if ((!resolved || !existsSync(resolved)) && workspaceUri) {
+      let cwd = workspaceUri;
+      if (cwd.startsWith("file://")) {
+        try {
+          const { fileURLToPath } = await import("node:url");
+          cwd = fileURLToPath(cwd);
+        } catch {
+          cwd = cwd.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
+        }
+      } else {
+        cwd = cwd.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
+      }
+
+      const fullPath = resolve(cwd, cleanCandidate);
+      if (existsSync(fullPath)) {
+        resolved = fullPath;
+      }
+    }
+
+    // 3. Fallback to ~/.gemini safe path
+    if (!resolved || !existsSync(resolved)) {
+      resolved = resolveSafeHomeFilePath(fileRef);
+    }
+
+    // 4. Fallback to process.cwd()
+    if (!resolved || !existsSync(resolved)) {
+      const fromCwd = resolve(process.cwd(), cleanCandidate);
+      if (existsSync(fromCwd)) {
+        resolved = fromCwd;
+      }
+    }
+
+    if (!resolved || !existsSync(resolved)) {
+      return c.json({ error: "File not found", content: "" }, 404);
+    }
+
+    try {
+      const stat = statSync(resolved);
+      if (!stat.isFile()) {
+        return c.json({ error: "Not a file", content: "" }, 400);
+      }
+      const isBinary = /\.(png|jpg|jpeg|gif|webp|ico|pdf|zip|tar|gz|woff|woff2|ttf|eot|exe|dll)$/i.test(resolved);
+      if (isBinary) {
+        return c.json({ path: resolved, content: "[二进制文件无法直接显示]", isBinary: true, size: stat.size });
+      }
+      const content = readFileSync(resolved, "utf-8");
+      return c.json({ path: resolved, content, size: stat.size });
+    } catch (e) {
+      return c.json({ error: (e as Error).message, content: "" }, 500);
+    }
   });
 }

@@ -54,7 +54,7 @@ export async function runCommand(
     encoding: "utf-8",
     timeout,
     windowsHide: true,
-    maxBuffer: 1024 * 1024,
+    maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;
 }

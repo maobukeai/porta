@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   commandName,
   ensureLogsDir,
+  freePort,
   loadEnvFile,
   spawnLoggedProcess,
   terminateChild,
@@ -10,6 +11,13 @@ import {
 } from "./common.mjs";
 
 loadEnvFile();
+
+const webPort = process.env.PORTA_WEB_PORT || "3070";
+const proxyPort = process.env.PORTA_PORT || "3170";
+
+// Ensure ports are freed from previous aborted sessions
+freePort(webPort);
+freePort(proxyPort);
 
 const tunnelName = process.env.PORTA_TUNNEL_NAME;
 if (!tunnelName) {

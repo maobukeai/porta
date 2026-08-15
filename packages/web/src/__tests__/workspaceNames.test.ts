@@ -55,7 +55,7 @@ describe("workspace name helpers", () => {
     ).toBe("playground");
   });
 
-  it("falls back to 其他 without workspace metadata", () => {
-    expect(workspaceNameFromMetadata(undefined)).toBe("其他");
+  it("falls back to 任务 without workspace metadata", () => {
+    expect(workspaceNameFromMetadata(undefined)).toBe("任务");
   });
 });

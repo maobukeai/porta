@@ -49,7 +49,7 @@ export const win32Adapter: PlatformAdapter = {
 
   async discoverPortsForPid(pid) {
     try {
-      const output = await runCommand("netstat", ["-ano"]);
+      const output = await runCommand("netstat", ["-ano", "-p", "tcp"]);
       return parseNetstatPorts(output, pid);
     } catch {
       return [];

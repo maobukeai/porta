@@ -5,6 +5,7 @@ packages:
 allowBuilds:
   '@swc/core': true
   esbuild: true
+  node-pty: true
 
 onlyBuiltDependencies:
   - '@swc/core'

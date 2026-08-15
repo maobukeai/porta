@@ -5,6 +5,7 @@ import type { ChatMessage } from "../types";
 import { api } from "../api/client";
 import { stepsToMessages } from "../transforms/stepsToMessages";
 import { exportChatToMarkdown, exportChatToHtml, downloadFile } from "../utils/exportChat";
+import { copyText } from "../utils/clipboard";
 
 interface Props {
   isOpen: boolean;
@@ -58,9 +59,12 @@ export function ExportModal({ isOpen, onClose, title, cascadeId, initialMessages
   const handleCopyMd = () => {
     triggerHaptic("light");
     const md = exportChatToMarkdown(title, messages);
-    navigator.clipboard.writeText(md);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    void copyText(md).then((success) => {
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   };
 
   return (

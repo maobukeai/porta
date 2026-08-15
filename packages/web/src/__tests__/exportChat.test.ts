@@ -13,7 +13,7 @@ describe("exportChat utils", () => {
     expect(md).toContain("# Test Chat");
     expect(md).toContain("### 👤 用户");
     expect(md).toContain("Hello AI");
-    expect(md).toContain("### 🤖 猫步反重力 AI");
+    expect(md).toContain("### 🤖 Mcode AI");
     expect(md).toContain("Hello User!");
   });
 

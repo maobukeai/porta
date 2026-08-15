@@ -19,6 +19,15 @@ function uriFromSlug(
   if (!slug || workspaces.length === 0) return undefined;
 
   const decodedSlug = safeDecodeUriComponent(slug).toLowerCase();
+  if (
+    decodedSlug === "tasks" ||
+    decodedSlug === "task" ||
+    decodedSlug === "任务" ||
+    decodedSlug === "standalone" ||
+    decodedSlug === "none"
+  ) {
+    return undefined;
+  }
 
   // 1. Direct match by workspace name or URI slug
   const directMatch = workspaces.find((w) => {

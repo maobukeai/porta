@@ -11,7 +11,7 @@ export function exportChatToMarkdown(
     if (msg.role === "user") {
       md += `### 👤 用户\n\n${msg.content}\n\n`;
     } else if (msg.role === "assistant") {
-      md += `### 🤖 猫步反重力 AI\n\n${msg.content}\n\n`;
+      md += `### 🤖 Mcode AI\n\n${msg.content}\n\n`;
     } else if (msg.role === "system" && msg.content) {
       md += `> ⚙️ **系统步骤**: ${msg.content}\n\n`;
     }

@@ -3,6 +3,7 @@
  *
  * Hono HTTP server that provides a stable REST API over the
  * Antigravity Language Server's dynamic Connect RPC endpoint.
+ * Synced: 2026-08-15
  */
 
 import { Hono } from "hono";
@@ -20,6 +21,10 @@ import { registerRpcPassthroughRoutes } from "./routes/rpcPassthrough.js";
 import { registerCommandRoutes } from "./routes/commands.js";
 import { registerGitRoutes } from "./routes/git.js";
 import { registerCustomizationsRoutes } from "./routes/customizations.js";
+import { registerAgentCapabilitiesRoutes } from "./routes/agentCapabilities.js";
+import { registerTerminalRoutes } from "./routes/terminal.js";
+import { registerStatisticsRoutes } from "./routes/statistics.js";
+import { registerPlanRoutes } from "./routes/plan.js";
 import {
   assertSupportedListenHost,
   formatListenAddress,
@@ -85,6 +90,10 @@ registerRpcPassthroughRoutes(app);
 registerCommandRoutes(app);
 registerGitRoutes(app);
 registerCustomizationsRoutes(app);
+registerAgentCapabilitiesRoutes(app);
+registerTerminalRoutes(app);
+registerStatisticsRoutes(app);
+registerPlanRoutes(app);
 
 // ── Start ──
 

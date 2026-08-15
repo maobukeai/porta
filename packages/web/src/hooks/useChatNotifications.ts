@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getFilePermissionRequest } from "../utils/stepCards";
+import { getFilePermissionRequest, getAskQuestionRequest } from "../utils/stepCards";
 import { showBrowserNotification } from "../utils/browserNotifications";
 import type { TrajectoryStep } from "../types";
 
@@ -38,7 +38,7 @@ function latestAssistantReplyPreview(steps: TrajectoryStep[]): string | null {
     const response =
       step.plannerResponse?.modifiedResponse ??
       step.plannerResponse?.items
-        ?.map((item) => item.text)
+        ?.map((item) => (typeof item === "string" ? item : (item as any)?.text || (item as any)?.content || ""))
         .filter((text): text is string => Boolean(text?.trim()))
         .join("\n\n") ??
       "";
@@ -66,6 +66,8 @@ function pendingApprovalNotifications(
     if (step.status !== WAITING_STATUS) return;
 
     const identity = stepIdentity(step, index);
+
+    // 1. File permission approval
     const filePermissionRequest = getFilePermissionRequest(step);
     if (filePermissionRequest) {
       const path = filePermissionRequest.absolutePathUri.replace(
@@ -80,21 +82,34 @@ function pendingApprovalNotifications(
       return;
     }
 
-    if (step.type !== "CORTEX_STEP_TYPE_RUN_COMMAND" || !step.runCommand) {
+    // 2. Multiple choice or user question
+    const askRequest = getAskQuestionRequest(step);
+    if (askRequest || step.type === "CORTEX_STEP_TYPE_ASK_QUESTION") {
+      const qText =
+        askRequest?.questions?.[0]?.question || "模型提出了待确认问题，请点击查看。";
+      notifications.push({
+        key: `ask:${identity}:${qText}`,
+        title: "Porta 需要您做决策",
+        body: truncate(qText, 120),
+      });
       return;
     }
 
-    const command =
-      step.runCommand.proposedCommandLine ??
-      step.runCommand.commandLine ??
-      step.runCommand.command ??
-      "";
+    // 3. Command execution approval
+    if (step.type === "CORTEX_STEP_TYPE_RUN_COMMAND" && step.runCommand) {
+      const command =
+        step.runCommand.proposedCommandLine ??
+        step.runCommand.commandLine ??
+        step.runCommand.command ??
+        "";
 
-    notifications.push({
-      key: `command:${identity}:${command}`,
-      title: "Porta 需要审批",
-      body: command ? truncate(command, 120) : "允许或拒绝命令。",
-    });
+      notifications.push({
+        key: `command:${identity}:${command}`,
+        title: "Porta 需要审批",
+        body: command ? truncate(command, 120) : "允许或拒绝命令。",
+      });
+      return;
+    }
   });
 
   return notifications;
@@ -113,6 +128,7 @@ export function useChatNotifications({
   const seenApprovalKeysRef = useRef<Set<string>>(new Set());
   const prevWsRunningRef = useRef(wsRunning);
   const prevOverallRunningRef = useRef(wsRunning || isConversationRunning);
+  const wasRunningRef = useRef(wsRunning || isConversationRunning);
   const runFinishedNotifiedRef = useRef(false);
   const cascadeRef = useRef(cascadeId);
 
@@ -124,6 +140,7 @@ export function useChatNotifications({
     seenApprovalKeysRef.current = new Set();
     prevWsRunningRef.current = wsRunning;
     prevOverallRunningRef.current = wsRunning || isConversationRunning;
+    wasRunningRef.current = wsRunning || isConversationRunning;
     runFinishedNotifiedRef.current = false;
   }, [cascadeId, isConversationRunning, wsRunning]);
 
@@ -133,28 +150,42 @@ export function useChatNotifications({
     const pendingApprovals = pendingApprovalNotifications(steps);
     const currentPendingKeys = pendingApprovals.map(({ key }) => key);
 
+    const hasActiveSteps = steps.some((s) => {
+      const status = String(s.status ?? "").toUpperCase();
+      return (
+        status.includes("RUNNING") ||
+        status.includes("GENERATING") ||
+        status.includes("PENDING") ||
+        status.includes("QUEUED")
+      );
+    });
+
+    const overallRunning = wsRunning || isConversationRunning || hasActiveSteps;
+
     if (!initializedRef.current) {
       initializedRef.current = true;
       seenApprovalKeysRef.current = new Set(currentPendingKeys);
       prevWsRunningRef.current = wsRunning;
-      prevOverallRunningRef.current = wsRunning || isConversationRunning;
+      prevOverallRunningRef.current = overallRunning;
+      wasRunningRef.current = overallRunning;
       return;
     }
 
-    const overallRunning = wsRunning || isConversationRunning;
     const startedRunning =
       (!prevWsRunningRef.current && wsRunning) ||
       (!prevOverallRunningRef.current && overallRunning);
 
-    if (startedRunning) {
+    if (startedRunning || overallRunning) {
+      wasRunningRef.current = true;
       runFinishedNotifiedRef.current = false;
     }
 
     const finishedRunning =
       (prevWsRunningRef.current && !wsRunning) ||
-      (prevOverallRunningRef.current && !overallRunning);
+      (prevOverallRunningRef.current && !overallRunning) ||
+      (wasRunningRef.current && !overallRunning);
 
-    if (finishedRunning && !runFinishedNotifiedRef.current) {
+    if (finishedRunning && !overallRunning && !runFinishedNotifiedRef.current && wasRunningRef.current) {
       if (enabled) {
         const latestReply = latestAssistantReplyPreview(steps);
         showBrowserNotification({
@@ -165,9 +196,11 @@ export function useChatNotifications({
               ? `${conversationTitle} 当前已空闲。`
               : "当前会话已空闲。"),
           tag: `porta:${cascadeId}:run-finished`,
+          soundKind: "complete",
         });
       }
       runFinishedNotifiedRef.current = true;
+      wasRunningRef.current = false;
     }
 
     for (const notification of pendingApprovals) {
@@ -178,6 +211,7 @@ export function useChatNotifications({
           title: notification.title,
           body: notification.body,
           tag: `porta:${cascadeId}:${notification.key}`,
+          soundKind: "attention",
         });
       }
       seenApprovalKeysRef.current.add(notification.key);

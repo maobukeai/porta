@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark" class="theme-dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&family=Syne:wght@700;800&family=Unbounded:wght@700;800;900&display=swap"
       rel="stylesheet"
     />
     <link rel="icon" href="%BASE_URL%icons/icon-192.svg" type="image/svg+xml" />
@@ -14,7 +14,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#0d0f13" />
+    <meta name="theme-color" content="#161616" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta
@@ -22,11 +22,175 @@
       content="black-translucent"
     />
     <link rel="manifest" href="%BASE_URL%manifest.json" crossorigin="use-credentials" />
-    <title>猫步反重力</title>
-    <meta name="description" content="猫步反重力" />
+    <title>Mcode</title>
+    <meta name="description" content="Mcode" />
+    <style>
+      body {
+        margin: 0;
+        background-color: #161616;
+        color: #f4f4f5;
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      .zcode-init-screen {
+        position: fixed;
+        inset: 0;
+        background: #161616;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        box-sizing: border-box;
+      }
+      .zcode-init-wrapper {
+        width: 100%;
+        max-width: 390px;
+        margin: 0 auto;
+      }
+      .zcode-init-card {
+        width: 100%;
+        background: #202020;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 18px 16px 16px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        box-sizing: border-box;
+      }
+      .zcode-init-header {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .zcode-init-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .zcode-init-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #f59e0b;
+        box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+        animation: pulseAmber 1.8s infinite ease-in-out;
+      }
+      @keyframes pulseAmber {
+        0%, 100% { transform: scale(0.95); opacity: 0.8; }
+        50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 10px rgba(245, 158, 11, 0.9); }
+      }
+      .zcode-init-title {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: #f4f4f5;
+        margin: 0;
+        letter-spacing: -0.2px;
+      }
+      .zcode-init-subtitle {
+        font-size: 12px;
+        color: #a1a1aa;
+        margin: 0;
+        line-height: 1.45;
+      }
+      .zcode-init-steps {
+        display: grid;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .zcode-init-step {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 12px;
+        background: #282828;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 7px;
+        font-size: 12.5px;
+        color: #71717a;
+        transition: all 0.2s ease;
+      }
+      .zcode-init-step.done {
+        color: #d4d4d8;
+        background: #2b2b2b;
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+      .zcode-init-step.active {
+        color: #ffffff;
+        background: #2e2e2e;
+        border-color: rgba(255, 255, 255, 0.18);
+      }
+      .zcode-init-pulse {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: #ffffff;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+        animation: pulseWhiteDot 1s infinite alternate;
+      }
+      @keyframes pulseWhiteDot {
+        0% { transform: scale(0.8); opacity: 0.6; }
+        100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 8px #ffffff; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="zcode-init-screen">
+        <div class="zcode-init-wrapper">
+          <div class="zcode-init-card">
+            <div class="zcode-init-header">
+              <div class="zcode-init-title-row">
+                <span class="zcode-init-dot"></span>
+                <h2 id="zcode-init-title" class="zcode-init-title">正在连接中转服务…</h2>
+              </div>
+              <p id="zcode-init-desc" class="zcode-init-subtitle">正在建立手机与远控中转服务的连接。</p>
+            </div>
+            <div class="zcode-init-steps">
+              <div id="zstep-1" class="zcode-init-step active"><span>1. 连接中转服务</span><span class="zcode-init-pulse"></span></div>
+              <div id="zstep-2" class="zcode-init-step"><span>2. 设备鉴权</span></div>
+              <div id="zstep-3" class="zcode-init-step"><span>3. 等待桌面端配对</span></div>
+              <div id="zstep-4" class="zcode-init-step"><span>4. 同步工作区</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <script>
+        (function() {
+          var t = document.getElementById('zcode-init-title');
+          var d = document.getElementById('zcode-init-desc');
+          var s1 = document.getElementById('zstep-1');
+          var s2 = document.getElementById('zstep-2');
+          var s3 = document.getElementById('zstep-3');
+          var s4 = document.getElementById('zstep-4');
+          if (!t) return;
+          
+          setTimeout(function() {
+            if (!t) return;
+            t.textContent = '正在认证设备…';
+            d.textContent = '已连接中转服务，正在完成远控身份校验。';
+            if (s1) { s1.className = 'zcode-init-step done'; s1.innerHTML = '<span>1. 连接中转服务</span><span>✓</span>'; }
+            if (s2) { s2.className = 'zcode-init-step active'; s2.innerHTML = '<span>2. 设备鉴权</span><span class="zcode-init-pulse"></span>'; }
+          }, 220);
+
+          setTimeout(function() {
+            if (!t) return;
+            t.textContent = '等待桌面端确认配对…';
+            d.textContent = '手机端已就绪，等待桌面端会话匹配当前连接。';
+            if (s2) { s2.className = 'zcode-init-step done'; s2.innerHTML = '<span>2. 设备鉴权</span><span>✓</span>'; }
+            if (s3) { s3.className = 'zcode-init-step active'; s3.innerHTML = '<span>3. 等待桌面端配对</span><span class="zcode-init-pulse"></span>'; }
+          }, 460);
+
+          setTimeout(function() {
+            if (!t) return;
+            t.textContent = '已配对，正在加载工作区…';
+            d.textContent = '连接已建立，正在同步桌面端工作区和任务。';
+            if (s3) { s3.className = 'zcode-init-step done'; s3.innerHTML = '<span>3. 等待桌面端配对</span><span>✓</span>'; }
+            if (s4) { s4.className = 'zcode-init-step active'; s4.innerHTML = '<span>4. 同步工作区</span><span class="zcode-init-pulse"></span>'; }
+          }, 720);
+        })();
+      </script>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

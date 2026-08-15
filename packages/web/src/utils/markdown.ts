@@ -1,7 +1,8 @@
 import { marked, type Tokens } from "marked";
+import { getApiBase } from "../api/client";
 
 const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
-const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:"]);
+const SAFE_IMAGE_PROTOCOLS = new Set(["http:", "https:", "data:", "blob:"]);
 
 function escapeHtml(text: string): string {
   return text
@@ -109,13 +110,36 @@ marked.setOptions({ gfm: true, breaks: true, renderer });
 
 const markdownCache = new Map<string, string>();
 
-/** Convert file:// URIs in markdown to proxy URLs */
+/** Convert file:// and local paths in markdown to proxy URLs */
 export function rewriteFileUris(text: string): string {
-  const base = import.meta.env.VITE_API_BASE ?? "";
+  const base = getApiBase();
   return text.replace(
-    /!\[([^\]]*)\]\((file:\/\/[^)]+)\)/g,
-    (_match, alt, uri) =>
-      `![${alt}](${base}/api/files?uri=${encodeURIComponent(uri)})`,
+    /!\[([^\]]*)\]\(([^)]+)\)/g,
+    (fullMatch, alt, uri) => {
+      const trimmed = uri.trim();
+      if (
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://") ||
+        trimmed.startsWith("data:") ||
+        trimmed.startsWith("blob:") ||
+        (base && trimmed.startsWith(`${base}/api/files`)) ||
+        (!base && trimmed.startsWith("/api/files"))
+      ) {
+        return fullMatch;
+      }
+      if (
+        trimmed.startsWith("file://") ||
+        /^[A-Za-z]:[\\/]/.test(trimmed) ||
+        trimmed.startsWith("/C:") ||
+        trimmed.startsWith("/Users/") ||
+        trimmed.startsWith("/home/") ||
+        trimmed.startsWith("/tmp/") ||
+        trimmed.startsWith("/var/")
+      ) {
+        return `![${alt}](${base}/api/files?uri=${encodeURIComponent(trimmed)})`;
+      }
+      return fullMatch;
+    },
   );
 }
 

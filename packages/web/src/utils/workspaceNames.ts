@@ -35,7 +35,7 @@ export function workspaceNameFromMetadata(
   workspace?: Workspace,
   options: WorkspaceNameOptions = {},
 ): string {
-  if (!workspace) return "其他";
+  if (!workspace) return "任务";
 
   const uri = workspace.workspaceFolderAbsoluteUri;
   if (
@@ -49,5 +49,5 @@ export function workspaceNameFromMetadata(
   const repoName = workspace.repository?.computedName?.split("/").pop();
   if (repoName) return safeDecodeUriComponent(repoName);
 
-  return uri ? workspaceNameFromUri(uri) : "其他";
+  return uri ? workspaceNameFromUri(uri) : "任务";
 }

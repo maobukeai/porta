@@ -1,12 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6c8bef"/>
-      <stop offset="50%" stop-color="#a78bfa"/>
-      <stop offset="100%" stop-color="#f472b6"/>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#12141c"/>
+      <stop offset="100%" stop-color="#07080b"/>
+    </linearGradient>
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.25)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.08)"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="108" fill="#0d0f13"/>
-  <path d="M256 96c-88.4 0-160 59.7-160 133.3 0 41.6 22.4 78.7 57.6 102.7L136 400l66.1-33.1c15.5 4.3 32 6.5 48.5 6.5 84.3 0 152.6-59.7 152.6-133.3S344.3 96 256 96z" fill="url(#g)" opacity="0.3"/>
-  <path d="M256 96c-88.4 0-160 59.7-160 133.3 0 41.6 22.4 78.7 57.6 102.7L136 400l66.1-33.1c15.5 4.3 32 6.5 48.5 6.5 84.3 0 152.6-59.7 152.6-133.3S344.3 96 256 96z" stroke="url(#g)" stroke-width="8" fill="none"/>
+  <!-- Dark Squircle Container -->
+  <rect width="512" height="512" rx="120.0" fill="url(#bgGrad)"/>
+  <rect x="12.0" y="12.0" width="488.0" height="488.0" rx="104.0" fill="none" stroke="url(#borderGrad)" stroke-width="24.0"/>
+  <!-- Bold Italic M Tech Mark -->
+  <g transform="scale(16) skewX(-11) translate(2.2, 0)">
+    <path d="M6 23.5V8.5H10.6L14 16.5L17.4 8.5H22V23.5H18.2V15.2L15.3 22H12.7L9.8 15.2V23.5H6Z" fill="#FFFFFF"/>
+  </g>
 </svg>

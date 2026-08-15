@@ -2,25 +2,30 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconCopy, IconCheck, IconMessageCircle, IconUndo } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
+import { copyText } from "../utils/clipboard";
 
 interface MessageActionSheetProps {
   open: boolean;
   onClose: () => void;
   messageText: string;
+  media?: unknown[];
   isUserMessage: boolean;
   stepIndex?: number;
   onQuote?: (text: string) => void;
-  onRevert?: (stepIndex: number, editText?: string) => void;
+  onRevert?: (stepIndex: number, editText?: string, editMedia?: unknown[]) => void;
+  onOpenRevertConfirm?: (stepIndex: number, editText?: string, editMedia?: unknown[]) => void;
 }
 
 export function MessageActionSheet({
   open,
   onClose,
   messageText,
+  media,
   isUserMessage,
   stepIndex,
   onQuote,
   onRevert,
+  onOpenRevertConfirm,
 }: MessageActionSheetProps) {
   const [copied, setCopied] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -39,12 +44,14 @@ export function MessageActionSheet({
 
   const handleCopy = () => {
     triggerHaptic("light");
-    navigator.clipboard.writeText(messageText).then(() => {
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-        onClose();
-      }, 800);
+    void copyText(messageText).then((success) => {
+      if (success) {
+        setCopied(true);
+        setTimeout(() => {
+          setCopied(false);
+          onClose();
+        }, 800);
+      }
     });
   };
 
@@ -79,8 +86,12 @@ export function MessageActionSheet({
 
   const handleRevert = () => {
     triggerHaptic("medium");
-    if (onRevert && stepIndex !== undefined) {
-      onRevert(stepIndex, messageText);
+    if (stepIndex !== undefined) {
+      if (onOpenRevertConfirm) {
+        onOpenRevertConfirm(stepIndex, messageText, media);
+      } else if (onRevert) {
+        onRevert(stepIndex, messageText, media);
+      }
     }
     onClose();
   };

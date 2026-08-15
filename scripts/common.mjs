@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import {
   createWriteStream,
   existsSync,
@@ -9,6 +9,35 @@ import os, { EOL } from "node:os";
 import path from "node:path";
 
 export const isWindows = process.platform === "win32";
+
+export function freePort(port) {
+  if (!port) return;
+  if (isWindows) {
+    try {
+      const output = execSync(`netstat -ano | findstr :${port}`, { encoding: "utf8" });
+      const lines = output.trim().split(/\r?\n/);
+      const pids = new Set();
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5 && parts[1].includes(`:${port}`) && parts[3] === "LISTENING") {
+          const pid = parseInt(parts[4], 10);
+          if (pid && pid !== process.pid) {
+            pids.add(pid);
+          }
+        }
+      }
+      for (const pid of pids) {
+        try {
+          execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
+        } catch {}
+      }
+    } catch {}
+  } else {
+    try {
+      execSync(`lsof -ti:${port} | xargs kill -9 2>/dev/null`, { stdio: "ignore" });
+    } catch {}
+  }
+}
 
 export function getLocalLanIps() {
   const nets = os.networkInterfaces();

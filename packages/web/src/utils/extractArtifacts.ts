@@ -120,10 +120,45 @@ function extractToolCallArtifacts(
   }
 }
 
+const artifactsCache = new Map<string, ArtifactItem[]>();
+const MAX_ART_CACHE = 20;
+
+function stepToken(step: TrajectoryStep | undefined): string {
+  if (!step) return "_";
+  const s = step as any;
+  if (s.clientMessageId) return `cid:${s.clientMessageId}`;
+  try {
+    return JSON.stringify(step).slice(0, 120);
+  } catch {
+    return step.type ?? "_";
+  }
+}
+
+function makeArtifactsFingerprint(steps: TrajectoryStep[], messages: ChatMessage[]): string {
+  const stepsPart =
+    steps.length === 0
+      ? "0"
+      : `${steps.length}:${stepToken(steps[0])}:${stepToken(steps[steps.length - 1])}`;
+  const firstMsg = messages[0];
+  const lastMsg = messages[messages.length - 1];
+  const msgPart =
+    messages.length === 0
+      ? "0"
+      : `${messages.length}:${firstMsg?.optimisticId ?? firstMsg?.stepIndex ?? firstMsg?.content?.slice(0, 30)}:${lastMsg?.optimisticId ?? lastMsg?.stepIndex ?? lastMsg?.content?.slice(0, 30)}`;
+  return `${stepsPart}|${msgPart}`;
+}
+
 export function extractArtifactsFromSteps(
   steps: TrajectoryStep[] = [],
   messages: ChatMessage[] = [],
 ): ArtifactItem[] {
+  if (steps.length === 0 && messages.length === 0) return [];
+
+  const cacheKey = makeArtifactsFingerprint(steps, messages);
+  if (artifactsCache.has(cacheKey)) {
+    return artifactsCache.get(cacheKey)!;
+  }
+
   const artifacts: ArtifactItem[] = [];
   const seenIds = new Set<string>();
 
@@ -196,6 +231,12 @@ export function extractArtifactsFromSteps(
     }
   });
 
+  if (artifactsCache.size >= MAX_ART_CACHE) {
+    const oldestKey = artifactsCache.keys().next().value;
+    if (oldestKey) artifactsCache.delete(oldestKey);
+  }
+  artifactsCache.set(cacheKey, artifacts);
+
   return artifacts;
 }
 
@@ -205,7 +246,8 @@ function extractCodeBlocksFromText(
   artifacts: ArtifactItem[],
   seenIds: Set<string>,
 ) {
-  if (!text) return;
+  // Fast bail-out: skip regex matching completely if text contains no code block fences
+  if (!text || !text.includes("```")) return;
 
   const codeBlockRegex = /```([a-zA-Z0-9_+#-]*)\n([\s\S]*?)```/g;
   let match;
@@ -214,7 +256,10 @@ function extractCodeBlocksFromText(
     const codeContent = match[2].trim();
 
     if (codeContent.length > 5) {
-      const isMermaid = lang === "mermaid" || codeContent.startsWith("graph ") || codeContent.startsWith("sequenceDiagram");
+      const isMermaid =
+        lang === "mermaid" ||
+        codeContent.startsWith("graph ") ||
+        codeContent.startsWith("sequenceDiagram");
       const type = isMermaid ? "media" : lang === "markdown" || lang === "md" ? "doc" : "code";
       const title = isMermaid
         ? `架构/流程图 (Mermaid)`

@@ -76,7 +76,22 @@ describe("WS upgrade validation", () => {
         3100,
         allowedOrigins,
       ),
-    ).toEqual({ ok: true, cascadeId: "abc123" });
+    ).toEqual({ ok: true, type: "conversation", cascadeId: "abc123" });
+  });
+
+  it("accepts terminal WS paths from allowed origins", () => {
+    const allowedOrigins = getAllowedOrigins({
+      PORTA_CORS_ORIGINS: "https://porta.example",
+    });
+
+    expect(
+      validateWebSocketUpgrade(
+        "/api/terminal/ws",
+        "https://porta.example",
+        3100,
+        allowedOrigins,
+      ),
+    ).toEqual({ ok: true, type: "terminal" });
   });
 
   it("rejects cross-origin upgrades on the WS endpoint", () => {

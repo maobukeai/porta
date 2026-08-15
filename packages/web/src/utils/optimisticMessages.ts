@@ -43,8 +43,20 @@ export function mergeOptimisticMessages(
     (msg) => msg.optimisticState !== "failed",
   );
 
+  const rawCombined = [...serverMessages, ...remainingOptimisticMessages];
+  const deduplicatedMessages: ChatMessage[] = [];
+  for (const msg of rawCombined) {
+    const isError = msg.type === "error" || msg.icon === "alert";
+    const prev = deduplicatedMessages[deduplicatedMessages.length - 1];
+    const prevIsError = prev && (prev.type === "error" || prev.icon === "alert");
+    if (isError && prevIsError && (prev.content === msg.content || !msg.content)) {
+      continue;
+    }
+    deduplicatedMessages.push(msg);
+  }
+
   return {
-    messages: [...serverMessages, ...remainingOptimisticMessages],
+    messages: deduplicatedMessages,
     confirmedOptimisticIds,
     hasUnconfirmedOptimistic: activeOptimisticMessages.length > 0,
   };

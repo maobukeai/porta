@@ -30,13 +30,15 @@ describe("ChatInput", () => {
   it("renders correctly", () => {
     render(<ChatInput {...defaultProps} />);
     expect(
-      screen.getByPlaceholderText("发送消息..."),
+      screen.getByPlaceholderText("提出后续修改要求，输入 @ 引用或 / 快捷指令..."),
     ).toBeInTheDocument();
   });
 
   it("calls onDraftChange when typing", async () => {
     render(<ChatInput {...defaultProps} />);
-    const textarea = screen.getByPlaceholderText("发送消息...") as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(
+      "提出后续修改要求，输入 @ 引用或 / 快捷指令...",
+    ) as HTMLTextAreaElement;
     // The textarea is now uncontrolled and uses a native DOM 'input' listener.
     // We must set the value on the DOM element and fire a native 'input' event.
     textarea.value = "hello";

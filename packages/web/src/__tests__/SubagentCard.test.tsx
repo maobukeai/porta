@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SubagentCard } from "../components/StepCards";
 import type { TrajectoryStep } from "../types";
 
@@ -28,35 +28,32 @@ function nativeStep(
 }
 
 describe("SubagentCard", () => {
-  it("renders every native subagent and expands every prompt", async () => {
-    render(<SubagentCard step={nativeStep()} />);
+  it("renders every native subagent and allows opening subagent details", async () => {
+    const onSelectSubagent = vi.fn();
+    render(<SubagentCard step={nativeStep()} onSelectSubagent={onSelectSubagent} />);
 
     expect(screen.getByText("Integration Reviewer")).toBeInTheDocument();
     expect(screen.getByText("Security Reviewer")).toBeInTheDocument();
-    expect(screen.queryByText("Review the integration")).not.toBeInTheDocument();
+    expect(screen.getByText("general-purpose")).toBeInTheDocument();
+    expect(screen.getByText("research")).toBeInTheDocument();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /2 Subagents Invoked/i }),
-    );
-
-    expect(screen.getByText("Review the integration")).toBeInTheDocument();
-    expect(screen.getByText("Review security boundaries")).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBe(2);
+    await userEvent.click(buttons[0]);
+    expect(onSelectSubagent).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ["CORTEX_STEP_STATUS_PENDING", "Pending", "cmd-wait"],
-    ["CORTEX_STEP_STATUS_ERROR", "Failed", "cmd-fail"],
-    ["CORTEX_STEP_STATUS_CANCELED", "Canceled", "cmd-fail"],
-    ["CORTEX_STEP_STATUS_INTERRUPTED", "Interrupted", "cmd-fail"],
-    ["CORTEX_STEP_STATUS_DONE", "Done", "cmd-ok"],
-  ])("renders %s with the correct state", (status, label, className) => {
+    ["CORTEX_STEP_STATUS_ERROR", "执行失败", "is-failed"],
+    ["CORTEX_STEP_STATUS_RUNNING", "执行中", "is-running"],
+  ])("renders %s with the correct state tag", (status, tagLabel, className) => {
     const { container } = render(<SubagentCard step={nativeStep(status)} />);
 
-    expect(screen.getByText(label)).toBeInTheDocument();
-    expect(container.querySelector(".subagent-card")).toHaveClass(className);
+    expect(screen.getAllByText(tagLabel).length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelector(".zcode-subagent-list-row")).toHaveClass(className);
   });
 
-  it("renders tool-specific send_message content", async () => {
+  it("renders tool-specific send_message content", () => {
     const step: TrajectoryStep = {
       type: "CORTEX_STEP_TYPE_TOOL_CALL",
       metadata: {
@@ -71,12 +68,8 @@ describe("SubagentCard", () => {
     };
     render(<SubagentCard step={step} />);
 
-    expect(screen.getByText("Message to conversation-123")).toBeInTheDocument();
     expect(screen.getByText("conversation-123")).toBeInTheDocument();
-    await userEvent.click(
-      screen.getByRole("button", { name: /Message to conversation-123/i }),
-    );
-    expect(screen.getByText("Please inspect the auth flow")).toBeInTheDocument();
+    expect(screen.getByText("message")).toBeInTheDocument();
   });
 
   it("renders untrusted labels as text rather than HTML", () => {

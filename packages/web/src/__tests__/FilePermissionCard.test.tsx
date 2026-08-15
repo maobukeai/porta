@@ -55,7 +55,7 @@ describe("FilePermissionCard", () => {
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+    await userEvent.click(screen.getByRole("button", { name: "允许" }));
 
     expect(onPermission).toHaveBeenCalledWith("traj-1", 7, true);
     expect(onFilePermission).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe("FilePermissionCard", () => {
     );
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Allow This Conversation" }),
+      screen.getByRole("button", { name: "在本次对话中始终允许" }),
     );
 
     expect(onFilePermission).toHaveBeenCalledWith(
@@ -109,10 +109,10 @@ describe("FilePermissionCard", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: "Allow" }),
+      screen.queryByRole("button", { name: "允许" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Deny" }),
+      screen.queryByRole("button", { name: "拒绝" }),
     ).not.toBeInTheDocument();
   });
 

@@ -1,17 +1,53 @@
+let cachedApiBase: string | null = null;
+
 export function getApiBase(): string {
-  const custom = localStorage.getItem("porta_custom_api_base");
-  if (custom && custom.trim()) {
-    return custom.trim().replace(/\/+$/, "");
-  }
-  return (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+  if (cachedApiBase !== null) return cachedApiBase;
+  try {
+    const custom = typeof localStorage !== "undefined" ? localStorage.getItem("porta_custom_api_base") : null;
+    if (custom && custom.trim()) {
+      cachedApiBase = custom.trim().replace(/\/+$/, "");
+      return cachedApiBase;
+    }
+  } catch {}
+  cachedApiBase = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+  return cachedApiBase ?? "";
 }
 
 export function setCustomApiBase(url: string): void {
   if (!url || !url.trim()) {
-    localStorage.removeItem("porta_custom_api_base");
+    try {
+      localStorage.removeItem("porta_custom_api_base");
+    } catch {}
+    cachedApiBase = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
   } else {
-    localStorage.setItem("porta_custom_api_base", url.trim().replace(/\/+$/, ""));
+    const normalized = url.trim().replace(/\/+$/, "");
+    try {
+      localStorage.setItem("porta_custom_api_base", normalized);
+    } catch {}
+    cachedApiBase = normalized;
   }
+}
+
+export function resolveWsUrl(path: string): string {
+  const apiBase = getApiBase();
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (apiBase) {
+    if (apiBase.startsWith("https://")) {
+      return `${apiBase.replace(/^https:\/\//, "wss://")}${cleanPath}`;
+    }
+    if (apiBase.startsWith("http://")) {
+      return `${apiBase.replace(/^http:\/\//, "ws://")}${cleanPath}`;
+    }
+    return `ws://${apiBase}${cleanPath}`;
+  }
+
+  if (typeof window !== "undefined" && window.location?.host) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}${cleanPath}`;
+  }
+
+  return `ws://localhost:3170${cleanPath}`;
 }
 
 function previewBody(text: string): string {
@@ -59,13 +95,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text();
-    let msg: string;
+    let msg = "";
     try {
-      msg = JSON.parse(body).error ?? body;
+      const parsed = JSON.parse(body);
+      if (typeof parsed === "string") {
+        msg = parsed;
+      } else if (typeof parsed.error === "string") {
+        msg = parsed.error;
+      } else if (typeof parsed.error === "object" && parsed.error !== null) {
+        msg = parsed.error.message || parsed.error.error || parsed.error.details || JSON.stringify(parsed.error);
+      } else if (typeof parsed.message === "string") {
+        msg = parsed.message;
+      } else {
+        msg = JSON.stringify(parsed);
+      }
     } catch {
       msg = body;
     }
-    throw new Error(`API ${res.status}: ${msg}`);
+    throw new Error(msg ? `API ${res.status}: ${msg}` : `API ${res.status}`);
   }
 
   const contentType = res.headers.get("content-type") ?? "";
@@ -105,11 +152,21 @@ export const api = {
       workspaceInfos?: { workspaceUri: string; gitRootUri?: string }[];
     }>("/api/workspaces"),
 
-  startConversation: (workspaceUri?: string, fileAccessGranted = false) =>
+  startConversation: (
+    workspaceUri?: string | null,
+    fileAccessGranted = false,
+    noWorkspace = false,
+  ) =>
     request<{ cascadeId: string }>("/api/conversations", {
       method: "POST",
       body: JSON.stringify({
-        ...(workspaceUri ? { workspaceFolderAbsoluteUri: workspaceUri } : {}),
+        ...(workspaceUri && !noWorkspace
+          ? { workspaceFolderAbsoluteUri: workspaceUri }
+          : {}),
+        noWorkspace:
+          noWorkspace ||
+          workspaceUri === null ||
+          (!workspaceUri && typeof workspaceUri !== "undefined"),
         fileAccessGranted,
       }),
     }),
@@ -122,6 +179,7 @@ export const api = {
     media?: Array<{ mimeType: string; inlineData: string }>,
     plannerType?: string,
     fileAccessGranted = false,
+    executionMode?: string,
   ) =>
     request(`/api/conversations/${cascadeId}/messages`, {
       method: "POST",
@@ -132,6 +190,7 @@ export const api = {
         media,
         plannerType,
         fileAccessGranted,
+        executionMode,
       }),
     }),
 
@@ -189,6 +248,18 @@ export const api = {
       }),
     }),
 
+  getRevertPreview: (cascadeId: string, stepIndex: number) =>
+    request<{
+      files: Array<{
+        fileUri: string;
+        fileName: string;
+        ext: string;
+        additions: number;
+        deletions: number;
+        isCreated?: boolean;
+      }>;
+    }>(`/api/conversations/${cascadeId}/revert-preview?stepIndex=${stepIndex}`),
+
   revert: (cascadeId: string, stepIndex: number, model?: string) =>
     request(`/api/conversations/${cascadeId}/revert`, {
       method: "POST",
@@ -233,8 +304,13 @@ export const api = {
             };
           }>;
         };
+        userQuotaSummary?: import("../types").UserQuotaSummary;
       };
+      userQuotaSummary?: import("../types").UserQuotaSummary;
     }>("/api/user-status"),
+
+  quota: () =>
+    request<import("../types").UserQuotaSummary>("/api/quota"),
 
   rpc: (method: string, body: Record<string, unknown> = {}) =>
     request(`/api/rpc/${method}`, {
@@ -255,20 +331,240 @@ export const api = {
       elapsedMs: number;
     }>(`/api/search?q=${encodeURIComponent(query)}`),
 
-  commands: () =>
+  commands: (workspaceUri?: string) =>
     request<{
       commands: Array<{
         name: string;
         desc: string;
         category?: "slash" | "skill" | "plugin" | "mcp";
       }>;
-    }>("/api/commands"),
+    }>(`/api/commands${workspaceUri ? `?workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`),
 
   customizations: () =>
     request<{
       skills: Array<{ name: string; description: string; source: string }>;
       mcpServers: Array<{ name: string; description: string }>;
     }>("/api/customizations"),
+
+  agentCapabilities: {
+    memory: (workspaceUri?: string) =>
+      request<import("../types").MemorySummaryResponse>(
+        `/api/agent-capabilities/memory${workspaceUri ? `?workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
+      ),
+    saveMemory: (path: string, content: string) =>
+      request<{ success: boolean; path: string }>("/api/agent-capabilities/memory/save", {
+        method: "POST",
+        body: JSON.stringify({ path, content }),
+      }),
+    plugins: () =>
+      request<{ plugins: import("../types").PluginInfo[]; total: number }>(
+        "/api/agent-capabilities/plugins",
+      ),
+    togglePlugin: (pluginId: string, enabled: boolean) =>
+      request<{ success: boolean; pluginId: string; enabled: boolean }>(
+        "/api/agent-capabilities/plugins/toggle",
+        {
+          method: "POST",
+          body: JSON.stringify({ pluginId, enabled }),
+        },
+      ),
+    installPlugin: (pluginId: string) =>
+      request<{ success: boolean; pluginId: string; message: string }>(
+        "/api/agent-capabilities/plugins/install",
+        {
+          method: "POST",
+          body: JSON.stringify({ pluginId }),
+        },
+      ),
+    uninstallPlugin: (pluginId: string) =>
+      request<{ success: boolean; pluginId: string; message: string }>(
+        "/api/agent-capabilities/plugins/uninstall",
+        {
+          method: "POST",
+          body: JSON.stringify({ pluginId }),
+        },
+      ),
+    skills: () =>
+      request<{ skills: import("../types").SkillDetailedInfo[]; total: number }>(
+        "/api/agent-capabilities/skills",
+      ),
+    skillContent: (path: string) =>
+      request<import("../types").SkillContentResponse>(
+        `/api/agent-capabilities/skills/content?path=${encodeURIComponent(path)}`,
+      ),
+    subagents: () =>
+      request<{ subagents: import("../types").SubagentInfo[]; total: number }>(
+        "/api/agent-capabilities/subagents",
+      ),
+    createSubagent: (data: { name: string; role: string; description: string; tools?: string[]; systemPrompt: string }) =>
+      request<{ success: boolean; path: string; name: string }>(
+        "/api/agent-capabilities/subagents/create",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    updateSubagent: (data: { path: string; name: string; role: string; description: string; tools?: string[]; systemPrompt: string }) =>
+      request<{ success: boolean; path: string }>(
+        "/api/agent-capabilities/subagents/update",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    deleteSubagent: (path: string) =>
+      request<{ success: boolean; path: string }>(
+        "/api/agent-capabilities/subagents/delete",
+        {
+          method: "POST",
+          body: JSON.stringify({ path }),
+        },
+      ),
+    openPath: (path: string) =>
+      request<{ success: boolean; path: string }>(
+        "/api/agent-capabilities/open-path",
+        {
+          method: "POST",
+          body: JSON.stringify({ path }),
+        },
+      ),
+    mcp: () =>
+      request<{ servers: import("../types").McpServerDetailedInfo[]; total: number }>(
+        "/api/agent-capabilities/mcp",
+      ),
+    toggleMcp: (serverName: string, disabled: boolean) =>
+      request<{ success: boolean; serverName: string; disabled: boolean }>(
+        "/api/agent-capabilities/mcp/toggle",
+        {
+          method: "POST",
+          body: JSON.stringify({ serverName, disabled }),
+        },
+      ),
+    commands: () =>
+      request<{ commands: import("../types").CommandDefinition[]; total: number }>(
+        "/api/agent-capabilities/commands",
+      ),
+    toggleCommand: (cmd: string, enabled: boolean) =>
+      request<{ success: boolean; cmd: string; enabled: boolean }>(
+        "/api/agent-capabilities/commands/toggle",
+        {
+          method: "POST",
+          body: JSON.stringify({ cmd, enabled }),
+        },
+      ),
+    createCommand: (data: {
+      name: string;
+      cmd?: string;
+      description?: string;
+      usage?: string;
+      argumentHint?: string;
+      scope?: "user" | "workspace";
+      workspaceUri?: string;
+      prompt: string;
+    }) =>
+      request<{ success: boolean; path: string }>("/api/agent-capabilities/commands/create", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    updateCommand: (data: {
+      path: string;
+      name: string;
+      cmd?: string;
+      description?: string;
+      usage?: string;
+      argumentHint?: string;
+      prompt: string;
+    }) =>
+      request<{ success: boolean; path: string }>("/api/agent-capabilities/commands/update", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    deleteCommand: (path: string) =>
+      request<{ success: boolean }>("/api/agent-capabilities/commands/delete", {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      }),
+    hooks: (workspaceUri?: string) =>
+      request<{ hooks: import("../types").HookDefinition[]; total: number }>(
+        `/api/agent-capabilities/hooks${workspaceUri ? `?workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
+      ),
+    createHook: (data: {
+      name?: string;
+      event: string;
+      scope?: "user" | "workspace";
+      workspaceUri?: string;
+      runType?: string;
+      matcher?: string;
+      command: string;
+      args?: string[];
+      timeout?: number;
+      enabled?: boolean;
+    }) =>
+      request<{ success: boolean; path: string; hookName: string }>(
+        "/api/agent-capabilities/hooks/create",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    updateHook: (data: {
+      name: string;
+      originalName?: string;
+      event: string;
+      originalEvent?: string;
+      scope?: "user" | "workspace";
+      workspaceUri?: string;
+      filePath?: string;
+      runType?: string;
+      matcher?: string;
+      command: string;
+      args?: string[];
+      timeout?: number;
+      enabled?: boolean;
+    }) =>
+      request<{ success: boolean; path: string; hookName: string }>(
+        "/api/agent-capabilities/hooks/update",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    toggleHook: (data: {
+      name: string;
+      filePath?: string;
+      scope?: "user" | "workspace";
+      workspaceUri?: string;
+      enabled: boolean;
+    }) =>
+      request<{ success: boolean; enabled: boolean }>(
+        "/api/agent-capabilities/hooks/toggle",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+    deleteHook: (data: {
+      name: string;
+      event?: string;
+      filePath?: string;
+      scope?: "user" | "workspace";
+      workspaceUri?: string;
+    }) =>
+      request<{ success: boolean }>(
+        "/api/agent-capabilities/hooks/delete",
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+        },
+      ),
+  },
+
+  statistics: {
+    usage: (range: "1d" | "7d" | "30d" = "1d") =>
+      request<import("../types").UsageStatisticsResponse>(
+        `/api/statistics/usage?range=${range}`
+      ),
+  },
 
   gitStatus: (workspaceUri?: string) => {
     const key = workspaceUri || "default";
@@ -304,10 +600,27 @@ export const api = {
       error?: string;
     }>(`/api/git/log?limit=${limit}${workspaceUri ? `&workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`),
 
-  gitDiff: (workspaceUri?: string, file?: string) =>
-    request<{ diff: string; error?: string }>(
-      `/api/git/diff${file ? `?file=${encodeURIComponent(file)}` : "?"}${workspaceUri ? `&workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
-    ),
+  gitDiff: (workspaceUri?: string, fileOrOptions?: string | { file?: string; commit?: string }) => {
+    let query = "";
+    if (typeof fileOrOptions === "string") {
+      query = `file=${encodeURIComponent(fileOrOptions)}`;
+    } else if (fileOrOptions) {
+      if (fileOrOptions.commit) query += `commit=${encodeURIComponent(fileOrOptions.commit)}`;
+      if (fileOrOptions.file) query += `${query ? "&" : ""}file=${encodeURIComponent(fileOrOptions.file)}`;
+    }
+    if (workspaceUri) {
+      query += `${query ? "&" : ""}workspaceUri=${encodeURIComponent(workspaceUri)}`;
+    }
+    return request<{ diff: string; error?: string }>(`/api/git/diff${query ? `?${query}` : ""}`);
+  },
+
+  gitPush: (body: { workspaceUri?: string; branch?: string } = {}) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/push", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
 
   gitCommit: (body: { workspaceUri?: string; message: string; push?: boolean; files?: string[] }) => {
     clearGitStatusCache();
@@ -342,15 +655,53 @@ export const api = {
   },
 
   gitBranches: (workspaceUri?: string) =>
-    request<{ current: string; branches: string[]; error?: string }>(
+    request<{
+      current: string;
+      branches: string[];
+      local: Array<{ name: string; isCurrent: boolean; hash: string; subject: string }>;
+      remote: Array<{ name: string; remote: string; branch: string; hash: string; subject: string }>;
+      error?: string;
+    }>(
       `/api/git/branches${workspaceUri ? `?workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
     ),
 
-  gitCheckout: (workspaceUri?: string, branch?: string, create = false) => {
+  gitCheckout: (
+    workspaceUriOrBody?: string | { workspaceUri?: string; branch: string; create?: boolean; startPoint?: string },
+    branch?: string,
+    create = false,
+  ) => {
     clearGitStatusCache();
-    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/checkout", {
+    const payload =
+      typeof workspaceUriOrBody === "object" && workspaceUriOrBody !== null
+        ? workspaceUriOrBody
+        : { workspaceUri: workspaceUriOrBody, branch: branch || "", create };
+    return request<{ success?: boolean; current?: string; output?: string; error?: string }>("/api/git/checkout", {
       method: "POST",
-      body: JSON.stringify({ workspaceUri, branch, create }),
+      body: JSON.stringify(payload),
+    });
+  },
+
+  gitCreateBranch: (body: { workspaceUri?: string; name: string; checkout?: boolean }) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; branch?: string; output?: string; error?: string }>("/api/git/branch/create", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  gitDeleteBranch: (body: { workspaceUri?: string; name: string; force?: boolean; isRemote?: boolean }) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/branch/delete", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  gitFetch: (body: { workspaceUri?: string; prune?: boolean } = {}) => {
+    clearGitStatusCache();
+    return request<{ success?: boolean; output?: string; error?: string }>("/api/git/fetch", {
+      method: "POST",
+      body: JSON.stringify(body),
     });
   },
 
@@ -362,9 +713,44 @@ export const api = {
     });
   },
 
-  gitAiCommit: (workspaceUri?: string) =>
+  gitAiCommit: (workspaceUri?: string, prompt?: string) =>
     request<{ message: string; diffStat?: string }>("/api/git/ai-commit-msg", {
       method: "POST",
-      body: JSON.stringify({ workspaceUri }),
+      body: JSON.stringify({ workspaceUri, prompt }),
     }),
+
+  terminalInfo: () =>
+    request<{
+      shell: string;
+      platform: string;
+      defaultCwd: string;
+      banner: string;
+    }>("/api/terminal/info"),
+
+  terminalExec: (command: string, cwd?: string, workspaceUri?: string) =>
+    request<{
+      stdout: string;
+      stderr: string;
+      exitCode: number;
+      cwd: string;
+    }>("/api/terminal/exec", {
+      method: "POST",
+      body: JSON.stringify({ command, cwd, workspaceUri }),
+    }),
+
+  readFileText: (fileUriOrPath: string, workspaceUri?: string) =>
+    request<{ path?: string; content: string; size?: number; isBinary?: boolean; error?: string }>(
+      `/api/files/text?uri=${encodeURIComponent(fileUriOrPath)}${workspaceUri ? `&workspaceUri=${encodeURIComponent(workspaceUri)}` : ""}`,
+    ),
+
+  setExecutionMode: (executionMode: import("../types").ExecutionMode, conversationId?: string, workspaceUri?: string) =>
+    request<{ ok: boolean; preset?: string; workspaceUri?: string }>("/api/execution-mode", {
+      method: "POST",
+      body: JSON.stringify({ executionMode, conversationId, workspaceUri }),
+    }),
+
+  getPlan: (conversationId: string) =>
+    request<import("../types").ConversationPlanResponse>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/plan`,
+    ),
 };

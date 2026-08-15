@@ -4,7 +4,7 @@
 
 import type { Hono } from "hono";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 
 export interface CommandItem {
@@ -51,53 +51,106 @@ const BUILTIN_COMMANDS: CommandItem[] = [
   },
 ];
 
-function parseFrontmatter(content: string): { name?: string; description?: string } | null {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return null;
-  const text = match[1];
-  const nameMatch = text.match(/name:\s*["']?([^"'\r\n]+)["']?/);
-  const descMatch = text.match(/description:\s*["']?([^"'\r\n]+)["']?/);
-  return {
-    name: nameMatch ? nameMatch[1].trim() : undefined,
-    description: descMatch ? descMatch[1].trim() : undefined,
-  };
+function parseYamlFrontmatter(content: string): { data: Record<string, string>; body: string } {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---([\s\S]*)$/);
+  if (!match) return { data: {}, body: content.trim() };
+
+  const frontmatterStr = match[1];
+  const body = match[2].trim();
+  const data: Record<string, string> = {};
+
+  const lines = frontmatterStr.split(/\r?\n/);
+  let currentKey = "";
+
+  for (const line of lines) {
+    const keyVal = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+    if (keyVal) {
+      currentKey = keyVal[1];
+      const val = keyVal[2].trim();
+      if (val === ">-" || val === ">" || val === "|") {
+        data[currentKey] = "";
+      } else {
+        data[currentKey] = val.replace(/^["']|["']$/g, "");
+      }
+    } else if (currentKey && line.startsWith("  ")) {
+      const additional = line.trim();
+      if (typeof data[currentKey] === "string") {
+        data[currentKey] = (data[currentKey] + " " + additional).trim();
+      }
+    }
+  }
+
+  return { data, body };
 }
 
 function scanSkillDir(baseDir: string, category: "skill" | "plugin" = "skill"): CommandItem[] {
   const items: CommandItem[] = [];
   if (!existsSync(baseDir)) return items;
 
+  // Direct skill folder (has SKILL.md directly inside baseDir)
+  const directSkillMd = join(baseDir, "SKILL.md");
+  if (existsSync(directSkillMd)) {
+    try {
+      const content = readFileSync(directSkillMd, "utf-8");
+      const { data } = parseYamlFrontmatter(content);
+      const dirName = basename(baseDir);
+      const name = data.name || dirName;
+      items.push({
+        name,
+        desc: data.description || `${name} skill`,
+        category,
+      });
+    } catch {}
+    return items;
+  }
+
   try {
     const entries = readdirSync(baseDir);
     for (const entry of entries) {
       const fullPath = join(baseDir, entry);
-      if (!statSync(fullPath).isDirectory()) continue;
+      let isDir = false;
+      try {
+        isDir = statSync(fullPath).isDirectory();
+      } catch {
+        continue;
+      }
+      if (!isDir || entry.startsWith(".")) continue;
 
-      let skillMdPath = join(fullPath, "SKILL.md");
+      const skillMdPath = join(fullPath, "SKILL.md");
       if (!existsSync(skillMdPath)) {
         // Check plugins sub-skills
         const pluginSkillDir = join(fullPath, "skills");
-        if (existsSync(pluginSkillDir) && statSync(pluginSkillDir).isDirectory()) {
-          items.push(...scanSkillDir(pluginSkillDir, "plugin"));
+        if (existsSync(pluginSkillDir)) {
+          try {
+            if (statSync(pluginSkillDir).isDirectory()) {
+              items.push(...scanSkillDir(pluginSkillDir, "plugin"));
+            }
+          } catch {}
         }
         continue;
       }
 
       try {
         const content = readFileSync(skillMdPath, "utf-8");
-        const parsed = parseFrontmatter(content);
-        if (parsed && parsed.name) {
-          items.push({
-            name: parsed.name,
-            desc: parsed.description ?? `${entry} skill`,
-            category,
-          });
-        } else {
-          items.push({
-            name: entry,
-            desc: `${entry} skill`,
-            category,
-          });
+        const { data } = parseYamlFrontmatter(content);
+        const name = data.name || entry;
+        items.push({
+          name,
+          desc: data.description || `${name} skill`,
+          category,
+        });
+
+        // If skill name has Chinese suffix like `brainstorming-头脑风暴`, also add pure English alias if distinct
+        if (name.includes("-")) {
+          const parts = name.split("-");
+          const alias = parts[0].trim();
+          if (alias && alias !== name && !items.some(i => i.name === alias)) {
+            items.push({
+              name: alias,
+              desc: data.description || `${alias} skill`,
+              category,
+            });
+          }
         }
       } catch {
         // Skip unreadable files
@@ -139,9 +192,53 @@ function scanMcpDir(): CommandItem[] {
   return items;
 }
 
+function scanCustomCommandsDir(baseDir: string): CommandItem[] {
+  const items: CommandItem[] = [];
+  if (!existsSync(baseDir)) return items;
+
+  try {
+    const files = readdirSync(baseDir);
+    for (const file of files) {
+      if (!file.endsWith(".md") && !file.endsWith(".toml")) continue;
+      const fullPath = join(baseDir, file);
+      const cmdName = file.replace(/\.(md|toml)$/, "");
+      try {
+        const content = readFileSync(fullPath, "utf-8");
+        const { data } = parseYamlFrontmatter(content);
+        items.push({
+          name: cmdName,
+          desc: data.description ?? `自定义命令 /${cmdName}`,
+          category: "slash",
+        });
+      } catch {
+        items.push({
+          name: cmdName,
+          desc: `自定义命令 /${cmdName}`,
+          category: "slash",
+        });
+      }
+    }
+  } catch {}
+
+  return items;
+}
+
 export function registerCommandRoutes(app: Hono): void {
   app.get("/api/commands", (c) => {
     const home = homedir();
+    const rawWorkspace = c.req.query("workspaceUri");
+    let workspaceDir: string | null = null;
+    if (rawWorkspace) {
+      workspaceDir = rawWorkspace.startsWith("file://")
+        ? decodeURIComponent(rawWorkspace.replace(/^file:\/\/\/?/, ""))
+        : rawWorkspace;
+    }
+
+    const userCommands1 = scanCustomCommandsDir(join(home, ".agents", "commands"));
+    const userCommands2 = scanCustomCommandsDir(join(home, ".gemini", "config", "commands"));
+    const wsCommands1 = workspaceDir ? scanCustomCommandsDir(join(workspaceDir, ".agents", "commands")) : [];
+    const wsCommands2 = workspaceDir ? scanCustomCommandsDir(join(workspaceDir, ".gemini", "commands")) : [];
+
     const userSkillsDir = join(home, ".gemini", "config", "skills");
     const builtinSkillsDir = join(home, ".gemini", "antigravity", "builtin", "skills");
     const pluginsDir = join(home, ".gemini", "config", "plugins");
@@ -149,21 +246,61 @@ export function registerCommandRoutes(app: Hono): void {
     const userSkills = scanSkillDir(userSkillsDir, "skill");
     const builtinSkills = scanSkillDir(builtinSkillsDir, "skill");
     const plugins = scanSkillDir(pluginsDir, "plugin");
+    const wsSkills1 = workspaceDir ? scanSkillDir(join(workspaceDir, ".gemini", "skills"), "skill") : [];
+    const wsSkills2 = workspaceDir ? scanSkillDir(join(workspaceDir, ".agents", "skills"), "skill") : [];
+    const wsSkills3 = workspaceDir ? scanSkillDir(join(workspaceDir, "skills"), "skill") : [];
     const mcpTools = scanMcpDir();
 
     // Map to prevent duplicate command names
     const map = new Map<string, CommandItem>();
 
+    // 1. Built-in slash commands
     for (const item of BUILTIN_COMMANDS) {
       map.set(item.name, item);
     }
-    for (const item of [...userSkills, ...builtinSkills, ...plugins, ...mcpTools]) {
+    // 2. User & Workspace custom commands
+    for (const item of [...userCommands1, ...userCommands2, ...wsCommands1, ...wsCommands2]) {
+      map.set(item.name, item);
+    }
+    // 3. Skills (user, builtin, plugins, workspace)
+    for (const item of [...userSkills, ...builtinSkills, ...plugins, ...wsSkills1, ...wsSkills2, ...wsSkills3]) {
+      if (!map.has(item.name)) {
+        map.set(item.name, item);
+      }
+    }
+    // 4. MCP tools
+    for (const item of mcpTools) {
       if (!map.has(item.name)) {
         map.set(item.name, item);
       }
     }
 
-    const commands = Array.from(map.values());
+    // Filter out disabled commands and disabled skills
+    const configPath = join(home, ".gemini", "config", "config.json");
+    let disabledSet = new Set<string>();
+    if (existsSync(configPath)) {
+      try {
+        const cfg = JSON.parse(readFileSync(configPath, "utf-8"));
+        if (Array.isArray(cfg.disabledCommands)) {
+          for (const s of cfg.disabledCommands) {
+            const clean = s.startsWith("/") ? s : `/${s}`;
+            disabledSet.add(clean);
+            disabledSet.add(clean.slice(1));
+          }
+        }
+        if (Array.isArray(cfg.disabledSkills)) {
+          for (const s of cfg.disabledSkills) {
+            disabledSet.add(s);
+          }
+        }
+      } catch {}
+    }
+
+    const commands = Array.from(map.values()).filter((item) => {
+      const slashName = item.name.startsWith("/") ? item.name : `/${item.name}`;
+      return !disabledSet.has(slashName) && !disabledSet.has(item.name);
+    });
+
     return c.json({ commands });
   });
 }

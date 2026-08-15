@@ -1,27 +1,23 @@
 import { memo, useState, useMemo } from "react";
-import { IconCopy, IconCheck } from "./Icons";
+import { IconCopy, IconCheck, IconDownload, IconMaximize } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
+import { copyText } from "../utils/clipboard";
 import { DiagramModal } from "./DiagramModal";
 
-/**
- * Split an HTML string into alternating segments of "non-pre" and "pre" blocks.
- * Returns an array of { type: 'html' | 'pre', content: string }.
- */
 interface Segment {
-  type: "html" | "pre";
-  content: string; // for html: raw html string; for pre: code text
+  type: "html" | "pre" | "table";
+  content: string; // for html: raw html string; for pre: code text; for table: table text / csv
   rawHtml: string; // original html for re-rendering
 }
 
-function splitPreBlocks(html: string): Segment[] {
+function splitSegments(html: string): Segment[] {
   const segments: Segment[] = [];
-  // Match <pre> blocks (possibly containing <code>)
-  const preRegex = /<pre[^>]*>([\s\S]*?)<\/pre>/gi;
+  // Match <pre>...</pre> and <table>...</table>
+  const blockRegex = /(?:<pre[^>]*>[\s\S]*?<\/pre>)|(?:<table[^>]*>[\s\S]*?<\/table>)/gi;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
-  while ((match = preRegex.exec(html)) !== null) {
-    // Add preceding non-pre html
+  while ((match = blockRegex.exec(html)) !== null) {
     if (match.index > lastIndex) {
       const htmlBefore = html.slice(lastIndex, match.index);
       if (htmlBefore.trim()) {
@@ -33,18 +29,30 @@ function splitPreBlocks(html: string): Segment[] {
       }
     }
 
-    // Extract text content from the <pre> block (strip HTML tags for copy)
-    const innerHtml = match[1];
-    const textContent = innerHtml.replace(/<[^>]*>/g, "");
-    segments.push({
-      type: "pre",
-      content: textContent,
-      rawHtml: match[0],
-    });
-    lastIndex = match.index + match[0].length;
+    const matchedHtml = match[0];
+    if (matchedHtml.toLowerCase().startsWith("<pre")) {
+      const textContent = matchedHtml
+        .replace(/^<pre[^>]*>/i, "")
+        .replace(/<\/pre>$/i, "")
+        .replace(/<[^>]*>/g, "");
+      segments.push({
+        type: "pre",
+        content: textContent,
+        rawHtml: matchedHtml,
+      });
+    } else {
+      // Table block
+      const textContent = matchedHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      segments.push({
+        type: "table",
+        content: textContent,
+        rawHtml: matchedHtml,
+      });
+    }
+
+    lastIndex = match.index + matchedHtml.length;
   }
 
-  // Add trailing html
   if (lastIndex < html.length) {
     const trailing = html.slice(lastIndex);
     if (trailing.trim()) {
@@ -72,6 +80,136 @@ function extractLanguage(html: string): string {
   return "CODE";
 }
 
+function tableHtmlToCsv(html: string): string {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const rows = Array.from(doc.querySelectorAll("tr"));
+    return rows
+      .map((row) => {
+        const cells = Array.from(row.querySelectorAll("th, td"));
+        return cells
+          .map((cell) => {
+            let text = cell.textContent?.trim() || "";
+            text = text.replace(/"/g, '""');
+            if (text.includes(",") || text.includes("\n") || text.includes('"')) {
+              text = `"${text}"`;
+            }
+            return text;
+          })
+          .join(",");
+      })
+      .join("\n");
+  } catch {
+    return html.replace(/<[^>]*>/g, " ");
+  }
+}
+
+function tableHtmlToMarkdown(html: string): string {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const rows = Array.from(doc.querySelectorAll("tr"));
+    if (rows.length === 0) return "";
+    const lines: string[] = [];
+    rows.forEach((row, idx) => {
+      const cells = Array.from(row.querySelectorAll("th, td"));
+      const line = `| ${cells.map((c) => c.textContent?.trim() || "").join(" | ")} |`;
+      lines.push(line);
+      if (idx === 0) {
+        lines.push(`| ${cells.map(() => "---").join(" | ")} |`);
+      }
+    });
+    return lines.join("\n");
+  } catch {
+    return html.replace(/<[^>]*>/g, " ");
+  }
+}
+
+function downloadCsvFile(content: string, filename = "table.csv") {
+  const blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Table Card with Copy, Download CSV & Maximize/Zoom */
+function TableCard({ rawHtml }: { rawHtml: string }) {
+  const [copied, setCopied] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerHaptic("success");
+    const md = tableHtmlToMarkdown(rawHtml);
+    void copyText(md).then((success) => {
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }
+    });
+  };
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerHaptic("light");
+    const csv = tableHtmlToCsv(rawHtml);
+    downloadCsvFile(csv, `zcode-table-${Date.now()}.csv`);
+  };
+
+  const handleZoom = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerHaptic("medium");
+    setZoomOpen(true);
+  };
+
+  return (
+    <div className="zcode-table-card">
+      <div className="zcode-table-actions-header">
+        <button
+          className={`zcode-table-action-btn ${copied ? "copied" : ""}`}
+          title="复制表格 (Markdown)"
+          onClick={handleCopy}
+        >
+          {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+        </button>
+        <button
+          className="zcode-table-action-btn"
+          title="导出表格为 CSV"
+          onClick={handleDownload}
+        >
+          <IconDownload size={13} />
+        </button>
+        <button
+          className="zcode-table-action-btn"
+          title="全屏缩放查看表格"
+          onClick={handleZoom}
+        >
+          <IconMaximize size={13} />
+        </button>
+      </div>
+
+      <div
+        className="zcode-table-inner"
+        dangerouslySetInnerHTML={{ __html: rawHtml }}
+      />
+
+      {zoomOpen && (
+        <DiagramModal
+          open={zoomOpen}
+          onClose={() => setZoomOpen(false)}
+          title="表格全屏预览"
+          code={tableHtmlToMarkdown(rawHtml)}
+          rawHtml={rawHtml}
+        />
+      )}
+    </div>
+  );
+}
+
 /** Copy & Zoom header for code blocks */
 function CodeHeader({
   text,
@@ -87,7 +225,7 @@ function CodeHeader({
   return (
     <div className="code-block-header">
       <span className="code-lang-tag">{lang}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
         <button
           className="code-copy-btn"
           title="全屏/手势缩放查看"
@@ -97,7 +235,7 @@ function CodeHeader({
             setZoomOpen(true);
           }}
         >
-          🔍 缩放全屏
+          <IconMaximize size={12} />
         </button>
         <button
           className={`code-copy-btn ${copied ? "copied" : ""}`}
@@ -105,9 +243,11 @@ function CodeHeader({
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic("success");
-            navigator.clipboard.writeText(text).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
+            void copyText(text).then((success) => {
+              if (success) {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }
             });
           }}
         >
@@ -145,29 +285,31 @@ interface MarkdownContentProps {
 }
 
 /**
- * Renders markdown HTML with React-managed copy buttons on code blocks.
- * Replaces the old DOM injection approach.
+ * Renders markdown HTML with React-managed copy/download buttons on code blocks & tables.
  */
 export const MarkdownContent = memo(function MarkdownContent({
   html,
   skipCopyButtons = false,
 }: MarkdownContentProps) {
-  const segments = useMemo(() => splitPreBlocks(html), [html]);
+  const segments = useMemo(() => splitSegments(html), [html]);
 
-  // Fast path: no <pre> blocks, just render as-is
+  // Fast path: no <pre> or <table> blocks, just render as-is
   if (segments.length <= 1 && segments[0]?.type === "html") {
     return <div dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
   return (
-    <div>
+    <div className="zcode-markdown-flow">
       {segments.map((seg, i) => {
         if (seg.type === "html") {
           return (
             <div key={i} dangerouslySetInnerHTML={{ __html: seg.content }} />
           );
         }
-        // Pre block: render with copy button
+        if (seg.type === "table") {
+          return <TableCard key={i} rawHtml={seg.rawHtml} />;
+        }
+        // Pre block: render with code header
         return (
           <div key={i} className="code-block-wrapper" style={{ position: "relative" }}>
             {!skipCopyButtons && (

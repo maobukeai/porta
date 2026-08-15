@@ -3,6 +3,9 @@ export type AllowedOrigin = string | RegExp;
 const DEFAULT_ALLOWED_ORIGINS: AllowedOrigin[] = [
   /^https?:\/\/localhost(:\d+)?$/,
   /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+  /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
+  /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,
+  /^https?:\/\/100\.\d+\.\d+\.\d+(:\d+)?$/,
 ];
 
 function escapeRegExp(value: string): string {

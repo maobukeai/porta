@@ -21,6 +21,7 @@ import {
   IconCloud,
 } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
+import { copyText } from "../utils/clipboard";
 import type { TrajectoryStep, ChatMessage } from "../types";
 import { api } from "../api/client";
 import { ConfirmModal } from "./ConfirmModal";
@@ -30,11 +31,14 @@ import {
   getFileBadge,
   type ArtifactItem,
 } from "../utils/extractArtifacts";
+import { renderMarkdown } from "../utils/markdown";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface Props {
   steps?: TrajectoryStep[];
   messages?: ChatMessage[];
   workspaceUri?: string;
+  selectedFile?: { name: string; path?: string; ext?: string; range?: string } | null;
   onClose?: () => void;
 }
 
@@ -90,10 +94,17 @@ function parseSideBySideDiff(rawDiff: string): DiffLine[] {
   return result;
 }
 
-export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onClose }: Props) {
+export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, selectedFile, onClose }: Props) {
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState<"all" | "doc" | "code" | "diff" | "media">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedFile?.name) {
+      setSearch(selectedFile.name);
+      setSelectedType("all");
+    }
+  }, [selectedFile]);
 
   // ── Git Source Control 2.0 States ──
   const [gitBranch, setGitBranch] = useState("main");
@@ -281,9 +292,12 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
 
   const handleCopy = (id: string, text: string) => {
     triggerHaptic("light");
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    void copyText(text).then((success) => {
+      if (success) {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 1500);
+      }
+    });
   };
 
   const handleDownload = (item: ArtifactItem) => {
@@ -734,9 +748,15 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, onCl
               </div>
 
               <div className="artifact-card-body">
-                <pre className="artifact-code-preview">
-                  <code>{item.content}</code>
-                </pre>
+                {item.type === "doc" || item.language === "md" || item.language === "markdown" ? (
+                  <div className="artifact-markdown-rendered-view">
+                    <MarkdownContent html={renderMarkdown(item.content)} />
+                  </div>
+                ) : (
+                  <pre className="artifact-code-preview">
+                    <code>{item.content}</code>
+                  </pre>
+                )}
               </div>
             </div>
           ))

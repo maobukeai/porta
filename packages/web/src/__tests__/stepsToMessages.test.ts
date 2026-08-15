@@ -639,4 +639,46 @@ describe("stepsToMessages", () => {
 
     expect(stepsToMessages([step])).toEqual([]);
   });
+
+  // ── MCP tool and URL permissions ──
+
+  it("converts MCP tool permission request into an AskQuestion message with standard 5 options", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_REQUESTED_INTERACTION",
+      status: "CORTEX_STEP_STATUS_WAITING",
+      requestedInteraction: {
+        permission: {
+          resource: {
+            serverName: "chrome-devtools",
+            toolName: "navigate_page",
+            action: "USE_MCP_TOOL",
+          },
+        },
+      } as any,
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].type).toBe("CORTEX_STEP_TYPE_ASK_QUESTION");
+    expect(msgs[0].role).toBe("system");
+  });
+
+  it("converts URL permission request into an AskQuestion message", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_REQUESTED_INTERACTION",
+      status: "CORTEX_STEP_STATUS_WAITING",
+      requestedInteraction: {
+        permission: {
+          resource: {
+            url: "https://zcode.z.ai/remote/v4?sid=123",
+          },
+        },
+      } as any,
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].type).toBe("CORTEX_STEP_TYPE_ASK_QUESTION");
+    expect(msgs[0].role).toBe("system");
+  });
 });

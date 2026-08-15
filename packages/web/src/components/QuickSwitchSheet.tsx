@@ -12,9 +12,11 @@ import {
   IconClock,
   IconZap,
   IconExternalLink,
+  IconHelpCircle,
 } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
 import { prefetchSteps } from "../hooks/useStepsStream";
+import { loadWaitingTasks } from "../utils/waitingTasks";
 
 export interface WorkspaceItem {
   uri: string;
@@ -70,6 +72,19 @@ export function QuickSwitchSheet({
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | "all">("all");
   const [isGridMode, setIsGridMode] = useState(false);
   const [activeTab, setActiveTab] = useState<"all" | "current" | "active">("all");
+  const [waitingIds, setWaitingIds] = useState<Set<string>>(() => loadWaitingTasks());
+
+  useEffect(() => {
+    const handleWaitingTasksUpdate = () => {
+      setWaitingIds(loadWaitingTasks());
+    };
+    window.addEventListener("porta:waiting-tasks-updated", handleWaitingTasksUpdate);
+    window.addEventListener("storage", handleWaitingTasksUpdate);
+    return () => {
+      window.removeEventListener("porta:waiting-tasks-updated", handleWaitingTasksUpdate);
+      window.removeEventListener("storage", handleWaitingTasksUpdate);
+    };
+  }, []);
 
   // Touch drag to dismiss
   const touchStartY = useRef(0);
@@ -79,6 +94,7 @@ export function QuickSwitchSheet({
   // Reset states on open & set default tab to 'current' if in project
   useEffect(() => {
     if (isOpen) {
+      setWaitingIds(loadWaitingTasks());
       setSearchQuery("");
       setSheetTranslateY(0);
       isDragging.current = false;
@@ -467,6 +483,7 @@ export function QuickSwitchSheet({
           <div className="quick-switch-conversations-list">
             {filteredConversations.map((conv) => {
               const isCurrent = conv.id === activeId;
+              const isWaiting = waitingIds.has(conv.id);
               const isRunning = conv.summary.status === "CASCADE_RUN_STATUS_RUNNING";
               const timeStr = formatRelativeTime(
                 conv.summary.lastModifiedTime || conv.summary.createdTime
@@ -476,7 +493,7 @@ export function QuickSwitchSheet({
                 <button
                   key={conv.id}
                   className={`quick-conversation-item ${isCurrent ? "active" : ""} ${
-                    isRunning ? "running" : ""
+                    isWaiting ? "waiting" : isRunning ? "running" : ""
                   }`}
                   onMouseEnter={() => prefetchSteps(conv.id)}
                   onTouchStart={() => prefetchSteps(conv.id)}
@@ -488,11 +505,18 @@ export function QuickSwitchSheet({
                 >
                   <div className="quick-conv-left">
                     <div className="quick-conv-icon-wrap">
-                      <IconMessageCircle
-                        size={15}
-                        className={isCurrent ? "active-icon" : "dim-icon"}
-                      />
-                      {isRunning && <span className="quick-status-pulse" />}
+                      {isWaiting ? (
+                        <IconHelpCircle
+                          size={15}
+                          className="item-indicator icon-pulse-amber"
+                        />
+                      ) : (
+                        <IconMessageCircle
+                          size={15}
+                          className={isCurrent ? "active-icon" : "dim-icon"}
+                        />
+                      )}
+                      {isRunning && !isWaiting && <span className="quick-status-pulse" />}
                     </div>
 
                     <div className="quick-conv-info">
@@ -503,9 +527,11 @@ export function QuickSwitchSheet({
                             searchQuery
                           )}
                         </span>
-                        {isCurrent && (
+                        {isWaiting ? (
+                          <span className="quick-current-tag" style={{ background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.35)" }}>需确认</span>
+                        ) : isCurrent ? (
                           <span className="quick-current-tag">当前</span>
-                        )}
+                        ) : null}
                       </div>
 
                       <div className="quick-conv-meta">

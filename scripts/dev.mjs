@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   commandName,
   ensureLogsDir,
+  freePort,
   getLocalLanIps,
   loadEnvFile,
   spawnLoggedProcess,
@@ -12,6 +13,12 @@ import {
 loadEnvFile();
 
 const webPort = process.env.PORTA_WEB_PORT || "3070";
+const proxyPort = process.env.PORTA_PORT || "3170";
+
+// Ensure ports are freed from previous aborted sessions
+freePort(webPort);
+freePort(proxyPort);
+
 const lanIps = getLocalLanIps();
 const logsDir = ensureLogsDir();
 

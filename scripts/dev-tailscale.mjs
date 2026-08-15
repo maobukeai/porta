@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import {
   commandName,
   ensureLogsDir,
+  freePort,
   loadEnvFile,
   spawnLoggedProcess,
   terminateChild,
@@ -60,6 +61,10 @@ if (!tailscaleIp || !/^\d{1,3}(\.\d{1,3}){3}$/.test(tailscaleIp)) {
 
 const webPort = process.env.PORTA_WEB_PORT || "3070";
 const proxyPort = process.env.PORTA_PORT || "3170";
+
+// Ensure ports are freed from previous aborted sessions
+freePort(webPort);
+freePort(proxyPort);
 
 // ── Inject into env ──
 process.env.PORTA_HOST = tailscaleIp;

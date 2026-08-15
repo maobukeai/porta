@@ -84,6 +84,7 @@ describe("useChatActions", () => {
       undefined,
       undefined,
       false,
+      undefined,
     );
   });
 

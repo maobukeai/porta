@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Revert stepIndex correctness tests
  *
  * Regression suite for the bug where stepsToMessages used local array index (i)
@@ -109,3 +109,132 @@ describe("revert — handleRevert logic", () => {
     expect(-1 >= 0).toBe(false);
   });
 });
+
+import { extractRevertFileChanges } from "../utils/revertFiles";
+
+describe("revert — extractRevertFileChanges", () => {
+  it("extracts modified files from codeAction in undone steps", () => {
+    const steps: TrajectoryStep[] = [
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/stepsToMessages.ts",
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/StepCards.tsx",
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/stepsToMessages.ts",
+              diff: {
+                unifiedDiff: {
+                  lines: [
+                    { type: "UNIFIED_DIFF_LINE_TYPE_INSERT", text: "+1" },
+                    { type: "UNIFIED_DIFF_LINE_TYPE_INSERT", text: "+2" },
+                    { type: "UNIFIED_DIFF_LINE_TYPE_DELETE", text: "-1" },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/StepCards.tsx",
+              diff: {
+                unifiedDiff: {
+                  lines: [
+                    { type: "UNIFIED_DIFF_LINE_TYPE_INSERT", text: "+1" },
+                    { type: "UNIFIED_DIFF_LINE_TYPE_DELETE", text: "-1" },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+    ];
+
+    // Reverting to step 1 (undoing step 2 and 3)
+    const changes = extractRevertFileChanges(steps, 1);
+    expect(changes).toHaveLength(2);
+    expect(changes[0].fileName).toBe("stepsToMessages.ts");
+    expect(changes[0].ext).toBe("ts");
+    expect(changes[0].additions).toBe(1);
+    expect(changes[0].deletions).toBe(2);
+
+    expect(changes[1].fileName).toBe("StepCards.tsx");
+    expect(changes[1].ext).toBe("tsx");
+    expect(changes[1].additions).toBe(1);
+    expect(changes[1].deletions).toBe(1);
+  });
+
+  it("returns empty array if no codeAction occurred after targetStepIndex", () => {
+    const steps: TrajectoryStep[] = [
+      makeUserStep("initial"),
+      makeAssistantStep("reply without files"),
+    ];
+    const changes = extractRevertFileChanges(steps, 0);
+    expect(changes).toEqual([]);
+  });
+
+  it("handles baseOffset correctly with absolute stepIndex", () => {
+    const steps: TrajectoryStep[] = [
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/conversations.ts",
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+      {
+        type: "CORTEX_STEP_TYPE_CODE_ACTION",
+        codeAction: {
+          actionResult: {
+            edit: {
+              absoluteUri: "file:///src/conversations.ts",
+              diff: {
+                unifiedDiff: {
+                  lines: [
+                    { type: "UNIFIED_DIFF_LINE_TYPE_INSERT", text: "+1" },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      } as unknown as TrajectoryStep,
+    ];
+
+    // Array index 0 is at absolute index 1100 (baseOffset = 1100).
+    // Reverting to step 1100 (targetStepIndex = 1100) -> step 1101 (index 1) is undone!
+    // Undoing +1 insert results in +0 -1 diff
+    const changes = extractRevertFileChanges(steps, 1100, 1100);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].fileName).toBe("conversations.ts");
+    expect(changes[0].deletions).toBe(1);
+  });
+});
+

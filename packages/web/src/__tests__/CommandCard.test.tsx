@@ -142,7 +142,7 @@ function askQuestionRequest(): AskQuestionRequest {
 }
 
 describe("AskQuestionCard", () => {
-  it("submits the selected option", async () => {
+  it("submits the selected option and auto-collapses", async () => {
     const onAskQuestion = vi.fn().mockResolvedValue(undefined);
     render(
       <AskQuestionCard
@@ -154,7 +154,7 @@ describe("AskQuestionCard", () => {
     );
 
     await userEvent.click(screen.getByText("Beta"));
-    await userEvent.click(screen.getByText("Submit"));
+    await userEvent.click(screen.getByText("确认提交"));
 
     expect(onAskQuestion).toHaveBeenCalledWith("traj-1", 9, [
       expect.objectContaining({
@@ -162,6 +162,9 @@ describe("AskQuestionCard", () => {
         selectedOptionIds: ["b"],
       }),
     ]);
+
+    // Card should auto-collapse into summary
+    expect(screen.getByText("输入已确认")).toBeInTheDocument();
   });
 
   it("marks questions skipped when skipping", async () => {
@@ -175,7 +178,7 @@ describe("AskQuestionCard", () => {
       />,
     );
 
-    await userEvent.click(screen.getByText("Skip"));
+    await userEvent.click(screen.getByText("跳过"));
 
     expect(onAskQuestion).toHaveBeenCalledWith("traj-1", 9, [
       expect.objectContaining({

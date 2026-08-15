@@ -35,6 +35,7 @@ interface UseChatActionsResult {
     media?: MediaAttachment[],
     plannerType?: PlannerType,
     granted?: boolean,
+    executionMode?: import("../types").ExecutionMode,
   ) => Promise<void>;
   handleStop: () => Promise<void>;
 
@@ -90,10 +91,10 @@ export function useChatActions({
       const conv = conversations.find((c) => c.id === convId);
       const ws = conv?.summary.workspaces?.[0];
       const uri = ws?.workspaceFolderAbsoluteUri;
-      const slug = uri ? slugFromUri(uri) : (projectSlug ?? "unknown");
+      const slug = uri ? slugFromUri(uri) : "tasks";
       return `/${slug}/${convId}`;
     },
-    [conversations, projectSlug],
+    [conversations],
   );
 
   const handleSend = useCallback(
@@ -103,6 +104,7 @@ export function useChatActions({
       media?: MediaAttachment[],
       plannerType?: PlannerType,
       granted = false,
+      executionMode?: import("../types").ExecutionMode,
     ) => {
       const trimmed = text.trim();
       if (!trimmed && (!media || media.length === 0)) return;
@@ -129,12 +131,19 @@ export function useChatActions({
 
         // Lazy session creation: create on first message
         if (!cascadeId) {
+          const isStandalone =
+            !currentWorkspaceUri ||
+            projectSlug === "tasks" ||
+            projectSlug === "task" ||
+            projectSlug === "任务";
           const result = await api.startConversation(
-            currentWorkspaceUri || undefined,
+            isStandalone ? undefined : currentWorkspaceUri,
             granted,
+            isStandalone,
           );
           cascadeId = result.cascadeId;
-          navigate(`/${projectSlug}/${cascadeId}`, { replace: true });
+          const targetSlug = isStandalone ? "tasks" : (projectSlug ?? "tasks");
+          navigate(`/${targetSlug}/${cascadeId}`, { replace: true });
         }
 
         await api.sendMessage(
@@ -145,6 +154,7 @@ export function useChatActions({
           media && media.length > 0 ? media : undefined,
           plannerType,
           granted,
+          executionMode,
         );
         draftStore.delete(cascadeId);
         setStepsRefreshKey((k) => k + 1);

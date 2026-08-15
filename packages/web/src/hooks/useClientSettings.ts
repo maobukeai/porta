@@ -7,12 +7,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { ClientSettings } from "../types";
-import { DEFAULT_MODEL } from "../constants";
 
 const STORAGE_KEY = "porta:settings";
 
 const DEFAULT_SETTINGS: ClientSettings = {
-  defaultModel: DEFAULT_MODEL,
+  defaultModel: null,
   defaultPlannerType: "conversational",
   browserNotificationsEnabled: false,
   theme: "dark",
@@ -22,7 +21,13 @@ function readSettings(): ClientSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    // Legacy migration: if stored defaultModel was the hardcoded legacy "gemini-3.6-flash-high",
+    // migrate to null so it dynamically tracks the latest server default model.
+    if (parsed && parsed.defaultModel === "gemini-3.6-flash-high") {
+      parsed.defaultModel = null;
+    }
+    return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
