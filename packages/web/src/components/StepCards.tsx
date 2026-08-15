@@ -1109,7 +1109,13 @@ export function SubagentCard({ step, data, onSelectSubagent }: SubagentCardProps
     <div className="zcode-subagent-card-wrap">
       {display.items.map((item, itemIndex) => {
         const role = item.role || "subagent";
-        const subagentId = `subagent-${step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? itemIndex}-${itemIndex}-${role.replace(/\s+/g, "_")}`;
+        const convId =
+          (step.metadata as any)?.childConversationId ||
+          (step as any).conversationId ||
+          (step.invokeSubagent as any)?.conversationId;
+        const subagentId =
+          convId ||
+          `subagent-${step.metadata?.sourceTrajectoryStepInfo?.stepIndex ?? itemIndex}-${itemIndex}-${role.replace(/\s+/g, "_")}`;
 
         return (
           <div
@@ -1118,7 +1124,7 @@ export function SubagentCard({ step, data, onSelectSubagent }: SubagentCardProps
             onClick={() => {
               triggerHaptic("light");
               if (isInvoke && onSelectSubagent) {
-                onSelectSubagent(role || subagentId);
+                onSelectSubagent(subagentId);
               } else {
                 setExpanded((v) => !v);
               }

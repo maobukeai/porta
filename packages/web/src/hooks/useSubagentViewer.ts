@@ -161,12 +161,14 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
               if (
                 str.includes("sender=" + convId) ||
                 str.includes('"sender":"' + convId + '"') ||
-                str.includes(`sender=${convId}`)
+                str.includes(`sender=${convId}`) ||
+                (str.includes(convId) && (str.includes("cancel") || str.includes("complete") || str.includes("result") || str.includes("finished")))
               ) {
                 isDone = true;
                 if (
                   str.includes("failed with result") ||
                   str.includes("errored") ||
+                  str.includes("cancel") ||
                   nextStep.status === "ERROR"
                 ) {
                   isError = true;
@@ -175,6 +177,17 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
               }
             }
           }
+        }
+
+        // If a subsequent user request arrived after this invocation, previous turn has ended
+        const hasSubsequentUserInput = steps.slice(idx + 1).some(
+          (s) =>
+            s.type === "USER_INPUT" ||
+            s.type === "CORTEX_STEP_TYPE_USER_INPUT" ||
+            (s as any).source === "USER_EXPLICIT",
+        );
+        if (hasSubsequentUserInput) {
+          isDone = true;
         }
 
         // Determine status: if conversationId is tracked and hasn't reported back, it is running!

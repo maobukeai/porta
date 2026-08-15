@@ -693,7 +693,9 @@ function SideReviewView({
   const [showTabDropdown, setShowTabDropdown] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [wordWrap, setWordWrap] = useState(false);
-  const [diffViewMode, setDiffViewMode] = useState<"unified" | "split">("split");
+  const [diffViewMode, setDiffViewMode] = useState<"unified" | "split">(() =>
+    typeof window !== "undefined" && window.innerWidth <= 640 ? "unified" : "split"
+  );
   const [mdViewMode, setMdViewMode] = useState<"preview" | "code">("preview");
   const [splitRatio, setSplitRatio] = useState<number>(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
@@ -1577,7 +1579,9 @@ function SideGitView({
   const [activeDiffFile, setActiveDiffFile] = useState<string | null>(null);
   const [activeDiffText, setActiveDiffText] = useState<string | null>(null);
   const [activeCommitHash, setActiveCommitHash] = useState<string | null>(null);
-  const [diffViewMode, setDiffViewMode] = useState<"unified" | "split">("split");
+  const [diffViewMode, setDiffViewMode] = useState<"unified" | "split">(() =>
+    typeof window !== "undefined" && window.innerWidth <= 640 ? "unified" : "split"
+  );
   const [changesCollapsed, setChangesCollapsed] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const [historyLimit, setHistoryLimit] = useState(15);
@@ -2986,21 +2990,34 @@ export function SidePanel({
 
   const activeSubagent = useMemo(() => {
     if (!subagentSessions || subagentSessions.length === 0) return null;
-    if (!activeSubagentId) return hookActiveSubagent || subagentSessions[0] || null;
+    if (!activeSubagentId) return hookActiveSubagent || subagentSessions[subagentSessions.length - 1] || null;
     const target = activeSubagentId.toLowerCase();
+
+    // 1. Exact match on unique session ID or conversation UUID
+    const exactMatch = subagentSessions.find(
+      (s) =>
+        s.id === activeSubagentId ||
+        (s.conversationId && s.conversationId.toLowerCase() === target),
+    );
+    if (exactMatch) return exactMatch;
+
+    // 2. Search from newest to oldest for role or partial match
+    for (let i = subagentSessions.length - 1; i >= 0; i--) {
+      const s = subagentSessions[i];
+      if (
+        s.role.toLowerCase() === target ||
+        s.id.toLowerCase().includes(target) ||
+        target.includes(s.id.toLowerCase()) ||
+        s.role.toLowerCase().includes(target) ||
+        target.includes(s.role.toLowerCase())
+      ) {
+        return s;
+      }
+    }
+
     return (
-      subagentSessions.find(
-        (s) =>
-          s.id === activeSubagentId ||
-          s.role.toLowerCase() === target ||
-          (s.conversationId && s.conversationId.toLowerCase() === target) ||
-          s.id.toLowerCase().includes(target) ||
-          target.includes(s.id.toLowerCase()) ||
-          s.role.toLowerCase().includes(target) ||
-          target.includes(s.role.toLowerCase())
-      ) ||
       hookActiveSubagent ||
-      subagentSessions[0] ||
+      subagentSessions[subagentSessions.length - 1] ||
       null
     );
   }, [subagentSessions, activeSubagentId, hookActiveSubagent]);
