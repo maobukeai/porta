@@ -212,4 +212,31 @@ describe("PlanProgressCard Component", () => {
     fireEvent.click(screen.getByText("Active Refactoring Agent"));
     expect(onSelectSubagent).toHaveBeenCalledWith("sub-run");
   });
+
+  it("pauses running subagent when clicking the pause button", async () => {
+    const onPauseSubagent = vi.fn();
+    const mockSubagents = [
+      { id: "sub-run-pause", stepIndex: 1, role: "Long Running Bot", typeName: "self", prompt: "...", conversationId: "conv-sub-123", status: "running" as const },
+    ];
+
+    const runningPlan: PlanProgressData = {
+      ...mockPlanData,
+      subagents: { total: 1, completed: 0, active: 1 },
+    };
+
+    render(
+      <PlanProgressCard
+        planData={runningPlan}
+        subagentSessions={mockSubagents}
+        onPauseSubagent={onPauseSubagent}
+      />
+    );
+
+    const pauseBtn = screen.getByText("暂停");
+    expect(pauseBtn).toBeInTheDocument();
+
+    fireEvent.click(pauseBtn);
+    expect(onPauseSubagent).toHaveBeenCalledWith("sub-run-pause", "conv-sub-123");
+    expect(screen.getByText("已暂停")).toBeInTheDocument();
+  });
 });

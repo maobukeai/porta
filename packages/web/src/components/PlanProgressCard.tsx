@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { api } from "../api/client";
 import {
   IconMoreHorizontal,
   IconArrowUpRight,
@@ -24,6 +25,7 @@ interface Props {
   onOpenPlanDetail?: () => void;
   onOpenSubagents?: () => void;
   onSelectSubagent?: (id: string) => void;
+  onPauseSubagent?: (id: string, conversationId?: string) => void;
   className?: string;
   isMobile?: boolean;
 }
@@ -34,6 +36,7 @@ export function PlanProgressCard({
   onOpenPlanDetail,
   onOpenSubagents,
   onSelectSubagent,
+  onPauseSubagent,
   className = "",
   isMobile = false,
 }: Props) {
@@ -56,14 +59,30 @@ export function PlanProgressCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [pausedSubagentIds, setPausedSubagentIds] = useState<Set<string>>(() => new Set());
+
+  const handlePauseSubagent = useCallback(
+    async (s: SubagentSession) => {
+      setPausedSubagentIds((prev) => new Set(prev).add(s.id));
+      onPauseSubagent?.(s.id, s.conversationId);
+      if (s.conversationId) {
+        try {
+          await api.stop(s.conversationId);
+        } catch {}
+      }
+    },
+    [onPauseSubagent],
+  );
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const popoverBtnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const runningSubagents = subagentSessions.filter((s) => s.status === "running");
+  const runningSubagents = subagentSessions.filter(
+    (s) => s.status === "running" && !pausedSubagentIds.has(s.id),
+  );
   const completedSubagents = subagentSessions.filter(
-    (s) => s.status === "completed" || s.status === "failed",
+    (s) => s.status === "completed" || s.status === "failed" || pausedSubagentIds.has(s.id),
   );
   const totalSubagentsCount = subagentSessions.length;
   const completedSubagentsCount = completedSubagents.length;
@@ -406,7 +425,8 @@ export function PlanProgressCard({
             {/* List of Subagents Directly Visible */}
             <div className="zcode-plan-subagents-list">
               {subagentSessions.map((s) => {
-                const isRunning = s.status === "running";
+                const isPaused = pausedSubagentIds.has(s.id);
+                const isRunning = s.status === "running" && !isPaused;
                 const isFailed = s.status === "failed";
 
                 return (
@@ -421,12 +441,24 @@ export function PlanProgressCard({
                     tabIndex={0}
                     title={`点击进入子智能体: ${s.role}`}
                   >
-                    <div className="zcode-plan-subagent-icon-wrap">
+                    <div
+                      className="zcode-plan-subagent-icon-wrap"
+                      onClick={(e) => {
+                        if (isRunning) {
+                          e.stopPropagation();
+                          triggerHaptic("medium");
+                          void handlePauseSubagent(s);
+                        }
+                      }}
+                      title={isRunning ? "点击暂停/中止该智能体" : undefined}
+                    >
                       {isRunning ? (
                         <>
                           <IconBot size={13} className="subagent-running-bot-icon" />
                           <span className="subagent-running-spinner-ring" />
                         </>
+                      ) : isPaused ? (
+                        <span className="subagent-paused-icon">⏸</span>
                       ) : isFailed ? (
                         <IconAlertTriangle size={13} className="subagent-failed-icon" />
                       ) : (
@@ -441,11 +473,27 @@ export function PlanProgressCard({
                       {s.role}
                     </span>
 
-                    <span
-                      className={`zcode-plan-subagent-badge ${isRunning ? "running" : isFailed ? "failed" : "done"}`}
-                    >
-                      {isRunning ? "运行中" : isFailed ? "失败" : "已完成"}
-                    </span>
+                    <div className="zcode-plan-subagent-actions-wrap">
+                      {isRunning && (
+                        <button
+                          type="button"
+                          className="zcode-subagent-pause-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerHaptic("medium");
+                            void handlePauseSubagent(s);
+                          }}
+                          title="暂停/中止此智能体任务"
+                        >
+                          暂停
+                        </button>
+                      )}
+                      <span
+                        className={`zcode-plan-subagent-badge ${isRunning ? "running" : isPaused ? "paused" : isFailed ? "failed" : "done"}`}
+                      >
+                        {isRunning ? "运行中" : isPaused ? "已暂停" : isFailed ? "失败" : "已完成"}
+                      </span>
+                    </div>
                   </div>
                 );
               })}

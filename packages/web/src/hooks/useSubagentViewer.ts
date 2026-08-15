@@ -138,27 +138,30 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
         if (convId) {
           for (let j = idx + 1; j < steps.length; j++) {
             const nextStep = steps[j];
-            const str =
-              typeof (nextStep as any).content === "string"
-                ? (nextStep as any).content
-                : JSON.stringify(nextStep);
-            if (str.includes(convId)) {
+            const isSystemMsg =
+              nextStep.type === "SYSTEM_MESSAGE" ||
+              (nextStep as any).source === "SYSTEM";
+
+            if (isSystemMsg) {
+              const str =
+                typeof (nextStep as any).content === "string"
+                  ? (nextStep as any).content
+                  : JSON.stringify(nextStep);
               if (
-                j === idx + 1 &&
-                (nextStep.type === "INVOKE_SUBAGENT" ||
-                  str.includes("Created the following subagents"))
+                str.includes("sender=" + convId) ||
+                str.includes('"sender":"' + convId + '"') ||
+                str.includes(convId)
               ) {
-                continue;
+                isDone = true;
+                if (
+                  str.includes("failed with result") ||
+                  str.includes("errored") ||
+                  nextStep.status === "ERROR"
+                ) {
+                  isError = true;
+                }
+                break;
               }
-              isDone = true;
-              if (
-                str.includes("failed with result") ||
-                str.includes("errored") ||
-                nextStep.status === "ERROR"
-              ) {
-                isError = true;
-              }
-              break;
             }
           }
         }

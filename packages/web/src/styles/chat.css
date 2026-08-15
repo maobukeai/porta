@@ -3379,6 +3379,36 @@
   font-weight: 500;
 }
 
+.zcode-plan-subagent-actions-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.zcode-subagent-pause-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.zcode-subagent-pause-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ffffff;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.zcode-subagent-pause-btn:active {
+  transform: scale(0.95);
+}
+
 .zcode-plan-subagent-badge {
   font-size: 10.5px;
   font-weight: 500;
@@ -3392,6 +3422,16 @@
   background: rgba(99, 102, 241, 0.25);
   color: #a5b4fc;
   font-weight: 600;
+}
+
+.zcode-plan-subagent-badge.paused {
+  background: rgba(234, 179, 8, 0.15);
+  color: #fde047;
+}
+
+.subagent-paused-icon {
+  font-size: 10px;
+  color: #fde047;
 }
 
 .zcode-plan-subagent-badge.done {

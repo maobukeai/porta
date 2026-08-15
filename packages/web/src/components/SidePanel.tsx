@@ -3172,8 +3172,8 @@ export function SidePanel({
                   <span className="vscode-editor-tab-title">子智能体目录</span>
                   <button
                     className="vscode-editor-tab-close"
-                    onClick={() => handleBackToPicker()}
-                    title="关闭标签"
+                    onClick={onClose}
+                    title="关闭侧边栏"
                   >
                     <IconX size={11} />
                   </button>
@@ -3186,7 +3186,7 @@ export function SidePanel({
                 onSelectSubagent?.(id);
                 setActiveTab("subagent");
               }}
-              onClose={handleBackToPicker}
+              onClose={onClose}
             />
           </div>
         ) : (
@@ -3202,15 +3202,13 @@ export function SidePanel({
                 onOpenReview={() => {
                   setActiveTab("review");
                 }}
-                onClose={() => {
-                  handleBackToPicker();
-                }}
+                onClose={onClose || (() => {})}
               />
             ) : (
               <div className="zcode-empty-state" style={{ padding: "24px", textAlign: "center", color: "#a1a1aa" }}>
                 <p style={{ marginBottom: "16px" }}>当前会话中未检测到子智能体执行记录</p>
-                <button className="zcode-subagent-back-btn" onClick={handleBackToPicker} style={{ margin: "0 auto" }}>
-                  返回标签页
+                <button className="zcode-subagent-back-btn" onClick={onClose} style={{ margin: "0 auto" }}>
+                  关闭侧边栏
                 </button>
               </div>
             )}
