@@ -45,7 +45,7 @@ export function PlanProgressCard({
     currentStep,
     upcomingSteps,
     overflowSteps,
-    subagents,
+    subagents: _subagents,
     content,
     refresh,
     loading,
@@ -65,12 +65,9 @@ export function PlanProgressCard({
   const completedSubagents = subagentSessions.filter(
     (s) => s.status === "completed" || s.status === "failed",
   );
-  const totalSubagentsCount = Math.max(subagents.total, subagentSessions.length);
-  const completedSubagentsCount = Math.max(
-    subagents.completed,
-    completedSubagents.length,
-  );
-  const hasSubagents = totalSubagentsCount > 0 || subagentSessions.length > 0;
+  const totalSubagentsCount = subagentSessions.length;
+  const completedSubagentsCount = completedSubagents.length;
+  const hasSubagents = totalSubagentsCount > 0;
   const hasTasks = Boolean(hasPlan && total > 0);
 
   // Close menus when clicking outside

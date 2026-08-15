@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { TrajectoryStep, ChatMessage, PlanTaskItem, ConversationPlanResponse } from "../types";
 import { api } from "../api/client";
+import { extractSubagentSessions } from "./useSubagentViewer";
 
 export interface PlanProgressData {
   hasPlan: boolean;
@@ -21,6 +22,16 @@ export interface PlanProgressData {
   content?: string;
   loading: boolean;
   refresh: () => Promise<void>;
+}
+
+function cleanPath(p?: string): string {
+  if (!p) return "";
+  return p
+    .replace(/^file:\/\/\/?/, "")
+    .replace(/^[a-zA-Z]:[\\/]/, "")
+    .replace(/^[/\\]+/, "")
+    .replace(/\\/g, "/")
+    .trim();
 }
 
 /**
@@ -80,9 +91,23 @@ export function parseTasksFromMarkdown(content: string): { title?: string; tasks
       taskText = taskText.replace(/^\*\*([\s\S]*?)\*\*$/, "$1").trim();
 
       let status: "completed" | "running" | "pending" = "pending";
-      if (mark === "x" || mark === "X") {
+      if (
+        mark === "x" ||
+        mark === "X" ||
+        taskText.includes("✅") ||
+        taskText.includes("(done)") ||
+        taskText.includes("(completed)") ||
+        taskText.includes("(已完成)") ||
+        rawLine.includes("~~")
+      ) {
         status = "completed";
-      } else if (mark === "/" || mark === ">" || mark === "-") {
+      } else if (
+        mark === "/" ||
+        mark === ">" ||
+        mark === "-" ||
+        taskText.includes("(in progress)") ||
+        taskText.includes("(进行中)")
+      ) {
         status = "running";
       }
 
@@ -146,7 +171,131 @@ export function parseTasksFromMarkdown(content: string): { title?: string; tasks
   return { title, tasks };
 }
 
-import { extractSubagentSessions } from "./useSubagentViewer";
+/**
+ * Dynamically updates task statuses by matching against real-time trajectory steps.
+ * When files are modified, commands succeed, or steps progress, tasks are checked off automatically!
+ */
+export function applyDynamicStepProgress(tasks: PlanTaskItem[], steps: TrajectoryStep[] = []): PlanTaskItem[] {
+  if (!tasks || tasks.length === 0) return tasks;
+  if (!steps || steps.length === 0) return tasks;
+
+  // Extract touched files, executed commands, and artifact signals
+  const touchedFiles = new Set<string>();
+  const completedCommands: string[] = [];
+  let hasWalkthrough = false;
+  let hasGitCommit = false;
+
+  for (const step of steps) {
+    const toolCall = step.metadata?.toolCall || (step as any).toolCall;
+    let args: any = toolCall?.args;
+    if (!args && toolCall?.argumentsJson) {
+      try {
+        args = JSON.parse(toolCall.argumentsJson);
+      } catch {}
+    }
+
+    const toolName = toolCall?.name || (step.type ? String(step.type) : "");
+
+    if (
+      toolName.includes("write_to_file") ||
+      toolName.includes("replace_file_content") ||
+      step.replaceFileContent ||
+      step.viewFile
+    ) {
+      const file =
+        args?.TargetFile ||
+        args?.targetFile ||
+        args?.path ||
+        args?.AbsolutePath ||
+        step.replaceFileContent?.targetFile ||
+        step.viewFile?.absolutePathUri;
+      if (file) {
+        const clean = cleanPath(file).toLowerCase();
+        touchedFiles.add(clean);
+        if (clean.includes("walkthrough.md")) {
+          hasWalkthrough = true;
+        }
+      }
+    } else if (toolName.includes("run_command") || step.runCommand) {
+      const cmd = (args?.CommandLine || args?.commandLine || step.runCommand?.commandLine || "").toLowerCase();
+      if (cmd) {
+        completedCommands.push(cmd);
+        if (cmd.includes("git commit") || cmd.includes("git add")) {
+          hasGitCommit = true;
+        }
+      }
+    }
+  }
+
+  const updated = tasks.map((t) => ({ ...t }));
+  let highestCompletedIndex = -1;
+
+  for (let i = 0; i < updated.length; i++) {
+    const task = updated[i];
+    if (task.status === "completed") {
+      highestCompletedIndex = Math.max(highestCompletedIndex, i);
+      continue;
+    }
+
+    const text = (task.rawText || task.title).toLowerCase();
+
+    // 1. Check file modifications mentioned in task
+    let fileMatched = false;
+    for (const file of touchedFiles) {
+      const baseName = file.split("/").pop() || file;
+      if (text.includes(baseName) || (baseName.length > 5 && text.includes(baseName.replace(/\.[^.]+$/, "")))) {
+        fileMatched = true;
+        break;
+      }
+    }
+
+    // 2. Check test execution tasks
+    const isTestRunTask =
+      text.includes("run test") ||
+      text.includes("test to verify") ||
+      text.includes("verify pass") ||
+      text.includes("verify fail") ||
+      text.includes("运行测试");
+    const testRan =
+      isTestRunTask && completedCommands.some((c) => c.includes("test") || c.includes("vitest") || c.includes("jest"));
+
+    // 3. Check commit tasks
+    const isCommitTask = text.includes("commit") || text.includes("提交");
+    const commitDone = isCommitTask && (hasGitCommit || hasWalkthrough || i < updated.length - 1);
+
+    if (fileMatched || testRan || commitDone) {
+      task.status = "completed";
+      highestCompletedIndex = Math.max(highestCompletedIndex, i);
+    }
+  }
+
+  // Cascading completion: all steps before the latest completed step are marked complete
+  if (highestCompletedIndex >= 0) {
+    for (let i = 0; i <= highestCompletedIndex; i++) {
+      updated[i].status = "completed";
+    }
+  }
+
+  // If walkthrough.md has been generated, all tasks are completed
+  if (hasWalkthrough && updated.length > 0) {
+    for (let i = 0; i < updated.length; i++) {
+      updated[i].status = "completed";
+    }
+  }
+
+  // Next incomplete step becomes 'running'
+  const firstIncomplete = updated.findIndex((t) => t.status !== "completed");
+  if (firstIncomplete !== -1) {
+    updated[firstIncomplete].status = "running";
+    for (let i = firstIncomplete + 1; i < updated.length; i++) {
+      if (updated[i].status !== "completed") {
+        updated[i].status = "pending";
+      }
+    }
+  }
+
+  return updated;
+}
 
 /**
  * Extracts subagent statistics from trajectory steps.
@@ -256,14 +405,15 @@ export function usePlanTracker(
 
     // Prefer remote parsed plan if available and has tasks, otherwise fallback to in-memory parsed plan
     const hasRemoteTasks = Boolean(remotePlan?.hasPlan && remotePlan.tasks && remotePlan.tasks.length > 0);
-    const tasks = hasRemoteTasks ? remotePlan!.tasks : fromSteps.tasks;
+    const rawTasks = hasRemoteTasks ? remotePlan!.tasks : fromSteps.tasks;
+    const tasks = applyDynamicStepProgress(rawTasks, steps);
     const title = remotePlan?.title || fromSteps.title || "任务规划进展";
     const rawContent = remotePlan?.content || fromSteps.content;
 
     const subagents = {
-      total: Math.max(remotePlan?.subagents?.total ?? 0, subagentsFromSteps.total),
-      completed: Math.max(remotePlan?.subagents?.completed ?? 0, subagentsFromSteps.completed),
-      active: Math.max(remotePlan?.subagents?.active ?? 0, subagentsFromSteps.active),
+      total: subagentsFromSteps.total,
+      completed: subagentsFromSteps.completed,
+      active: subagentsFromSteps.active,
     };
 
     const hasPlan =
