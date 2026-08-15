@@ -77,7 +77,12 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
     for (const toolCall of rawToolCalls) {
       const toolName = toolCall?.name || "";
 
-      if (toolName.includes("invoke_subagent") || toolName.includes("subagent")) {
+      if (
+        toolName === "invoke_subagent" ||
+        toolName === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
+        toolName.endsWith("invoke_subagent") ||
+        isNativeInvoke
+      ) {
         let args: any = toolCall?.args;
         if (typeof args === "string") {
           try {
@@ -115,7 +120,7 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
                 },
               ];
 
-        // Look for conversationId in the current or next step
+        // Look for conversationId in the current or next steps
         let convId =
           (step.metadata as any)?.childConversationId ||
           (step as any).conversationId ||
@@ -124,13 +129,19 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
           args?.ConversationId ||
           args?.conversationId;
 
-        if (!convId && steps[idx + 1]) {
-          const nextContent =
-            typeof (steps[idx + 1] as any).content === "string"
-              ? (steps[idx + 1] as any).content
-              : JSON.stringify(steps[idx + 1]);
-          const m = nextContent.match(/"conversationId":\s*"([^"]+)"/);
-          if (m) convId = m[1];
+        if (!convId) {
+          for (let k = idx; k < Math.min(steps.length, idx + 5); k++) {
+            const s = steps[k];
+            const sStr =
+              typeof (s as any)?.content === "string"
+                ? (s as any).content
+                : JSON.stringify(s);
+            const m = sStr.match(/"conversationId":\s*"([^"]+)"/);
+            if (m) {
+              convId = m[1];
+              break;
+            }
+          }
         }
 
         let isDone = false;
@@ -150,7 +161,7 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
               if (
                 str.includes("sender=" + convId) ||
                 str.includes('"sender":"' + convId + '"') ||
-                str.includes(convId)
+                str.includes(`sender=${convId}`)
               ) {
                 isDone = true;
                 if (

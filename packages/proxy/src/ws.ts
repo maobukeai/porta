@@ -31,6 +31,7 @@ import {
   placeholderStep,
 } from "./step-recovery.js";
 import { conversationSignals } from "./signals.js";
+import { readDiskConversationSteps } from "./metadata.js";
 
 /** Active polling interval (ms). */
 const ACTIVE_INTERVAL = 200;
@@ -73,10 +74,13 @@ const TERMINAL_STATUSES = new Set([
   "CASCADE_RUN_STATUS_UNLOADED",
 ]);
 
+import { handleTerminalWebSocket } from "./terminal-ws.js";
+
 type PollState = "idle" | "active";
 
 type UpgradeValidationResult =
-  | { ok: true; cascadeId: string }
+  | { ok: true; type: "conversation"; cascadeId: string }
+  | { ok: true; type: "terminal" }
   | { ok: false; code: "not_found" | "forbidden_origin" };
 
 function unrefTimer(
@@ -101,8 +105,15 @@ export function shouldActivateIdlePolling(
   status?: string,
   totalStepCount?: number,
 ): boolean {
-  return (
+  const isRunningOrWaiting =
     status === "CASCADE_RUN_STATUS_RUNNING" ||
+    status === "CASCADE_RUN_STATUS_WAITING" ||
+    Boolean(status?.includes("WAIT")) ||
+    Boolean(status?.includes("INPUT")) ||
+    Boolean(status?.includes("INTERACTION"));
+
+  return (
+    isRunningOrWaiting ||
     (totalStepCount ?? 0) > lastStepCount
   );
 }
@@ -147,14 +158,20 @@ export function validateWebSocketUpgrade(
   allowedOrigins: AllowedOrigin[] = getAllowedOrigins(),
 ): UpgradeValidationResult {
   const url = new URL(reqUrl ?? "", `http://localhost:${port}`);
-  const match = url.pathname.match(/^\/api\/conversations\/([^/]+)\/ws$/);
-  if (!match) {
-    return { ok: false, code: "not_found" };
-  }
   if (!isWebSocketOriginAllowed(origin, allowedOrigins)) {
     return { ok: false, code: "forbidden_origin" };
   }
-  return { ok: true, cascadeId: match[1] };
+
+  if (url.pathname === "/api/terminal/ws") {
+    return { ok: true, type: "terminal" };
+  }
+
+  const match = url.pathname.match(/^\/api\/conversations\/([^/]+)\/ws$/);
+  if (match) {
+    return { ok: true, type: "conversation", cascadeId: match[1] };
+  }
+
+  return { ok: false, code: "not_found" };
 }
 
 export function setupWebSocket(
@@ -182,7 +199,11 @@ export function setupWebSocket(
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req, upgrade.cascadeId);
+      if (upgrade.type === "terminal") {
+        handleTerminalWebSocket(ws, req, port);
+      } else {
+        wss.emit("connection", ws, req, upgrade.cascadeId);
+      }
     });
   });
 
@@ -398,6 +419,36 @@ export function setupWebSocket(
               return delta.grew;
             }
           }
+
+          // Fallback to disk-backed steps (e.g. subagent conversations / background trajectories)
+          try {
+            const diskResult = await readDiskConversationSteps(
+              cascadeId,
+              fetchOffset,
+              100,
+            );
+            if (diskResult && diskResult.steps.length > 0) {
+              const annotatedSteps = messageTracker.annotateSteps(
+                cascadeId,
+                diskResult.offset,
+                diskResult.steps,
+              );
+              const newEnd = diskResult.offset + diskResult.steps.length;
+              const stepCountGrew = newEnd > lastStepCount;
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(
+                  JSON.stringify({
+                    type: "steps",
+                    offset: diskResult.offset,
+                    steps: annotatedSteps,
+                  }),
+                );
+              }
+              lastStepCount = newEnd;
+              return stepCountGrew;
+            }
+          } catch {}
+
           return false;
         }
       };
@@ -483,7 +534,14 @@ export function setupWebSocket(
               return;
             }
           } catch {
-            // LS unreachable — stay idle and retry later.
+            // Check disk for subagent / background updates
+            try {
+              const diskResult = await readDiskConversationSteps(cascadeId, 0, 1);
+              if (diskResult && diskResult.stepCount > lastStepCount) {
+                enterActive(false);
+                return;
+              }
+            } catch {}
           }
 
           if (!destroyed && pollState === "idle") {
@@ -505,6 +563,7 @@ export function setupWebSocket(
 
       const onConnect = async () => {
         let status = "";
+        let total = 0;
         try {
           const data = (await rpcForConversation(
             "GetCascadeTrajectory",
@@ -514,7 +573,7 @@ export function setupWebSocket(
             true,
           )) as { numTotalSteps?: number; status?: string };
 
-          const total = data.numTotalSteps ?? 0;
+          total = data.numTotalSteps ?? 0;
           status = data.status ?? "";
           lastStepCount = total;
 
@@ -525,12 +584,21 @@ export function setupWebSocket(
             ws.send(JSON.stringify({ type: "ready", stepCount: total }));
           }
         } catch {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "ready", stepCount: 0 }));
+          try {
+            const diskResult = await readDiskConversationSteps(cascadeId, 0, 1);
+            total = diskResult?.stepCount ?? 0;
+            lastStepCount = total;
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "ready", stepCount: total }));
+            }
+          } catch {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "ready", stepCount: 0 }));
+            }
           }
         }
 
-        if (status === "CASCADE_RUN_STATUS_RUNNING") {
+        if (shouldActivateIdlePolling(lastStepCount, status, total)) {
           enterActive();
         } else {
           enterIdle();
