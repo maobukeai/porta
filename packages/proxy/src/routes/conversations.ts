@@ -24,6 +24,9 @@ import {
   readDiskConversationSteps,
   withNormalizedConversationWorkspaces,
   getProjectNameMap,
+  syncProjectPermissionPreset,
+  getProjectPermissionPreset,
+  getAllKnownSubagentConversationIds,
 } from "../metadata.js";
 import { handleRPCError } from "../errors.js";
 import { runConversationMutation } from "../conversation-mutations.js";
@@ -37,6 +40,7 @@ import {
 } from "../step-recovery.js";
 import { messageTracker } from "../message-tracker.js";
 import { conversationSignals } from "../signals.js";
+import { expandCustomCommand } from "./agentCapabilities.js";
 
 const MAX_STEPS_LIMIT = 500;
 const MAX_TOTAL_CONVERSATIONS = 100;
@@ -288,10 +292,35 @@ export function registerConversationRoutes(app: Hono): void {
         diskConversationDirs.length > 0 ? diskConversationDirs : undefined,
       );
 
+      const knownSubagentIds = await getAllKnownSubagentConversationIds();
+
+      const isSubagentSummary = (summary: Record<string, unknown> | undefined, id?: string): boolean => {
+        if (id && knownSubagentIds.has(id)) return true;
+        if (!summary) return false;
+        if (summary.isSubagent || summary._isSubagent) return true;
+        const meta = summary.trajectoryMetadata as Record<string, unknown> | undefined;
+        if (meta && (meta.isSubagent || meta.parentTrajectoryId || meta.parentCascadeId || meta.spawnedBy)) {
+          return true;
+        }
+        const title = String(summary.summary || "");
+        if (
+          title.startsWith("[Subagent]") ||
+          title.startsWith("subagent:") ||
+          title.startsWith("子智能体") ||
+          /^🤖\s*子智能体/i.test(title) ||
+          /Usage Statistics Auditor/i.test(title) ||
+          /数据统计功能代码审查/i.test(title)
+        ) {
+          return true;
+        }
+        return false;
+      };
+
       // Rank LS and disk-only conversations together before applying the cap.
       const candidates: ConversationCandidate[] = [];
 
       for (const [id, summary] of Object.entries(merged)) {
+        if (isSubagentSummary(summary, id)) continue;
         candidates.push({
           id,
           modifiedAt: parseConversationTime(summary.lastModifiedTime),
@@ -309,6 +338,9 @@ export function registerConversationRoutes(app: Hono): void {
           }
 
           const peek = await peekDiskConversationMetadata(diskId.id);
+          if (isSubagentSummary({ summary: peek.summary, isSubagent: (peek as any).isSubagent }, diskId.id)) {
+            continue;
+          }
 
           candidates.push({
             id: diskId.id,
@@ -328,6 +360,51 @@ export function registerConversationRoutes(app: Hono): void {
       }
 
       candidates.sort(compareConversationCandidates);
+
+      // Inspect running conversations for active waiting interactions (askQuestion, filePermission, approval)
+      const runningCandidates = candidates.filter(
+        (c) => c.summary.status === "CASCADE_RUN_STATUS_RUNNING",
+      );
+      if (runningCandidates.length > 0) {
+        await Promise.allSettled(
+          runningCandidates.map(async (rc) => {
+            try {
+              const stepCount = (rc.summary.stepCount as number) || 1;
+              const stepOffset = Math.max(0, stepCount - 1);
+              const data = (await rpcForConversation(
+                "GetCascadeTrajectorySteps",
+                rc.id,
+                { cascadeId: rc.id, stepOffset },
+                undefined,
+                true,
+              )) as { steps?: Array<Record<string, unknown>> };
+              const steps = data?.steps || [];
+              const lastStep = steps[steps.length - 1];
+              if (lastStep) {
+                const sType = String(lastStep.type ?? "");
+                const sStatus = String(lastStep.status ?? "").toUpperCase();
+                const isCompleted =
+                  Array.isArray(lastStep.completedInteractions) &&
+                  lastStep.completedInteractions.length > 0;
+                const isWaiting =
+                  !isCompleted &&
+                  !sStatus.includes("DONE") &&
+                  !sStatus.includes("COMPLETE") &&
+                  !sStatus.includes("CANCEL") &&
+                  !sStatus.includes("ERROR") &&
+                  (sType === "CORTEX_STEP_TYPE_ASK_QUESTION" ||
+                    sType === "CORTEX_STEP_TYPE_FILE_PERMISSION" ||
+                    lastStep.requestedInteraction !== undefined ||
+                    (sType === "CORTEX_STEP_TYPE_RUN_COMMAND" &&
+                      sStatus.includes("WAITING")));
+                if (isWaiting) {
+                  rc.summary.isWaiting = true;
+                }
+              }
+            } catch {}
+          }),
+        );
+      }
 
       const finalMerged: Record<string, Record<string, unknown>> = {};
       const diskOnlyIds: string[] = [];
@@ -519,15 +596,27 @@ export function registerConversationRoutes(app: Hono): void {
       const metadata = await getMetadata(!!body.fileAccessGranted);
 
       const bodyWorkspaceUris = requestedWorkspaceUris(body);
+      const isStandaloneTask =
+        body.noWorkspace === true ||
+        body.workspaceFolderAbsoluteUri === null ||
+        body.workspaceFolderAbsoluteUri === "";
+
       let workspaceUri: string | undefined =
-        typeof body.workspaceFolderAbsoluteUri === "string"
+        !isStandaloneTask &&
+        typeof body.workspaceFolderAbsoluteUri === "string" &&
+        body.workspaceFolderAbsoluteUri.trim() !== ""
           ? body.workspaceFolderAbsoluteUri
-          : bodyWorkspaceUris[0];
+          : !isStandaloneTask
+            ? bodyWorkspaceUris[0]
+            : undefined;
       const instances = await discovery.getInstances();
 
       // Resolve which LS instance to use based on workspace URI
       let targetInstance: LSInstance | undefined;
-      if (workspaceUri) {
+      if (isStandaloneTask) {
+        targetInstance = instances[0];
+        workspaceUri = undefined;
+      } else if (workspaceUri) {
         const wsId = normalizeWorkspaceId(uriToWorkspaceId(workspaceUri));
         targetInstance =
           instances.find(
@@ -550,13 +639,14 @@ export function registerConversationRoutes(app: Hono): void {
           );
         }
       } else {
-        // No workspace specified — pick first available LS and auto-inject
+        // No workspace specified and not standalone
         targetInstance = instances[0];
         workspaceUri = await discoverSingleWorkspaceUri(instances);
       }
 
-      const startWorkspaceUris =
-        bodyWorkspaceUris.length > 0
+      const startWorkspaceUris = isStandaloneTask
+        ? []
+        : bodyWorkspaceUris.length > 0
           ? bodyWorkspaceUris
           : workspaceUri
             ? [workspaceUri]
@@ -606,28 +696,118 @@ export function registerConversationRoutes(app: Hono): void {
     try {
       return await runConversationMutation(id, async () => {
         const body = await c.req.json();
-        const { items, model, media, plannerType, clientMessageId } = body;
-        const metadata = await getMetadata(!!body.fileAccessGranted);
+        const { items, model, media, plannerType, executionMode, clientMessageId } = body;
+        const isReviewBeforeEdit = executionMode === "review_before_edit";
+        const metadata = await getMetadata(!isReviewBeforeEdit && !!body.fileAccessGranted);
+        
+        let permissionPresetNum = 0;
+        let presetEnumStr = "AGENT_PERMISSION_PRESET_UNSPECIFIED";
+        if (executionMode === "review_before_edit") {
+          permissionPresetNum = 1; // AGENT_PERMISSION_PRESET_REQUEST_REVIEW
+          presetEnumStr = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+          metadata.permissionPreset = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+          metadata.allowFileAccess = false;
+          metadata.allWorkspaceTrustGranted = false;
+        } else if (executionMode === "full_access") {
+          permissionPresetNum = 4; // AGENT_PERMISSION_PRESET_TURBO
+          presetEnumStr = "AGENT_PERMISSION_PRESET_TURBO";
+          metadata.permissionPreset = "AGENT_PERMISSION_PRESET_TURBO";
+          metadata.allowFileAccess = true;
+          metadata.allWorkspaceTrustGranted = true;
+        } else if (executionMode === "auto_edit") {
+          permissionPresetNum = 2; // AGENT_PERMISSION_PRESET_DEFAULT
+          presetEnumStr = "AGENT_PERMISSION_PRESET_DEFAULT";
+          metadata.permissionPreset = "AGENT_PERMISSION_PRESET_DEFAULT";
+          metadata.allowFileAccess = true;
+          metadata.allWorkspaceTrustGranted = true;
+        } else if (executionMode === "planning") {
+          permissionPresetNum = 1; // AGENT_PERMISSION_PRESET_REQUEST_REVIEW
+          presetEnumStr = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+          metadata.permissionPreset = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+          metadata.allowFileAccess = false;
+          metadata.allWorkspaceTrustGranted = false;
+        }
+
         const { count: preSendStepCount, instance } = await getStepCount(id);
+
+        try {
+          const summary = (await rpc.call(
+            "GetCascadeTrajectorySummary",
+            { cascadeId: id },
+            instance,
+          )) as Record<string, unknown>;
+          const wsUri = getPrimaryWorkspaceUri(summary);
+          if (wsUri && presetEnumStr) {
+            await syncProjectPermissionPreset(wsUri, presetEnumStr);
+          }
+        } catch {
+          // ignore sync error
+        }
+
+        const effectivePlannerType =
+          plannerType === "planning" || executionMode === "planning"
+            ? "planning"
+            : "conversational";
+
+        const expandedItems = Array.isArray(items)
+          ? await Promise.all(
+              items.map(async (item: any) => {
+                if (typeof item?.text === "string" && item.text.trim().startsWith("/")) {
+                  const expanded = await expandCustomCommand(item.text);
+                  return { ...item, text: expanded };
+                }
+                return item;
+              }),
+            )
+          : items;
 
         const req: Record<string, unknown> = {
           metadata,
           cascadeId: id,
-          items,
+          items: expandedItems,
         };
 
         if (media && Array.isArray(media) && media.length > 0) {
-          req.media = media;
+          req.media = media.map((m: any) => {
+            if (typeof m === "string") {
+              let str = m;
+              if (str.startsWith("data:")) {
+                const comma = str.indexOf(",");
+                if (comma !== -1) str = str.slice(comma + 1);
+              }
+              return { mimeType: "image/png", inlineData: str };
+            }
+            const mimeType = m.mimeType || m.mime_type || m.type || "image/png";
+            let inlineData =
+              m.inlineData ||
+              m.inline_data ||
+              m.data ||
+              m.bytes ||
+              m.base64 ||
+              (m.payload?.case === "inlineData" ? m.payload.value : "") ||
+              "";
+            if (typeof inlineData === "string" && inlineData.startsWith("data:")) {
+              const comma = inlineData.indexOf(",");
+              if (comma !== -1) inlineData = inlineData.slice(comma + 1);
+            }
+            return {
+              mimeType,
+              inlineData,
+            };
+          });
         }
 
         const typeConfig =
-          plannerType === "planning" ? { planning: {} } : { conversational: {} };
+          effectivePlannerType === "planning"
+            ? { planning: {} }
+            : { conversational: {} };
 
         const resolvedModel = await resolveModelIdentifier(model);
         req.cascadeConfig = {
           plannerConfig: {
             plannerTypeConfig: typeConfig,
             requestedModel: { model: resolvedModel },
+            permissionPreset: permissionPresetNum,
           },
         };
 
@@ -809,6 +989,8 @@ export function registerConversationRoutes(app: Hono): void {
       const scopeNum = parseInt(selectedId, 10) || 1;
 
       let data: unknown;
+      let lastErr: unknown;
+
       try {
         data = await rpcForConversation(
           "HandleCascadeUserInteraction",
@@ -825,28 +1007,89 @@ export function registerConversationRoutes(app: Hono): void {
             },
           },
         );
-      } catch {
-        // Fallback for permission-style interactions (e.g. URL/resource permissions)
-        data = await rpcForConversation(
-          "HandleCascadeUserInteraction",
-          id,
-          {
-            cascadeId: id,
-            interaction: {
-              trajectoryId,
-              stepIndex: Number(stepIndex),
-              permission: {
-                allow: !isDeny,
-                scope: isDeny ? 0 : scopeNum,
+      } catch (err1) {
+        lastErr = err1;
+        try {
+          // Fallback for permission-style interactions (e.g. MCP tool, URL/resource permissions)
+          data = await rpcForConversation(
+            "HandleCascadeUserInteraction",
+            id,
+            {
+              cascadeId: id,
+              interaction: {
+                trajectoryId,
+                stepIndex: Number(stepIndex),
+                permission: {
+                  allow: !isDeny,
+                  scope: isDeny ? 0 : scopeNum,
+                  ...(firstResponse?.writeInResponse
+                    ? { feedback: firstResponse.writeInResponse }
+                    : {}),
+                },
               },
             },
-          },
-        );
+          );
+        } catch (err2) {
+          throw lastErr || err2;
+        }
       }
 
       conversationSignals.emit("activate", id);
 
       return c.json(data);
+    } catch (err) {
+      return handleRPCError(c, err);
+    }
+  });
+
+  app.get("/api/conversations/:id/revert-preview", async (c) => {
+    const id = c.req.param("id");
+    const stepIndex = Number(c.req.query("stepIndex") ?? 0);
+    try {
+      const data = (await rpcForConversation("GetRevertPreview", id, {
+        cascadeId: id,
+        stepIndex,
+      })) as {
+        codeEditPreviews?: Array<{
+          fileUri?: string;
+          actionType?: string;
+          diff?: {
+            lines?: Array<{
+              text?: string;
+              type?: string;
+            }>;
+          };
+        }>;
+      };
+
+      const files = (data.codeEditPreviews || [])
+        .filter((item) => !item.fileUri?.includes("antigravity/brain"))
+        .map((item) => {
+          const uri = item.fileUri || "";
+          const cleaned = uri.replace(/^file:\/\//, "").replace(/\\/g, "/");
+          const fileName = cleaned.split("/").pop() || cleaned;
+          const ext = fileName.includes(".")
+            ? fileName.split(".").pop()!.toLowerCase()
+            : "";
+          const lines = item.diff?.lines || [];
+          const additions = lines.filter(
+            (l) => l.type === "UNIFIED_DIFF_LINE_TYPE_INSERT",
+          ).length;
+          const deletions = lines.filter(
+            (l) => l.type === "UNIFIED_DIFF_LINE_TYPE_DELETE",
+          ).length;
+          const isCreated = item.actionType === "CODE_REVERT_ACTION_TYPE_DELETE";
+          return {
+            fileUri: uri,
+            fileName,
+            ext,
+            additions,
+            deletions,
+            isCreated,
+          };
+        });
+
+      return c.json({ files });
     } catch (err) {
       return handleRPCError(c, err);
     }
@@ -878,6 +1121,54 @@ export function registerConversationRoutes(app: Hono): void {
         conversationSignals.emit("activate", id);
         return c.json(data);
       });
+    } catch (err) {
+      return handleRPCError(c, err);
+    }
+  });
+
+  // ── Immediate Execution Mode / Project Permission Preset Sync ──
+  app.post("/api/execution-mode", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { executionMode, conversationId, workspaceUri } = body;
+      let targetWs = workspaceUri;
+      let targetInstance: LSInstance | undefined;
+      if (!targetWs && conversationId) {
+        try {
+          const { instance } = await getStepCount(conversationId);
+          targetInstance = instance;
+          const summary = (await rpc.call(
+            "GetCascadeTrajectorySummary",
+            { cascadeId: conversationId },
+            instance,
+          )) as Record<string, unknown>;
+          targetWs = getPrimaryWorkspaceUri(summary);
+        } catch {}
+      }
+      const instances = await discovery.getInstances();
+      if (!targetInstance) {
+        targetInstance = instances[0];
+      }
+      if (!targetWs) {
+        targetWs = await discoverSingleWorkspaceUri(instances);
+      }
+      if (!targetWs) {
+        targetWs = process.cwd();
+      }
+
+      let presetStr = "AGENT_PERMISSION_PRESET_DEFAULT";
+      if (executionMode === "review_before_edit") {
+        presetStr = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+      } else if (executionMode === "full_access") {
+        presetStr = "AGENT_PERMISSION_PRESET_TURBO";
+      } else if (executionMode === "planning") {
+        presetStr = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+      } else if (executionMode === "auto_edit") {
+        presetStr = "AGENT_PERMISSION_PRESET_DEFAULT";
+      }
+
+      await syncProjectPermissionPreset(targetWs, presetStr, rpc, targetInstance);
+      return c.json({ ok: true, preset: presetStr, workspaceUri: targetWs });
     } catch (err) {
       return handleRPCError(c, err);
     }

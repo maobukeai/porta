@@ -2,7 +2,7 @@
  * Shared metadata and disk-scanning utilities for the proxy.
  */
 
-import { readdir, stat, readFile } from "node:fs/promises";
+import { readdir, stat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -89,11 +89,59 @@ export async function scanDiskConversations(
 export interface DiskPeekMetadata {
   summary?: string;
   stepCount?: number;
+  isSubagent?: boolean;
+}
+
+let cachedSubagentIds: Set<string> | null = null;
+let lastSubagentScanTime = 0;
+
+export async function getAllKnownSubagentConversationIds(forceRefresh = false): Promise<Set<string>> {
+  const now = Date.now();
+  if (cachedSubagentIds && !forceRefresh && now - lastSubagentScanTime < 10000) {
+    return cachedSubagentIds;
+  }
+
+  const subagentIds = new Set<string>();
+  for (const appDataDir of KNOWN_APP_DATA_DIRS) {
+    const brainDir = join(homedir(), ".gemini", appDataDir, "brain");
+    try {
+      const convDirs = await readdir(brainDir, { withFileTypes: true });
+      for (const ent of convDirs) {
+        if (!ent.isDirectory()) continue;
+        const transcript = join(brainDir, ent.name, ".system_generated", "logs", "transcript.jsonl");
+        try {
+          const content = await readFile(transcript, "utf-8");
+          const lines = content.split("\n").filter(Boolean);
+          for (const line of lines) {
+            if (line.includes("conversationId") || line.includes("invoke_subagent")) {
+              try {
+                const parsed = JSON.parse(line);
+                const raw = parsed.content || JSON.stringify(parsed);
+                const matches = raw.matchAll(/"conversationId":\s*"([0-9a-fA-F-]{36})"/g);
+                for (const m of matches) {
+                  subagentIds.add(m[1]);
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  cachedSubagentIds = subagentIds;
+  lastSubagentScanTime = now;
+  return subagentIds;
 }
 
 export async function peekDiskConversationMetadata(
   conversationId: string,
-): Promise<DiskPeekMetadata> {
+): Promise<{ summary?: string; stepCount?: number; isSubagent?: boolean }> {
+  const knownSubagents = await getAllKnownSubagentConversationIds();
+  if (knownSubagents.has(conversationId)) {
+    return { isSubagent: true };
+  }
+
   for (const appDataDir of KNOWN_APP_DATA_DIRS) {
     const transcriptPath = join(
       homedir(),
@@ -111,11 +159,29 @@ export async function peekDiskConversationMetadata(
       const stepCount = lines.length;
 
       let summary: string | undefined;
-      for (const line of lines) {
+      let isSubagent = false;
+
+      for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        const line = lines[i];
         try {
           const parsed = JSON.parse(line);
-          if (parsed.type === "USER_INPUT" && parsed.content) {
-            let rawText = String(parsed.content);
+          const raw = JSON.stringify(parsed);
+          if (
+            raw.includes('"isSubagent":true') ||
+            raw.includes("parentTrajectoryId") ||
+            raw.includes("parentCascadeId") ||
+            raw.includes("invoke_subagent") ||
+            raw.includes("subagent:") ||
+            raw.includes("Usage Statistics Auditor")
+          ) {
+            isSubagent = true;
+          }
+
+          if (!summary && parsed.type === "USER_INPUT" && parsed.content) {
+            let rawText = String(parsed.content)
+              .replace(/<user_safety_directive[\s\S]*?<\/user_safety_directive>\s*/gi, "")
+              .replace(/\[System (?:Safety )?Directive:[^\]]*\]\s*/gi, "")
+              .trim();
             const userReqMatch = rawText.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
             if (userReqMatch) {
               rawText = userReqMatch[1].trim();
@@ -123,16 +189,13 @@ export async function peekDiskConversationMetadata(
             rawText = rawText.replace(/^\/[a-zA-Z0-9_\-\u4e00-\u9fa5]+\s*/, "").trim();
             if (rawText) {
               summary = rawText.slice(0, 60);
-              break;
             }
           }
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
 
-      if (summary || stepCount > 0) {
-        return { summary, stepCount };
+      if (summary || stepCount > 0 || isSubagent) {
+        return { summary, stepCount, isSubagent };
       }
     } catch {
       // file missing
@@ -354,4 +417,116 @@ export async function getProjectNameMap(): Promise<Map<string, string>> {
     // projects dir missing or unreadable
   }
   return map;
+}
+
+export async function getProjectPermissionPreset(
+  workspaceUri?: string,
+): Promise<string | undefined> {
+  if (!workspaceUri) return undefined;
+  const projectsDir = join(homedir(), ".gemini", "config", "projects");
+  try {
+    const files = await readdir(projectsDir);
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      const fullPath = join(projectsDir, file);
+      try {
+        const content = await readFile(fullPath, "utf-8");
+        const data = JSON.parse(content);
+        const resources = data.projectResources?.resources ?? [];
+        for (const res of resources) {
+          const folderUri = res.gitFolder?.folderUri;
+          if (
+            folderUri &&
+            (folderUri.toLowerCase() === workspaceUri.toLowerCase() ||
+              decodeURIComponent(folderUri).toLowerCase() ===
+                decodeURIComponent(workspaceUri).toLowerCase())
+          ) {
+            return data.settings?.permissionPreset;
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+  return undefined;
+}
+
+function normalizeUriPath(uri?: string): string {
+  if (!uri) return "";
+  try {
+    return decodeURIComponent(uri)
+      .toLowerCase()
+      .replace(/\\/g, "/")
+      .replace(/^file:\/\/\/?([a-z]):/i, "file:///$1:")
+      .replace(/%3a/gi, ":")
+      .replace(/\/+$/, "");
+  } catch {
+    return uri.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+  }
+}
+
+export async function syncProjectPermissionPreset(
+  workspaceUri?: string,
+  preset?: string | number,
+  rpcClient?: { call: (method: string, body?: Record<string, unknown>, instance?: any) => Promise<unknown> },
+  instance?: any,
+): Promise<void> {
+  let presetEnum = "AGENT_PERMISSION_PRESET_DEFAULT";
+  if (preset === "AGENT_PERMISSION_PRESET_DEFAULT" || preset === 1 || preset === "auto_edit") {
+    presetEnum = "AGENT_PERMISSION_PRESET_DEFAULT";
+  } else if (preset === "AGENT_PERMISSION_PRESET_REQUEST_REVIEW" || preset === 2 || preset === "review_before_edit" || preset === "planning") {
+    presetEnum = "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+  } else if (preset === "AGENT_PERMISSION_PRESET_TURBO" || preset === 3 || preset === "full_access") {
+    presetEnum = "AGENT_PERMISSION_PRESET_TURBO";
+  } else if (preset === "AGENT_PERMISSION_PRESET_VETTED" || preset === 4) {
+    presetEnum = "AGENT_PERMISSION_PRESET_VETTED";
+  }
+
+  const isRequestReview = presetEnum === "AGENT_PERMISSION_PRESET_REQUEST_REVIEW";
+  const projectsDir = join(homedir(), ".gemini", "config", "projects");
+  const cwdNorm = normalizeUriPath(process.cwd());
+  const normWs = normalizeUriPath(workspaceUri);
+
+  try {
+    const files = await readdir(projectsDir);
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      const fullPath = join(projectsDir, file);
+      try {
+        const content = await readFile(fullPath, "utf-8");
+        const data = JSON.parse(content);
+        const resources = data.projectResources?.resources ?? [];
+        let matched = false;
+        for (const res of resources) {
+          const folderUri = res.gitFolder?.folderUri || res.folderUri;
+          const normFolder = normalizeUriPath(folderUri);
+          if (
+            (normWs && normFolder && (normFolder === normWs || normFolder.includes(normWs) || normWs.includes(normFolder))) ||
+            (!normWs && normFolder && (normFolder.includes(cwdNorm) || cwdNorm.includes(normFolder))) ||
+            (data.name === "antigravity移动端")
+          ) {
+            matched = true;
+            if (res.gitFolder) {
+              res.gitFolder.allowWrite = !isRequestReview;
+            }
+          }
+        }
+        if (matched) {
+          data.settings = data.settings || {};
+          data.settings.permissionPreset = presetEnum;
+          data.updatedAt = new Date().toISOString();
+
+          if (rpcClient) {
+            try {
+              await rpcClient.call("UpdateProject", { project: data }, instance);
+            } catch {
+              await writeFile(fullPath, JSON.stringify(data, null, 2), "utf-8");
+            }
+          } else {
+            await writeFile(fullPath, JSON.stringify(data, null, 2), "utf-8");
+          }
+          break;
+        }
+      } catch {}
+    }
+  } catch {}
 }
