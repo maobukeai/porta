@@ -116,4 +116,62 @@ describe("useSubagentViewer & extractSubagentSessions", () => {
     expect(sessions[1].role).toBe("Active Code Generator");
     expect(sessions[1].status).toBe("running");
   });
+
+  it("accurately detects running subagent when conversationId is created but has not reported back yet", () => {
+    const mockSteps: TrajectoryStep[] = [
+      // Subagent 1: Dispatched and completed
+      {
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        tool_calls: [
+          {
+            name: "invoke_subagent",
+            args: {
+              Subagents: [{ Role: "Auditor 1", TypeName: "self", Prompt: "Audit 1" }],
+            },
+          },
+        ],
+      } as any,
+      {
+        type: "INVOKE_SUBAGENT",
+        status: "DONE",
+        content: `Created the following subagents:\n{\n  "conversationId": "subagent-uuid-1"\n}`,
+      } as any,
+      {
+        type: "SYSTEM_MESSAGE",
+        status: "DONE",
+        content: `[Message] timestamp=2026-08-15 sender=subagent-uuid-1 content=Audit complete`,
+      } as any,
+
+      // Subagent 2: Dispatched and still running in background
+      {
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        tool_calls: [
+          {
+            name: "invoke_subagent",
+            args: {
+              Subagents: [{ Role: "Auditor 2 Running", TypeName: "self", Prompt: "Audit 2" }],
+            },
+          },
+        ],
+      } as any,
+      {
+        type: "INVOKE_SUBAGENT",
+        status: "DONE",
+        content: `Created the following subagents:\n{\n  "conversationId": "subagent-uuid-2"\n}`,
+      } as any,
+    ];
+
+    const sessions = extractSubagentSessions(mockSteps);
+    expect(sessions.length).toBe(2);
+
+    expect(sessions[0].role).toBe("Auditor 1");
+    expect(sessions[0].status).toBe("completed");
+    expect(sessions[0].conversationId).toBe("subagent-uuid-1");
+
+    expect(sessions[1].role).toBe("Auditor 2 Running");
+    expect(sessions[1].status).toBe("running");
+    expect(sessions[1].conversationId).toBe("subagent-uuid-2");
+  });
 });

@@ -64,19 +64,20 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
           : [];
 
     const isNativeInvoke =
-      step.type === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
-      step.type === "CORTEX_STEP_TYPE_SUBAGENT" ||
-      step.type === "INVOKE_SUBAGENT";
+      (step.type === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
+        step.type === "CORTEX_STEP_TYPE_SUBAGENT" ||
+        step.type === "INVOKE_SUBAGENT") &&
+      Boolean(step.invokeSubagent);
 
-    // If no tool_calls array but it's a native invoke step or metadata has it
+    // If no tool_calls array but it's a native invoke step with explicit subagent payload
     if (rawToolCalls.length === 0 && (isNativeInvoke || step.invokeSubagent)) {
       rawToolCalls.push({ name: "invoke_subagent", args: {} });
     }
 
     for (const toolCall of rawToolCalls) {
-      const toolName = toolCall?.name || (isNativeInvoke ? "invoke_subagent" : "");
+      const toolName = toolCall?.name || "";
 
-      if (toolName.includes("invoke_subagent") || toolName.includes("subagent") || isNativeInvoke) {
+      if (toolName.includes("invoke_subagent") || toolName.includes("subagent")) {
         let args: any = toolCall?.args;
         if (typeof args === "string") {
           try {
@@ -114,12 +115,72 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
                 },
               ];
 
-        // Determine status from step
+        // Look for conversationId in the current or next step
+        let convId =
+          (step.metadata as any)?.childConversationId ||
+          (step as any).conversationId ||
+          (step.metadata as any)?.conversationId ||
+          (step.invokeSubagent as any)?.conversationId ||
+          args?.ConversationId ||
+          args?.conversationId;
+
+        if (!convId && steps[idx + 1]) {
+          const nextContent =
+            typeof (steps[idx + 1] as any).content === "string"
+              ? (steps[idx + 1] as any).content
+              : JSON.stringify(steps[idx + 1]);
+          const m = nextContent.match(/"conversationId":\s*"([^"]+)"/);
+          if (m) convId = m[1];
+        }
+
+        let isDone = false;
+        let isError = false;
+        if (convId) {
+          for (let j = idx + 1; j < steps.length; j++) {
+            const nextStep = steps[j];
+            const str =
+              typeof (nextStep as any).content === "string"
+                ? (nextStep as any).content
+                : JSON.stringify(nextStep);
+            if (str.includes(convId)) {
+              if (
+                j === idx + 1 &&
+                (nextStep.type === "INVOKE_SUBAGENT" ||
+                  str.includes("Created the following subagents"))
+              ) {
+                continue;
+              }
+              isDone = true;
+              if (
+                str.includes("failed with result") ||
+                str.includes("errored") ||
+                nextStep.status === "ERROR"
+              ) {
+                isError = true;
+              }
+              break;
+            }
+          }
+        }
+
+        // Determine status: if conversationId is tracked and hasn't reported back, it is running!
         let stepStatus: "running" | "completed" | "failed" = "completed";
-        if (step.status === "ERROR" || step.errorMessage || (step as any).isError) {
-          stepStatus = "failed";
-        } else if (step.status === "RUNNING" || step.status === "WAITING") {
-          stepStatus = "running";
+        if (convId) {
+          if (!isDone) {
+            stepStatus = "running";
+          } else if (isError) {
+            stepStatus = "failed";
+          } else {
+            stepStatus = "completed";
+          }
+        } else {
+          if (step.status === "ERROR" || step.errorMessage || (step as any).isError) {
+            stepStatus = "failed";
+          } else if (step.status === "RUNNING" || step.status === "WAITING") {
+            stepStatus = "running";
+          } else {
+            stepStatus = "completed";
+          }
         }
 
         // Forward scan through subsequent steps in this turn to aggregate work steps, full output, files and diffs
@@ -301,16 +362,13 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
           const id = `subagent-${idx}-${sIdx}-${role.replace(/\s+/g, "_")}`;
 
           // Link child conversation if role matches
-          let childConversationId =
+          const childConversationId =
+            convId ||
             (step.metadata as any)?.childConversationId ||
             (step as any).conversationId ||
             (step.metadata as any)?.conversationId ||
             args?.ConversationId ||
             args?.conversationId;
-
-          if (!childConversationId && role.toLowerCase().includes("statistics")) {
-            childConversationId = "279fd6a0-e70d-42ea-bc6c-3f0ed5ff8c39";
-          }
 
           if (!seenIds.has(id)) {
             seenIds.add(id);
