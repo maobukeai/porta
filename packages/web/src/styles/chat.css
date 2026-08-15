@@ -3243,24 +3243,77 @@
   color: #71717a;
 }
 
-/* Running Subagents Row in Taskbar */
-.zcode-plan-running-subagents-section {
+/* ── Unified Task + Subagent Nodes Layout ── */
+.zcode-plan-tasks-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 2px;
 }
 
-.zcode-plan-task-row.is-subagent-running {
+.zcode-plan-subagents-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zcode-plan-section-divider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 4px 4px;
+  margin-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.zcode-plan-divider-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #9ca3af;
+  letter-spacing: 0.2px;
+}
+
+.zcode-plan-divider-dir-btn {
+  font-size: 11px;
+  color: #818cf8;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.zcode-plan-divider-dir-btn:hover {
+  background: rgba(129, 140, 248, 0.15);
+  color: #a5b4fc;
+}
+
+.zcode-plan-subagents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zcode-plan-task-row.is-subagent-item {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.28);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.zcode-plan-task-row.is-subagent-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.zcode-plan-task-row.is-subagent-running {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.28);
 }
 
 .zcode-plan-task-row.is-subagent-running:hover {
@@ -3268,18 +3321,28 @@
   border-color: rgba(99, 102, 241, 0.45);
 }
 
-.zcode-plan-running-bot-wrap {
+.zcode-plan-task-row.is-subagent-failed {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.zcode-plan-subagent-icon-wrap {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   color: #818cf8;
+  flex-shrink: 0;
 }
 
 .subagent-running-bot-icon {
   animation: subagentBotPulse 2s infinite ease-in-out;
+}
+
+.subagent-failed-icon {
+  color: #f87171;
 }
 
 .subagent-running-spinner-ring {
@@ -3302,160 +3365,88 @@
   to { transform: rotate(360deg); }
 }
 
-.subagent-running-text {
+.subagent-item-role-text {
   flex: 1;
-  color: #e0e7ff !important;
-  font-weight: 500;
-}
-
-.zcode-plan-subagent-running-tag {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(99, 102, 241, 0.25);
-  color: #a5b4fc;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-
-.zcode-plan-subagents-container {
-  position: relative;
-}
-
-.zcode-plan-subagents-popover {
-  position: absolute;
-  top: 0;
-  right: calc(100% + 12px);
-  width: 310px;
-  background: rgba(28, 28, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 10px 14px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(0, 0, 0, 0.35);
-  z-index: 65;
-  animation: zcodePlanPopoverFade 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-}
-
-.zcode-plan-subagents-popover-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  font-weight: 600;
-  color: #9ca3af;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.zcode-plan-subagents-dir-link {
-  font-size: 11px;
-  color: #818cf8;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
-}
-
-.zcode-plan-subagents-dir-link:hover {
-  background: rgba(129, 140, 248, 0.15);
-  color: #a5b4fc;
-}
-
-.zcode-plan-subagents-popover-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.zcode-subagent-list-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #d1d5db;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.zcode-subagent-list-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.zcode-subagent-list-item.is-running {
-  background: rgba(99, 102, 241, 0.1);
-  color: #e0e7ff;
-}
-
-.zcode-subagent-list-item.is-failed {
-  color: #f87171;
-}
-
-.subagent-item-left-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.subagent-item-bot-icon.is-spinning {
-  animation: iconSpin 2s linear infinite;
-  color: #818cf8;
-}
-
-.subagent-item-prefix {
-  color: #6b7280;
-  font-size: 11px;
-}
-
-.subagent-item-typename {
-  font-weight: 500;
-  color: #9ca3af;
-}
-
-.subagent-item-sep {
-  color: #4b5563;
-}
-
-.subagent-item-role {
-  flex: 1;
+  color: #e4e4e7;
+  font-size: 12.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.subagent-item-running-tag {
-  font-size: 10px;
-  padding: 1px 5px;
+.zcode-plan-task-row.is-subagent-running .subagent-item-role-text {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.zcode-plan-subagent-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(99, 102, 241, 0.2);
+  flex-shrink: 0;
+  letter-spacing: 0.2px;
+}
+
+.zcode-plan-subagent-badge.running {
+  background: rgba(99, 102, 241, 0.25);
   color: #a5b4fc;
+  font-weight: 600;
 }
 
-.subagent-item-done-tag {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
+.zcode-plan-subagent-badge.done {
+  background: rgba(255, 255, 255, 0.08);
+  color: #9ca3af;
 }
 
-.subagent-item-failed-tag {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
+.zcode-plan-subagent-badge.failed {
   background: rgba(239, 68, 68, 0.15);
   color: #f87171;
+}
+
+/* Bottom Directory Bar in Taskbar */
+.zcode-plan-subagents-bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.zcode-plan-subagents-bottom-bar:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.zcode-plan-subagents-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zcode-plan-subagents-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+}
+
+.zcode-plan-subagents-right {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.zcode-plan-subagents-status {
+  font-size: 11.5px;
+  color: #71717a;
+}
+
+.zcode-plan-subagents-chevron {
+  color: #71717a;
 }
 
 .zcode-plan-capsule-spin-indicator {

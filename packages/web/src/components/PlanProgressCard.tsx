@@ -11,6 +11,7 @@ import {
   IconCopy,
   IconCheck,
   IconBot,
+  IconAlertTriangle,
 } from "./Icons";
 import type { PlanProgressData } from "../hooks/usePlanTracker";
 import type { SubagentSession } from "../hooks/useSubagentViewer";
@@ -52,15 +53,12 @@ export function PlanProgressCard({
 
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [showPendingPopover, setShowPendingPopover] = useState(false);
-  const [showSubagentsPopover, setShowSubagentsPopover] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const [minimized, setMinimized] = useState(false);
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const popoverBtnRef = useRef<HTMLButtonElement>(null);
-  const subagentsPopoverRef = useRef<HTMLDivElement>(null);
-  const subagentsBtnRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const runningSubagents = subagentSessions.filter((s) => s.status === "running");
@@ -77,7 +75,7 @@ export function PlanProgressCard({
 
   // Close menus when clicking outside
   useEffect(() => {
-    if (!showPendingPopover && !menuOpen && !showSubagentsPopover) return;
+    if (!showPendingPopover && !menuOpen) return;
 
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       const target = e.target as Node;
@@ -90,15 +88,6 @@ export function PlanProgressCard({
       ) {
         setShowPendingPopover(false);
       }
-      if (
-        showSubagentsPopover &&
-        subagentsPopoverRef.current &&
-        !subagentsPopoverRef.current.contains(target) &&
-        subagentsBtnRef.current &&
-        !subagentsBtnRef.current.contains(target)
-      ) {
-        setShowSubagentsPopover(false);
-      }
       if (menuOpen && menuRef.current && !menuRef.current.contains(target)) {
         setMenuOpen(false);
       }
@@ -110,7 +99,7 @@ export function PlanProgressCard({
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("touchstart", handleClickOutside);
     };
-  }, [showPendingPopover, menuOpen, showSubagentsPopover]);
+  }, [showPendingPopover, menuOpen]);
 
   // If no active plan tasks AND no subagents, do NOT render anything
   if (!hasTasks && !hasSubagents) {
@@ -141,6 +130,20 @@ export function PlanProgressCard({
     setShowPendingPopover((v) => !v);
   };
 
+  const headerLabel =
+    hasTasks && hasSubagents
+      ? "任务与智能体"
+      : hasTasks
+        ? "进程"
+        : "智能体";
+
+  const headerRatio =
+    hasTasks && hasSubagents
+      ? `${completedCount}/${total} · 🤖${completedSubagentsCount}/${totalSubagentsCount}`
+      : hasTasks
+        ? `${completedCount}/${total}`
+        : `${completedSubagentsCount}/${totalSubagentsCount}`;
+
   // Minimized Floating Badge mode
   if (minimized) {
     return (
@@ -152,9 +155,7 @@ export function PlanProgressCard({
           {runningSubagents.length > 0 ? "🤖" : "⚡"}
         </span>
         <span className="zcode-plan-min-text">
-          {hasTasks
-            ? `进程 ${completedCount}/${total}`
-            : `智能体 ${completedSubagentsCount}/${totalSubagentsCount}`}
+          {headerLabel} {headerRatio}
         </span>
       </div>
     );
@@ -165,17 +166,11 @@ export function PlanProgressCard({
       className={`zcode-plan-card-root ${isMobile ? "is-mobile-view" : ""} ${className}`}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 1. Header Bar: 进程 1/7 or 智能体 + Actions */}
+      {/* 1. Header Bar */}
       <div className="zcode-plan-header">
         <div className="zcode-plan-header-left">
-          <span className="zcode-plan-title-label">
-            {hasTasks ? "进程" : "智能体"}
-          </span>
-          <span className="zcode-plan-progress-ratio">
-            {hasTasks
-              ? `${completedCount}/${total}`
-              : `${completedSubagentsCount}/${totalSubagentsCount}`}
-          </span>
+          <span className="zcode-plan-title-label">{headerLabel}</span>
+          <span className="zcode-plan-progress-ratio">{headerRatio}</span>
         </div>
 
         <div className="zcode-plan-header-actions" ref={menuRef}>
@@ -273,230 +268,235 @@ export function PlanProgressCard({
         </div>
       )}
 
-      {/* 2. Tasks Container */}
+      {/* 2. Unified Content Body: Tasks (Top) + Subagents (Bottom) */}
       <div className="zcode-plan-tasks-body">
-        {/* Completed Group Accordion */}
-        {completedCount > 0 && (
-          <div className="zcode-plan-completed-group">
-            <button
-              className="zcode-plan-group-toggle"
-              onClick={handleToggleCompleted}
-              title={completedExpanded ? "折叠已完成" : "展开已完成"}
-            >
-              {completedExpanded ? (
-                <IconChevronDown size={10} className="zcode-plan-toggle-chevron" />
-              ) : (
-                <IconChevronRight size={10} className="zcode-plan-toggle-chevron" />
-              )}
-              <span className="zcode-plan-group-label">已完成 {completedCount} 项</span>
-            </button>
+        {/* ── Section A: Tasks List (if hasTasks) ── */}
+        {hasTasks && (
+          <div className="zcode-plan-tasks-section">
+            {/* Completed Group Accordion */}
+            {completedCount > 0 && (
+              <div className="zcode-plan-completed-group">
+                <button
+                  className="zcode-plan-group-toggle"
+                  onClick={handleToggleCompleted}
+                  title={completedExpanded ? "折叠已完成" : "展开已完成"}
+                >
+                  {completedExpanded ? (
+                    <IconChevronDown size={10} className="zcode-plan-toggle-chevron" />
+                  ) : (
+                    <IconChevronRight size={10} className="zcode-plan-toggle-chevron" />
+                  )}
+                  <span className="zcode-plan-group-label">已完成 {completedCount} 项</span>
+                </button>
 
-            {completedExpanded && (
-              <div className="zcode-plan-completed-list">
-                {completedSteps.map((task) => (
-                  <div key={task.id} className="zcode-plan-task-row is-completed">
-                    <span className="zcode-plan-task-check">
-                      <IconCircleCheck size={13} />
-                    </span>
-                    {task.icon && (
-                      <span className="zcode-plan-task-emoji">{task.icon}</span>
-                    )}
-                    <span className="zcode-plan-task-text" title={task.title}>
-                      {task.title}
-                    </span>
+                {completedExpanded && (
+                  <div className="zcode-plan-completed-list">
+                    {completedSteps.map((task) => (
+                      <div key={task.id} className="zcode-plan-task-row is-completed">
+                        <span className="zcode-plan-task-check">
+                          <IconCircleCheck size={13} />
+                        </span>
+                        {task.icon && (
+                          <span className="zcode-plan-task-emoji">{task.icon}</span>
+                        )}
+                        <span className="zcode-plan-task-text" title={task.title}>
+                          {task.title}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {/* Current In-Progress Step (Highlighted) */}
-        {currentStep && (
-          <div className="zcode-plan-task-row is-running">
-            <span className="zcode-plan-task-arrow">→</span>
-            {currentStep.icon && (
-              <span className="zcode-plan-task-emoji">{currentStep.icon}</span>
-            )}
-            <span className="zcode-plan-task-text current" title={currentStep.title}>
-              {currentStep.title}
-            </span>
-          </div>
-        )}
-
-        {/* Upcoming Pending Steps (First 2) */}
-        {upcomingSteps.map((task) => (
-          <div key={task.id} className="zcode-plan-task-row is-pending">
-            <span className="zcode-plan-task-circle">
-              <IconCircle size={12} />
-            </span>
-            {task.icon && (
-              <span className="zcode-plan-task-emoji">{task.icon}</span>
-            )}
-            <span className="zcode-plan-task-text" title={task.title}>
-              {task.title}
-            </span>
-          </div>
-        ))}
-
-        {/* Overflow Pending Group Trigger */}
-        {overflowSteps.length > 0 && (
-          <div className="zcode-plan-overflow-container">
-            <button
-              ref={popoverBtnRef}
-              className={`zcode-plan-group-toggle overflow-btn ${showPendingPopover ? "active" : ""}`}
-              onClick={handleTogglePendingPopover}
-              title="查看更多待处理任务"
-            >
-              {showPendingPopover ? (
-                <IconChevronLeft size={10} className="zcode-plan-toggle-chevron" />
-              ) : (
-                <IconChevronRight size={10} className="zcode-plan-toggle-chevron" />
-              )}
-              <span className="zcode-plan-group-label">待处理 {overflowSteps.length} 项</span>
-            </button>
-
-            {/* Overflow Popover Balloon */}
-            {showPendingPopover && (
-              <div ref={popoverRef} className="zcode-plan-popover">
-                <div className="zcode-plan-popover-header">
-                  <span>待处理 {overflowSteps.length} 项</span>
-                </div>
-                <div className="zcode-plan-popover-list">
-                  {overflowSteps.map((task) => (
-                    <div key={task.id} className="zcode-plan-task-row is-pending">
-                      <span className="zcode-plan-task-circle">
-                        <IconCircle size={12} />
-                      </span>
-                      {task.icon && (
-                        <span className="zcode-plan-task-emoji">{task.icon}</span>
-                      )}
-                      <span className="zcode-plan-task-text" title={task.title}>
-                        {task.title}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Active Running Subagents in Taskbar (With Spinning Bot Icon & Click to Enter) */}
-        {runningSubagents.length > 0 && (
-          <div className="zcode-plan-running-subagents-section">
-            {runningSubagents.map((s) => (
-              <div
-                key={s.id}
-                className="zcode-plan-task-row is-subagent-running"
-                onClick={() => {
-                  triggerHaptic("light");
-                  onSelectSubagent?.(s.id);
-                }}
-                role="button"
-                tabIndex={0}
-                title={`子智能体正在执行: ${s.role}，点击进入会话`}
-              >
-                <div className="zcode-plan-running-bot-wrap">
-                  <IconBot size={13} className="subagent-running-bot-icon" />
-                  <span className="subagent-running-spinner-ring" />
-                </div>
-                <span className="zcode-plan-task-text current subagent-running-text" title={s.role}>
-                  {s.role}
+            {/* Current In-Progress Step (Highlighted) */}
+            {currentStep && (
+              <div className="zcode-plan-task-row is-running">
+                <span className="zcode-plan-task-arrow">→</span>
+                {currentStep.icon && (
+                  <span className="zcode-plan-task-emoji">{currentStep.icon}</span>
+                )}
+                <span className="zcode-plan-task-text current" title={currentStep.title}>
+                  {currentStep.title}
                 </span>
-                <span className="zcode-plan-subagent-running-tag">运行中</span>
+              </div>
+            )}
+
+            {/* Upcoming Pending Steps (First 2) */}
+            {upcomingSteps.map((task) => (
+              <div key={task.id} className="zcode-plan-task-row is-pending">
+                <span className="zcode-plan-task-circle">
+                  <IconCircle size={12} />
+                </span>
+                {task.icon && (
+                  <span className="zcode-plan-task-emoji">{task.icon}</span>
+                )}
+                <span className="zcode-plan-task-text" title={task.title}>
+                  {task.title}
+                </span>
               </div>
             ))}
+
+            {/* Overflow Pending Group Trigger */}
+            {overflowSteps.length > 0 && (
+              <div className="zcode-plan-overflow-container">
+                <button
+                  ref={popoverBtnRef}
+                  className={`zcode-plan-group-toggle overflow-btn ${showPendingPopover ? "active" : ""}`}
+                  onClick={handleTogglePendingPopover}
+                  title="查看更多待处理任务"
+                >
+                  {showPendingPopover ? (
+                    <IconChevronLeft size={10} className="zcode-plan-toggle-chevron" />
+                  ) : (
+                    <IconChevronRight size={10} className="zcode-plan-toggle-chevron" />
+                  )}
+                  <span className="zcode-plan-group-label">待处理 {overflowSteps.length} 项</span>
+                </button>
+
+                {/* Overflow Popover Balloon */}
+                {showPendingPopover && (
+                  <div ref={popoverRef} className="zcode-plan-popover">
+                    <div className="zcode-plan-popover-header">
+                      <span>待处理 {overflowSteps.length} 项</span>
+                    </div>
+                    <div className="zcode-plan-popover-list">
+                      {overflowSteps.map((task) => (
+                        <div key={task.id} className="zcode-plan-task-row is-pending">
+                          <span className="zcode-plan-task-circle">
+                            <IconCircle size={12} />
+                          </span>
+                          {task.icon && (
+                            <span className="zcode-plan-task-emoji">{task.icon}</span>
+                          )}
+                          <span className="zcode-plan-task-text" title={task.title}>
+                            {task.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
-      </div>
 
-      {/* 3. Bottom Subagents Status Row (Collapses when ended / completed) */}
-      {hasSubagents && (completedSubagentsCount > 0 || completedSubagents.length > 0 || runningSubagents.length === 0) && (
-        <div className="zcode-plan-subagents-container">
-          <div
-            ref={subagentsBtnRef}
-            className={`zcode-plan-subagents-bar ${showSubagentsPopover ? "active" : ""}`}
-            onClick={() => {
-              triggerHaptic("light");
-              if (subagentSessions.length > 0) {
-                setShowSubagentsPopover((v) => !v);
-              } else if (onOpenSubagents) {
-                onOpenSubagents();
-              }
-            }}
-            role="button"
-            tabIndex={0}
-            title="查看关联智能体状态"
-          >
-            <div className="zcode-plan-subagents-left">
-              <span className="zcode-plan-subagents-label">智能体</span>
-            </div>
-            <div className="zcode-plan-subagents-right">
-              <IconCircleCheck size={13} className="zcode-plan-subagents-check" />
-              <span className="zcode-plan-subagents-status">
-                已结束 {completedSubagentsCount || completedSubagents.length}
-              </span>
-              <IconChevronRight size={11} className="zcode-plan-subagents-chevron" />
-            </div>
-          </div>
-
-          {/* Subagents List Popover (1:1 matching screenshot 1) */}
-          {showSubagentsPopover && subagentSessions.length > 0 && (
-            <div ref={subagentsPopoverRef} className="zcode-plan-subagents-popover">
-              <div className="zcode-plan-subagents-popover-header">
-                <span>子智能体 ({subagentSessions.length})</span>
+        {/* ── Section B: Subagents Nodes List (if hasSubagents) ── */}
+        {hasSubagents && (
+          <div className="zcode-plan-subagents-section">
+            {/* Section Divider if tasks exist above */}
+            {hasTasks && (
+              <div className="zcode-plan-section-divider">
+                <span className="zcode-plan-divider-label">
+                  子智能体 ({subagentSessions.length || totalSubagentsCount})
+                </span>
                 {onOpenSubagents && (
                   <button
-                    className="zcode-plan-subagents-dir-link"
+                    className="zcode-plan-divider-dir-btn"
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenSubagents();
-                      setShowSubagentsPopover(false);
                     }}
+                    title="打开子智能体目录"
                   >
                     目录 →
                   </button>
                 )}
               </div>
-              <div className="zcode-plan-subagents-popover-list">
-                {subagentSessions.map((s) => (
+            )}
+
+            {/* List of Subagents Directly Visible */}
+            <div className="zcode-plan-subagents-list">
+              {subagentSessions.map((s) => {
+                const isRunning = s.status === "running";
+                const isFailed = s.status === "failed";
+
+                return (
                   <div
                     key={s.id}
-                    className={`zcode-subagent-list-item ${s.status === "failed" ? "is-failed" : ""} ${s.status === "running" ? "is-running" : ""}`}
+                    className={`zcode-plan-task-row is-subagent-item ${isRunning ? "is-subagent-running" : isFailed ? "is-subagent-failed" : "is-subagent-done"}`}
                     onClick={() => {
                       triggerHaptic("light");
                       onSelectSubagent?.(s.id);
-                      setShowSubagentsPopover(false);
                     }}
+                    role="button"
+                    tabIndex={0}
+                    title={`点击进入子智能体: ${s.role}`}
                   >
-                    <div className="subagent-item-left-icon">
-                      <IconBot
-                        size={13}
-                        className={`subagent-item-bot-icon ${s.status === "running" ? "is-spinning" : ""}`}
-                      />
-                      {s.status === "running" && <span className="subagent-dot-pulse" />}
+                    <div className="zcode-plan-subagent-icon-wrap">
+                      {isRunning ? (
+                        <>
+                          <IconBot size={13} className="subagent-running-bot-icon" />
+                          <span className="subagent-running-spinner-ring" />
+                        </>
+                      ) : isFailed ? (
+                        <IconAlertTriangle size={13} className="subagent-failed-icon" />
+                      ) : (
+                        <IconCircleCheck size={13} className="zcode-plan-task-check" />
+                      )}
                     </div>
-                    <span className="subagent-item-prefix">子智能体</span>
-                    <span className="subagent-item-typename">{s.typeName}</span>
-                    <span className="subagent-item-sep">·</span>
-                    <span className="subagent-item-role" title={s.role}>
+
+                    <span
+                      className={`zcode-plan-task-text subagent-item-role-text ${isRunning ? "current" : ""}`}
+                      title={s.role}
+                    >
                       {s.role}
                     </span>
-                    {s.status === "running" && (
-                      <span className="subagent-item-running-tag">执行中</span>
-                    )}
-                    {s.status === "failed" && (
-                      <span className="subagent-item-failed-tag">执行失败</span>
-                    )}
-                    {s.status === "completed" && (
-                      <span className="subagent-item-done-tag">已完成</span>
-                    )}
+
+                    <span
+                      className={`zcode-plan-subagent-badge ${isRunning ? "running" : isFailed ? "failed" : "done"}`}
+                    >
+                      {isRunning ? "运行中" : isFailed ? "失败" : "已完成"}
+                    </span>
                   </div>
-                ))}
-              </div>
+                );
+              })}
+
+              {/* Fallback if subagentSessions is empty but count is registered */}
+              {subagentSessions.length === 0 && totalSubagentsCount > 0 && (
+                <div
+                  className="zcode-plan-task-row is-subagent-item is-subagent-done"
+                  onClick={() => {
+                    triggerHaptic("light");
+                    onOpenSubagents?.();
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  title="查看子智能体列表"
+                >
+                  <IconBot size={13} style={{ color: "#818cf8" }} />
+                  <span className="zcode-plan-task-text">已记录 {totalSubagentsCount} 个子智能体</span>
+                  <span className="zcode-plan-subagent-badge done">查看</span>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Bottom Subagents Directory Bar */}
+      {hasSubagents && onOpenSubagents && (
+        <div
+          className="zcode-plan-subagents-bottom-bar"
+          onClick={() => {
+            triggerHaptic("light");
+            onOpenSubagents();
+          }}
+          role="button"
+          tabIndex={0}
+          title="打开子智能体目录"
+        >
+          <div className="zcode-plan-subagents-left">
+            <IconBot size={13} style={{ color: "#818cf8" }} />
+            <span className="zcode-plan-subagents-label">子智能体目录</span>
+          </div>
+          <div className="zcode-plan-subagents-right">
+            <span className="zcode-plan-subagents-status">
+              共 {subagentSessions.length || totalSubagentsCount} 个
+            </span>
+            <IconChevronRight size={11} className="zcode-plan-subagents-chevron" />
+          </div>
         </div>
       )}
     </div>
@@ -517,9 +517,12 @@ export function PlanProgressCapsule({
   const hasTasks = planData.hasPlan && planData.total > 0;
   if (!hasTasks && !hasSubagents) return null;
 
-  const count = hasTasks
-    ? `${planData.completedCount}/${planData.total}`
-    : `${planData.subagents.completed}/${planData.subagents.total}`;
+  const count =
+    hasTasks && hasSubagents
+      ? `${planData.completedCount}/${planData.total} (🤖${planData.subagents.completed}/${planData.subagents.total})`
+      : hasTasks
+        ? `${planData.completedCount}/${planData.total}`
+        : `${planData.subagents.completed}/${planData.subagents.total}`;
 
   return (
     <button
@@ -528,8 +531,8 @@ export function PlanProgressCapsule({
         triggerHaptic("light");
         onClick();
       }}
-      title={`任务规划进展: ${count}`}
-      aria-label="查看任务规划进展"
+      title={`任务与智能体进展: ${count}`}
+      aria-label="查看任务与智能体进展"
     >
       <span className="zcode-plan-capsule-icon">
         {planData.subagents.active > 0 ? "🤖" : "⚡"}

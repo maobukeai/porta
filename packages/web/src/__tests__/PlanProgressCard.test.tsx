@@ -31,7 +31,7 @@ describe("PlanProgressCard Component", () => {
       { id: "task-7", index: 7, title: "前端打磨: 骨架屏+防抖节流+错误 Toast", icon: "💎", status: "pending", rawText: "..." },
     ],
     tasks: [],
-    subagents: { total: 12, completed: 12, active: 0 },
+    subagents: { total: 0, completed: 0, active: 0 },
     content: "# 完整规划 Markdown 内容",
     loading: false,
     refresh: vi.fn().mockResolvedValue(undefined),
@@ -48,7 +48,7 @@ describe("PlanProgressCard Component", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders 1:1 matching elements: 进程 1/7, running task, upcoming tasks, subagents row", () => {
+  it("renders tasks correctly when only tasks exist", () => {
     render(<PlanProgressCard planData={mockPlanData} />);
 
     // Header ratio
@@ -67,10 +67,6 @@ describe("PlanProgressCard Component", () => {
 
     // Overflow toggle
     expect(screen.getByText("待处理 3 项")).toBeInTheDocument();
-
-    // Subagent row
-    expect(screen.getByText("智能体")).toBeInTheDocument();
-    expect(screen.getByText("已结束 12")).toBeInTheDocument();
   });
 
   it("toggles completed tasks list when accordion button is clicked", () => {
@@ -113,7 +109,45 @@ describe("PlanProgressCard Component", () => {
     expect(onClick).toHaveBeenCalled();
   });
 
-  it("renders when there are only subagents and no plan tasks (e.g. 1f6db4aa)", () => {
+  it("renders unified Task + Subagent Nodes layout when both tasks and subagents exist", () => {
+    const bothData: PlanProgressData = {
+      ...mockPlanData,
+      subagents: { total: 2, completed: 2, active: 0 },
+    };
+
+    const mockSubagents = [
+      { id: "sub-1", stepIndex: 1, role: "修复单元测试缺陷", typeName: "self", prompt: "...", status: "completed" as const },
+      { id: "sub-2", stepIndex: 2, role: "修复SQLite并发锁问题", typeName: "self", prompt: "...", status: "completed" as const },
+    ];
+
+    const onOpenSubagents = vi.fn();
+
+    render(
+      <PlanProgressCard
+        planData={bothData}
+        subagentSessions={mockSubagents}
+        onOpenSubagents={onOpenSubagents}
+      />
+    );
+
+    // Header
+    expect(screen.getByText("任务与智能体")).toBeInTheDocument();
+    expect(screen.getByText("1/7 · 🤖2/2")).toBeInTheDocument();
+
+    // Top: Task items
+    expect(screen.getByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).toBeInTheDocument();
+
+    // Bottom: Subagent items directly visible
+    expect(screen.getByText("修复单元测试缺陷")).toBeInTheDocument();
+    expect(screen.getByText("修复SQLite并发锁问题")).toBeInTheDocument();
+
+    // Bottom directory button
+    expect(screen.getByText("子智能体目录")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("子智能体目录"));
+    expect(onOpenSubagents).toHaveBeenCalled();
+  });
+
+  it("renders directly in card body when there are only subagents (e.g. 1f6db4aa)", () => {
     const subagentsOnlyPlan: PlanProgressData = {
       ...mockPlanData,
       hasPlan: false,
@@ -131,16 +165,26 @@ describe("PlanProgressCard Component", () => {
       { id: "sub-2", stepIndex: 2, role: "SidePanel & Subagent Viewer Auditor", typeName: "self", prompt: "...", status: "completed" as const },
     ];
 
+    const onSelectSubagent = vi.fn();
+
     render(
       <PlanProgressCard
         planData={subagentsOnlyPlan}
         subagentSessions={mockSubagents}
+        onSelectSubagent={onSelectSubagent}
       />
     );
 
-    expect(screen.getAllByText("智能体").length).toBeGreaterThan(0);
+    expect(screen.getByText("智能体")).toBeInTheDocument();
     expect(screen.getByText("2/2")).toBeInTheDocument();
-    expect(screen.getByText("已结束 2")).toBeInTheDocument();
+
+    // The subagents and their roles are directly visible
+    expect(screen.getByText("Usage Statistics Auditor")).toBeInTheDocument();
+    expect(screen.getByText("SidePanel & Subagent Viewer Auditor")).toBeInTheDocument();
+    expect(screen.getAllByText("已完成").length).toBe(2);
+
+    fireEvent.click(screen.getByText("Usage Statistics Auditor"));
+    expect(onSelectSubagent).toHaveBeenCalledWith("sub-1");
   });
 
   it("renders running subagent with active tag and triggers onSelectSubagent", () => {

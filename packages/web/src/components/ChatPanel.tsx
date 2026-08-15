@@ -108,6 +108,8 @@ interface Props {
   onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
   /** Called when the Review button in turn summary card is clicked */
   onOpenReview?: () => void;
+  /** Called when opening the subagents directory */
+  onOpenSubagents?: () => void;
   /** Called when the WS reports the agent went idle — triggers sidebar refresh. */
   onSidebarRefresh?: () => void;
   /** Triggered when the user clicks interactive buttons (e.g. Proceed / Continue) in message cards */
@@ -1325,6 +1327,7 @@ export function ChatPanel({
   onQuoteMessage,
   onOpenFile,
   onOpenReview,
+  onOpenSubagents,
   onSidebarRefresh,
   onSendMessage,
 }: Props) {
@@ -1699,7 +1702,7 @@ export function ChatPanel({
             onOpenReview();
           }
         }}
-        onOpenSubagents={onOpenReview}
+        onOpenSubagents={onOpenSubagents || onOpenReview}
       />
 
       <div
