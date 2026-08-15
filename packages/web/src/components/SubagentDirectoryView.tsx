@@ -100,7 +100,18 @@ export function SubagentDirectoryView({
 
       <div className="subagent-dir-content-scroll">
         {/* Main Title (1:1 Matching Screenshot 2) */}
-        <h1 className="subagent-dir-title">子智能体目录</h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "24px" }}>
+          <h1 className="subagent-dir-title" style={{ margin: 0 }}>子智能体目录</h1>
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{ background: "none", border: "none", color: "#71717a", cursor: "pointer", padding: "4px" }}
+              title="关闭目录"
+            >
+              <IconX size={16} />
+            </button>
+          )}
+        </div>
 
         {/* Section 1: 正在运行 · N */}
         <div className="subagent-dir-section">

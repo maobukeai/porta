@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 
 import { useChatNotifications } from "../hooks/useChatNotifications";
 import { useStepsStream } from "../hooks/useStepsStream";
+import { setConversationWaiting, isAnyStepWaiting } from "../utils/waitingTasks";
 import { stepsToMessages } from "../transforms/stepsToMessages";
 import {
   isUnconfirmedOptimisticMessage,
@@ -21,7 +22,13 @@ import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
 import { useMessageTouchGesture } from "../hooks/useMessageTouchGesture";
 import { MessageActionSheet } from "./MessageActionSheet";
-import { ConfirmModal } from "./ConfirmModal";
+import { copyText } from "../utils/clipboard";
+import { triggerHaptic } from "../utils/haptics";
+import { Lightbox } from "./Lightbox";
+import { api, getApiBase } from "../api/client";
+import { RevertConfirmModal } from "./RevertConfirmModal";
+import type { RevertFileChange } from "../utils/revertFiles";
+import type { TrajectoryStep } from "../types";
 import { useVisualViewport } from "../hooks/useVisualViewport";
 import {
   AskQuestionCard,
@@ -31,6 +38,8 @@ import {
   SubagentCard,
 } from "./StepCards";
 import { QuotaAlertCard } from "./QuotaAlertCard";
+import { parseQuotaError } from "../utils/quotaError";
+import { ExplorationCard } from "./ExplorationCard";
 import { getAskQuestionRequest, getFilePermissionRequest } from "../utils/stepCards";
 import {
   IconCopy,
@@ -46,16 +55,28 @@ import {
   IconMessageCircle,
   IconAlertTriangle,
   IconChevron,
-  IconGemini,
   IconVolume,
   IconVolumeX,
+  IconBrain,
+  IconPlay,
+  IconFileText,
+  IconSparkles,
 } from "./Icons";
 import { speakTTS, stopTTS, isTTSSpeaking } from "../utils/speech";
+import { ChatScrollSlider } from "./ChatScrollSlider";
+import { TurnSummaryCard } from "./TurnSummaryCard";
+import { extractTurnSummary } from "../utils/extractTurnSummary";
+import { usePlanTracker } from "../hooks/usePlanTracker";
+import { PlanProgressCard } from "./PlanProgressCard";
+import { useSubagentViewer, type SubagentSession } from "../hooks/useSubagentViewer";
 import type { AskQuestionEntry, ChatMessage } from "../types";
 
 interface Props {
   cascadeId: string;
-  onRevert: (stepIndex: number, editText?: string) => void;
+  activeSubagentId?: string | null;
+  onSelectSubagent?: (id: string) => void;
+  onCloseSubagent?: () => void;
+  onRevert: (stepIndex: number, editText?: string, editMedia?: unknown[]) => void;
   onFilePermission: (
     trajectoryId: string,
     stepIndex: number,
@@ -83,71 +104,158 @@ interface Props {
   browserNotificationsEnabled?: boolean;
   conversationTitle?: string;
   onQuoteMessage?: (text: string) => void;
+  /** Called when a code file item in exploration or message is clicked to open the right side panel */
+  onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
+  /** Called when the Review button in turn summary card is clicked */
+  onOpenReview?: () => void;
   /** Called when the WS reports the agent went idle — triggers sidebar refresh. */
   onSidebarRefresh?: () => void;
+  /** Triggered when the user clicks interactive buttons (e.g. Proceed / Continue) in message cards */
+  onSendMessage?: (text: string) => void;
 }
 
-/** Collapsible implementation plan block */
+function formatWorkDuration(duration?: string | number): string {
+  if (duration === undefined || duration === null || duration === "") {
+    return "已工作";
+  }
+
+  let totalSecs = 0;
+  if (typeof duration === "number") {
+    totalSecs = duration;
+  } else {
+    const str = String(duration).trim();
+    if (!str) return "已工作";
+
+    const msMatch = str.match(/^(\d+(?:\.\d+)?)\s*ms$/i);
+    if (msMatch) {
+      totalSecs = parseFloat(msMatch[1]) / 1000;
+    } else {
+      const minMatch = str.match(/(\d+)\s*(?:m|min|分)/i);
+      const secMatch = str.match(/(\d+(?:\.\d+)?)\s*(?:s|sec|秒)/i);
+      if (minMatch) {
+        const mins = parseInt(minMatch[1], 10);
+        const secs = secMatch ? parseFloat(secMatch[1]) : 0;
+        totalSecs = mins * 60 + secs;
+      } else if (secMatch) {
+        totalSecs = parseFloat(secMatch[1]);
+      } else {
+        const parsed = parseFloat(str);
+        if (!isNaN(parsed)) {
+          totalSecs = parsed;
+        }
+      }
+    }
+  }
+
+  if (totalSecs <= 0) return "已工作";
+
+  // If under 1 minute
+  if (totalSecs < 60) {
+    if (totalSecs < 10 && totalSecs % 1 !== 0) {
+      return `已工作 ${totalSecs.toFixed(1)} 秒`;
+    }
+    const rounded = Math.max(1, Math.round(totalSecs));
+    return `已工作 ${rounded} 秒`;
+  }
+
+  // If under 1 hour
+  if (totalSecs < 3600) {
+    const totalRounded = Math.round(totalSecs);
+    const mins = Math.floor(totalRounded / 60);
+    const remain = totalRounded % 60;
+    return `已工作 ${mins} 分 ${remain > 0 ? `${remain} 秒` : ""}`.trim();
+  }
+
+  // If >= 1 hour
+  const totalRounded = Math.round(totalSecs);
+  const hours = Math.floor(totalRounded / 3600);
+  const remainMins = Math.floor((totalRounded % 3600) / 60);
+  return `已工作 ${hours} 小时 ${remainMins > 0 ? `${remainMins} 分` : ""}`.trim();
+}
+
+export function formatThinkingDuration(duration?: string | number): string {
+  if (duration === undefined || duration === null || duration === "") return "思考过程 持续了几秒";
+  if (typeof duration === "string") {
+    const s = duration.trim();
+    const cleanNum = parseFloat(s.replace(/[^0-9.]/g, ""));
+    if (!isNaN(cleanNum) && cleanNum > 0) {
+      if (cleanNum < 2) {
+        return "思考过程 持续了几秒";
+      }
+      if (cleanNum < 60) {
+        const rounded = cleanNum < 10 && cleanNum % 1 !== 0 ? cleanNum.toFixed(1) : Math.round(cleanNum);
+        return `思考过程 持续了 ${rounded} 秒`;
+      }
+      const mins = Math.floor(cleanNum / 60);
+      const secs = Math.round(cleanNum % 60);
+      return `思考过程 持续了 ${mins} 分 ${secs > 0 ? `${secs} 秒` : ""}`.trim();
+    }
+    return `思考过程 持续了 ${s}`;
+  }
+  if (typeof duration === "number" && duration > 0) {
+    if (duration < 2) {
+      return "思考过程 持续了几秒";
+    }
+    if (duration < 60) {
+      const rounded = duration < 10 && duration % 1 !== 0 ? duration.toFixed(1) : Math.max(1, Math.round(duration));
+      return `思考过程 持续了 ${rounded} 秒`;
+    }
+    const mins = Math.floor(duration / 60);
+    const secs = Math.round(duration % 60);
+    return `思考过程 持续了 ${mins} 分 ${secs > 0 ? `${secs} 秒` : ""}`.trim();
+  }
+  return "思考过程 持续了几秒";
+}
+
+/** Collapsible implementation plan / thinking block */
 function ImplementationPlanBlock({
   plan,
   duration,
   live = false,
 }: {
   plan: string;
-  duration?: string;
+  duration?: string | number;
   live?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(live);
   const renderedPlan = useMemo(() => renderMarkdown(plan), [plan]);
-  let durationLabel = "";
-  if (duration) {
-    const match = duration.match(/([\d.]+)s/);
-    if (match) {
-      durationLabel = `${parseFloat(match[1]).toFixed(1)}s`;
-    }
-  }
+
+  useEffect(() => {
+    setOpen(live);
+  }, [live]);
 
   return (
     <details
-      className={`implementation-plan-block${live ? " live" : ""}`}
+      className={`zcode-thinking-block${live ? " live" : ""}`}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="implementation-plan-header">
-        <span className="implementation-plan-icon">
-          <IconList size={13} />
+      <summary className="zcode-thinking-header">
+        <IconBrain size={14} className="zcode-thinking-brain-icon" />
+        <span className="zcode-thinking-label">
+          {live ? "正在深度思考与执行…" : formatWorkDuration(duration)}
         </span>
-        <span className="implementation-plan-label">
-          {live ? "实时执行计划" : "执行计划"}
-        </span>
-        {live && (
-          <span className="implementation-plan-live-badge">实时</span>
-        )}
-        {durationLabel && (
-          <span className="implementation-plan-meta">{durationLabel}</span>
-        )}
-        <span className="implementation-plan-action">
-          {open ? "隐藏" : "查看"}
-        </span>
-        <span className="implementation-plan-chevron">
-          <IconChevron size={13} />
+        <span className="zcode-thinking-chevron">
+          <IconChevron size={12} className={open ? "is-open" : ""} />
         </span>
       </summary>
-      <div className="implementation-plan-content">
+      <div className="zcode-thinking-content">
         <MarkdownContent html={renderedPlan} />
-        <div className="implementation-plan-actions">
+        <div className="zcode-thinking-actions">
           <button
-            className="msg-action-btn implementation-plan-copy"
-            title="复制执行计划"
+            className="msg-action-btn zcode-thinking-copy"
+            title="复制思考过程"
             onClick={() => {
-              navigator.clipboard.writeText(plan).then(() => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
+              void copyText(plan).then((success) => {
+                if (success) {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }
               });
             }}
           >
-            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+            {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
           </button>
         </div>
       </div>
@@ -155,50 +263,7 @@ function ImplementationPlanBlock({
   );
 }
 
-function textFromStepItems(items?: { text?: string }[]): string {
-  if (!items) return "";
-  return items
-    .filter((item) => item.text?.trim())
-    .map((item) => item.text!.trim())
-    .join("\n\n");
-}
 
-function implementationPlanFromStep(step: ChatMessage["step"]): string {
-  const plannerResponse = step?.plannerResponse;
-  if (!plannerResponse) return "";
-
-  const thinking = plannerResponse.thinking?.trim();
-  if (thinking) return plannerResponse.thinking ?? "";
-
-  const itemText = textFromStepItems(plannerResponse.items);
-  if (!plannerResponse.modifiedResponse?.trim() && itemText) return itemText;
-
-  return "";
-}
-
-interface LiveImplementationPlan {
-  plan: string;
-  duration?: string;
-  stepIndex: number;
-}
-
-function latestImplementationPlan(
-  steps: ChatMessage["step"][],
-): LiveImplementationPlan | null {
-  for (let index = steps.length - 1; index >= 0; index--) {
-    const step = steps[index];
-    const plan = implementationPlanFromStep(step);
-    if (plan.trim()) {
-      return {
-        plan,
-        duration: step?.plannerResponse?.thinkingDuration,
-        stepIndex: index,
-      };
-    }
-  }
-
-  return null;
-}
 
 /** Map icon key → Lucide component */
 function MsgIcon({ name }: { name?: string }) {
@@ -224,35 +289,391 @@ function MsgIcon({ name }: { name?: string }) {
   }
 }
 
-function PinnedImplementationPlanMessage({
-  implementationPlan,
-  live,
+interface ChatTurn {
+  id: string;
+  userMessage?: ChatMessage;
+  stepMessages: ChatMessage[];
+  errorMessages: ChatMessage[];
+  thinking?: string;
+  thinkingDuration?: string | number;
+  duration?: string | number;
+  assistantMessage?: ChatMessage;
+  isLive?: boolean;
+}
+
+export const TurnStepsCollapsible = memo(function TurnStepsCollapsible({
+  duration,
+  thinkingDuration,
+  isLive = false,
+  thinking,
+  steps,
+  onFilePermission,
+  onCommandAction,
+  onAskQuestion,
+  onOpenFile,
+  onSelectSubagent,
 }: {
-  implementationPlan: LiveImplementationPlan;
-  live: boolean;
+  duration?: string | number;
+  thinkingDuration?: string | number;
+  isLive?: boolean;
+  thinking?: string;
+  steps: ChatMessage[];
+  onFilePermission?: (
+    trajectoryId: string,
+    stepIndex: number,
+    allow: boolean,
+    scope: number,
+    absolutePathUri: string,
+  ) => void;
+  onCommandAction?: (
+    trajectoryId: string,
+    stepIndex: number,
+    approved: boolean,
+  ) => Promise<void>;
+  onAskQuestion?: (
+    trajectoryId: string,
+    stepIndex: number,
+    responses: AskQuestionEntry[],
+    cancelled?: boolean,
+  ) => Promise<void>;
+  onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
+  onSelectSubagent?: (id: string) => void;
 }) {
+  const [workOpen, setWorkOpen] = useState(isLive);
+  const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setWorkOpen(isLive);
+  }, [isLive]);
+
+  const renderedThinking = useMemo(
+    () => (thinking ? renderMarkdown(thinking) : ""),
+    [thinking],
+  );
+
+  const workLabel = isLive
+    ? "正在深度思考与执行…"
+    : formatWorkDuration(duration);
+
+  const thinkingLabel = formatThinkingDuration(thinkingDuration);
+
   return (
     <div className="message assistant pinned-implementation-plan-message">
       <div
         className={`chat-block message-body pinned-implementation-plan-body${
-          live ? " live" : ""
+          isLive ? " live" : ""
         }`}
       >
-        <ImplementationPlanBlock
-          plan={implementationPlan.plan}
-          duration={implementationPlan.duration}
-          live={live}
-        />
+        {/* 外层大折叠块 (工作时长：汇总思考与所有修改步骤，默认收缩) */}
+        <details
+          className={`zcode-thinking-block zcode-work-block${isLive ? " live" : ""}`}
+          open={workOpen}
+          onToggle={(e) => setWorkOpen(e.currentTarget.open)}
+        >
+          <summary className="zcode-thinking-header zcode-work-header">
+            <div className="zcode-work-header-left">
+              <IconBrain size={14} className="zcode-thinking-brain-icon" />
+              <span className="zcode-thinking-label">{workLabel}</span>
+              {steps.length > 0 && (
+                <span className="zcode-work-step-pill">
+                  {steps.length} 个步骤
+                </span>
+              )}
+              {isLive && (
+                <span className="zcode-work-live-dot" title="正在实时执行" />
+              )}
+            </div>
+            <span className="zcode-thinking-chevron">
+              <IconChevron size={12} className={workOpen ? "is-open" : ""} />
+            </span>
+          </summary>
+
+          <div className="zcode-work-content">
+            {/* 1. 内层思考过程折叠块 (思考时长：仅折叠/展开思维链，默认也是收缩的) */}
+            {thinking && (
+              <details
+                className="zcode-thinking-inner-block"
+                open={thinkingOpen}
+                onToggle={(e) => setThinkingOpen(e.currentTarget.open)}
+              >
+                <summary className="zcode-thinking-inner-header">
+                  <IconBrain size={14} className="zcode-thinking-brain-icon" />
+                  <span className="zcode-thinking-label">{thinkingLabel}</span>
+                  <span className="zcode-thinking-chevron">
+                    <IconChevron size={11} className={thinkingOpen ? "is-open" : ""} />
+                  </span>
+                </summary>
+
+                <div className="zcode-thinking-content">
+                  <div className="zcode-thinking-inner-text">
+                    <MarkdownContent html={renderedThinking} />
+                    <div className="zcode-thinking-actions">
+                      <button
+                        className="msg-action-btn zcode-thinking-copy"
+                        title="复制思考过程"
+                        onClick={() => {
+                          if (!thinking) return;
+                          void copyText(thinking).then((success) => {
+                            if (success) {
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 1500);
+                            }
+                          });
+                        }}
+                      >
+                        {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            )}
+
+            {/* 2. 下方的工具与文件修改步骤列表 (探索、读取、编辑、运行指令等) */}
+            {steps.length > 0 && (
+              <div className="turn-steps-list">
+                {steps.map((stepMsg, idx) => (
+                  <SystemMessage
+                    key={stepMsg.optimisticId ?? `${stepMsg.stepIndex}-${idx}`}
+                    msg={stepMsg}
+                    onFilePermission={onFilePermission || (() => {})}
+                    onCommandAction={onCommandAction}
+                    onAskQuestion={onAskQuestion}
+                    onOpenFile={onOpenFile}
+                    onSelectSubagent={onSelectSubagent}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
       </div>
     </div>
   );
+});
+
+export function isErrorMessage(msg: ChatMessage): boolean {
+  if (msg.role === "user") return false;
+
+  // 1. Explicit error types generated by server/proxy or error step handlers
+  if (msg.type === "error" || msg.icon === "alert" || (msg.role as any) === "error") {
+    return true;
+  }
+
+  // 2. Normal assistant messages should NEVER be classified as errors
+  // unless they are explicitly raw RPC/HTTP network exceptions (like raw JSON {"error": ...} or raw Error: Post ...)
+  if (msg.role === "assistant") {
+    const content = (msg.content || "").trim();
+    if (
+      /^Error:\s*(?:request failed|Post\s*\"https?:\/\/|wsasend|forcibly closed|status code:\s*429|RESOURCE_EXHAUSTED)/i.test(content) ||
+      (/^\{[\s\S]*\"(?:error|error_message|errorMessage)\"[\s\S]*\}$/.test(content) && content.length < 500)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // 3. System messages that are raw error strings
+  const content = (msg.content || "").trim();
+  if (
+    /^(?:Error:|Request failed|Status code:?\s*(?:429|500|502|503)|baseline model quota reached|resource_exhausted|wsasend|forcibly closed|streamgeneratecontent)/i.test(
+      content,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
-function SystemMessage({
+export function deduplicateErrorMessages(errors: ChatMessage[]): ChatMessage[] {
+  if (errors.length <= 1) return errors;
+
+  const parsed = errors.map((e) => ({
+    msg: e,
+    info: parseQuotaError(e.content),
+  }));
+
+  // 1. Prioritize baseline quota error with refresh time, then any baseline quota error
+  const baselineWithTime = parsed.find(
+    (p) => p.info.errorType === "baseline_quota" && p.info.refreshTime,
+  );
+  if (baselineWithTime) return [baselineWithTime.msg];
+
+  const baseline = parsed.find((p) => p.info.errorType === "baseline_quota");
+  if (baseline) return [baseline.msg];
+
+  // 2. Prioritize rate limit error
+  const rateLimit = parsed.find((p) => p.info.errorType === "rate_limit");
+  if (rateLimit) return [rateLimit.msg];
+
+  // 3. Prioritize stream disconnect error
+  const streamDisconnect = parsed.find(
+    (p) => p.info.errorType === "stream_disconnect",
+  );
+  if (streamDisconnect) return [streamDisconnect.msg];
+
+  // 4. Fallback: Deduplicate by unique cleaned detail/summary and keep at most 1 primary alert
+  const seen = new Set<string>();
+  const unique: ChatMessage[] = [];
+  for (const p of parsed) {
+    const key = p.info.detail || p.msg.content;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(p.msg);
+    }
+  }
+  return unique.slice(0, 1);
+}
+
+export function groupMessagesIntoTurns(
+  messages: ChatMessage[],
+  isWsRunning: boolean,
+): ChatTurn[] {
+  if (messages.length === 0) return [];
+
+  const turns: ChatTurn[] = [];
+  let currentTurn: ChatTurn = {
+    id: "turn-0",
+    stepMessages: [],
+    errorMessages: [],
+  };
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (msg.role === "user") {
+      if (
+        currentTurn.userMessage ||
+        currentTurn.stepMessages.length > 0 ||
+        currentTurn.errorMessages.length > 0 ||
+        currentTurn.assistantMessage ||
+        currentTurn.thinking
+      ) {
+        currentTurn.errorMessages = deduplicateErrorMessages(
+          currentTurn.errorMessages,
+        );
+        turns.push(currentTurn);
+      }
+      currentTurn = {
+        id: `turn-${i}`,
+        userMessage: msg,
+        stepMessages: [],
+        errorMessages: [],
+      };
+      continue;
+    }
+
+    if (isErrorMessage(msg)) {
+      currentTurn.errorMessages.push(msg);
+      continue;
+    }
+
+    if (msg.thinking) {
+      if (!currentTurn.thinking) {
+        currentTurn.thinking = msg.thinking;
+      } else {
+        currentTurn.thinking += `\n\n${msg.thinking}`;
+      }
+    }
+    if (msg.thinkingDuration) {
+      currentTurn.thinkingDuration = msg.thinkingDuration;
+      if (!currentTurn.duration) {
+        currentTurn.duration = msg.thinkingDuration;
+      }
+    }
+
+    currentTurn.stepMessages.push(msg);
+  }
+
+  if (
+    currentTurn.userMessage ||
+    currentTurn.stepMessages.length > 0 ||
+    currentTurn.errorMessages.length > 0 ||
+    currentTurn.assistantMessage ||
+    currentTurn.thinking
+  ) {
+    currentTurn.errorMessages = deduplicateErrorMessages(
+      currentTurn.errorMessages,
+    );
+    turns.push(currentTurn);
+  }
+
+  for (let t = 0; t < turns.length; t++) {
+    const turn = turns[t];
+    const isLastTurn = t === turns.length - 1;
+
+    if (isLastTurn && isWsRunning) {
+      turn.isLive = true;
+    }
+
+    // Promote the last assistant response with text to turn.assistantMessage (final report)
+    if (turn.stepMessages.length > 0) {
+      let lastAssistantIdx = -1;
+      for (let m = turn.stepMessages.length - 1; m >= 0; m--) {
+        const sm = turn.stepMessages[m];
+        if (sm.role === "assistant" && sm.content && sm.content.trim()) {
+          lastAssistantIdx = m;
+          break;
+        }
+      }
+
+      if (lastAssistantIdx !== -1) {
+        // If not live, or if the assistant message is at the end of the steps, it is the final response
+        const isAtEnd = lastAssistantIdx === turn.stepMessages.length - 1;
+        if (!turn.isLive || isAtEnd) {
+          turn.assistantMessage = turn.stepMessages[lastAssistantIdx];
+          turn.stepMessages.splice(lastAssistantIdx, 1);
+        }
+      }
+    }
+
+    // Calculate actual elapsed duration across all steps and messages in the turn
+    const timestamps: number[] = [];
+    const collectTime = (step?: TrajectoryStep) => {
+      if (!step?.metadata) return;
+      if (step.metadata.createdAt) {
+        const time = new Date(step.metadata.createdAt).getTime();
+        if (!isNaN(time) && time > 0) timestamps.push(time);
+      }
+      if (step.metadata.completedAt) {
+        const time = new Date(step.metadata.completedAt).getTime();
+        if (!isNaN(time) && time > 0) timestamps.push(time);
+      }
+    };
+
+    if (turn.userMessage?.step) collectTime(turn.userMessage.step);
+    for (const sm of turn.stepMessages) {
+      if (sm.step) collectTime(sm.step);
+    }
+    for (const em of turn.errorMessages) {
+      if (em.step) collectTime(em.step);
+    }
+    if (turn.assistantMessage?.step) collectTime(turn.assistantMessage.step);
+
+    if (timestamps.length >= 2) {
+      const minTime = Math.min(...timestamps);
+      const maxTime = Math.max(...timestamps);
+      if (maxTime > minTime) {
+        const elapsedSecs = (maxTime - minTime) / 1000;
+        if (elapsedSecs >= 0.1) {
+          turn.duration = elapsedSecs;
+        }
+      }
+    }
+  }
+
+  return turns;
+}
+
+const SystemMessage = memo(function SystemMessage({
   msg,
   onFilePermission,
   onCommandAction,
   onAskQuestion,
+  onOpenFile,
+  onSelectSubagent,
 }: {
   msg: ChatMessage;
   onFilePermission: (
@@ -273,6 +694,8 @@ function SystemMessage({
     responses: AskQuestionEntry[],
     cancelled?: boolean,
   ) => Promise<void>;
+  onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
+  onSelectSubagent?: (id: string) => void;
 }) {
   const renderedContent = useMemo(
     () => renderMarkdown(msg.content ?? ""),
@@ -321,14 +744,14 @@ function SystemMessage({
     if (msg.type === "CORTEX_STEP_TYPE_CODE_ACTION") {
       return (
         <div className="message system">
-          <CodeActionCard step={msg.step} />
+          <CodeActionCard step={msg.step} onOpenFile={onOpenFile} />
         </div>
       );
     }
     if (msg.type === "CORTEX_STEP_TYPE_SUBAGENT") {
       return (
         <div className="message system">
-          <SubagentCard step={msg.step} data={msg.subagent} />
+          <SubagentCard step={msg.step} data={msg.subagent} onSelectSubagent={onSelectSubagent} />
         </div>
       );
     }
@@ -349,6 +772,18 @@ function SystemMessage({
     );
   }
 
+  if (msg.explorationGroup && msg.explorationGroup.items.length > 0) {
+    return (
+      <div className="message system">
+        <ExplorationCard exploration={msg.explorationGroup} onOpenFile={onOpenFile} />
+      </div>
+    );
+  }
+
+  if (!renderedContent.trim() && !msg.icon) {
+    return null;
+  }
+
   return (
     <div className="message system">
       <div className="chat-block step-card info-card">
@@ -366,12 +801,157 @@ function SystemMessage({
       </div>
     </div>
   );
-}
+});
 
-interface MediaItem {
-  mimeType?: string;
-  inlineData?: string;
-  payload?: { case?: string; value?: string };
+export function resolveMediaSrc(m: unknown): string | null {
+  if (!m) return null;
+  const base = getApiBase();
+  const toProxyUrl = (pathOrUri: string) => `${base}/api/files?uri=${encodeURIComponent(pathOrUri)}`;
+
+  // 1. String media
+  if (typeof m === "string") {
+    const trimmed = m.trim();
+    if (!trimmed) return null;
+    if (
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("blob:")
+    ) {
+      return trimmed;
+    }
+    if (
+      trimmed.startsWith("file://") ||
+      trimmed.startsWith("/") ||
+      /^[A-Za-z]:[\\/]/.test(trimmed)
+    ) {
+      return toProxyUrl(trimmed);
+    }
+    return `data:image/png;base64,${trimmed}`;
+  }
+
+  // 2. Object media
+  if (typeof m !== "object") return null;
+  const item = m as Record<string, any>;
+  const mimeType =
+    item.mimeType ||
+    item.mime_type ||
+    item.type ||
+    item.contentType ||
+    "image/png";
+
+  // Check file URIs or paths first
+  const fileRef =
+    item.uri ||
+    item.fileUri ||
+    item.file_uri ||
+    item.url ||
+    item.src ||
+    item.path ||
+    item.filePath ||
+    item.file_path;
+
+  if (typeof fileRef === "string" && fileRef.trim()) {
+    const trimmed = fileRef.trim();
+    if (
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("blob:")
+    ) {
+      return trimmed;
+    }
+    return toProxyUrl(trimmed);
+  }
+
+  // Check payload from Connect RPC / Protobuf
+  if (item.payload) {
+    if (typeof item.payload === "string") {
+      const trimmed = item.payload.trim();
+      if (
+        trimmed.startsWith("file://") ||
+        trimmed.startsWith("/") ||
+        /^[A-Za-z]:[\\/]/.test(trimmed)
+      ) {
+        return toProxyUrl(trimmed);
+      }
+      if (
+        trimmed.startsWith("data:") ||
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://")
+      ) {
+        return trimmed;
+      }
+      return `data:${mimeType};base64,${trimmed}`;
+    }
+
+    if (typeof item.payload === "object") {
+      const pCase = item.payload.case;
+      let pVal =
+        item.payload.value ?? item.payload.inlineData ?? item.payload.data;
+      let effMime = mimeType;
+      if (typeof pVal === "object" && pVal !== null) {
+        if (pVal.mimeType || pVal.mime_type) effMime = pVal.mimeType || pVal.mime_type;
+        pVal = pVal.data || pVal.inlineData || pVal.value || pVal.bytes || pVal.fileUri || pVal.uri;
+      }
+      if (typeof pVal === "string" && pVal.trim()) {
+        const trimmed = pVal.trim();
+        if (
+          pCase === "fileUri" ||
+          pCase === "uri" ||
+          pCase === "path" ||
+          trimmed.startsWith("file://") ||
+          trimmed.startsWith("/") ||
+          /^[A-Za-z]:[\\/]/.test(trimmed)
+        ) {
+          return toProxyUrl(trimmed);
+        }
+        if (
+          trimmed.startsWith("data:") ||
+          trimmed.startsWith("http://") ||
+          trimmed.startsWith("https://") ||
+          trimmed.startsWith("blob:")
+        ) {
+          return trimmed;
+        }
+        return `data:${effMime};base64,${trimmed}`;
+      }
+    }
+  }
+
+  // Check inlineData / inline_data / data / bytes / base64
+  let rawData =
+    item.inlineData ??
+    item.inline_data ??
+    item.data ??
+    item.bytes ??
+    item.base64;
+
+  if (typeof rawData === "object" && rawData !== null) {
+    rawData =
+      rawData.data || rawData.inlineData || rawData.value || rawData.bytes;
+  }
+
+  if (typeof rawData === "string" && rawData.trim()) {
+    const trimmed = rawData.trim();
+    if (
+      trimmed.startsWith("file://") ||
+      trimmed.startsWith("/") ||
+      /^[A-Za-z]:[\\/]/.test(trimmed)
+    ) {
+      return `/api/files?uri=${encodeURIComponent(trimmed)}`;
+    }
+    if (
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://")
+    ) {
+      return trimmed;
+    }
+    return `data:${mimeType};base64,${trimmed}`;
+  }
+
+  return null;
 }
 
 /** Render media thumbnails from a user message */
@@ -382,18 +962,14 @@ function MediaThumbs({
   media: unknown[];
   onImageClick?: (src: string) => void;
 }) {
+  if (!media || media.length === 0) return null;
+
   return (
     <div className="message-media">
       {media.map((m, i) => {
-        const item = m as MediaItem;
-        const mimeType = item.mimeType ?? "image/png";
-        const inlineData =
-          item.inlineData ??
-          (item.payload?.case === "inlineData"
-            ? item.payload.value
-            : undefined);
-        if (!inlineData) return null;
-        const src = `data:${mimeType};base64,${inlineData}`;
+        const src = resolveMediaSrc(m);
+        if (!src) return null;
+
         return (
           <img
             key={i}
@@ -401,6 +977,7 @@ function MediaThumbs({
             alt="attachment"
             className="message-media-thumb"
             onClick={() => onImageClick?.(src)}
+            title="点击查看大图"
           />
         );
       })}
@@ -416,9 +993,11 @@ function CopyButton({ text }: { text: string }) {
       className="msg-action-btn"
       title="复制"
       onClick={() => {
-        navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+        void copyText(text).then((success) => {
+          if (success) {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }
         });
       }}
     >
@@ -427,19 +1006,81 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/** Detects if an assistant message prompts user to Proceed / continue / confirm plan */
+export function detectProceedPrompt(
+  content?: string,
+  role?: string,
+): {
+  isProceed: boolean;
+  planFile?: string;
+  label?: string;
+  promptText?: string;
+} {
+  if (!content || role !== "assistant") return { isProceed: false };
+
+  // 1. Detect keywords asking user to Proceed or continue
+  const hasProceedKeyword =
+    /点击\s*Proceed|回复\s*继续|点击\s*继续|Proceed\s*或回复继续|确认无误后点击|确认无误后\s*Proceed|输入\s*“?Proceed”?|点击\s*“?Proceed”?|Proceed\s*to\s*continue|Click\s*Proceed|点\s*Proceed|点击下方.*继续/i.test(
+      content,
+    ) ||
+    /点击\s*\[?Proceed\]?|输入\s*\[?Proceed\]?|“?Proceed”?\s*按钮/i.test(content);
+
+  // 2. Extract potential plan filename (e.g. implementation_plan.md)
+  const planMatch = content.match(/([a-zA-Z0-9_\-\/]+\.(?:md|markdown|plan))/i);
+  const planFile = planMatch ? planMatch[1] : undefined;
+
+  if (hasProceedKeyword) {
+    let label = "Proceed (继续执行)";
+    let promptText = "请审阅方案，确认无误后点击下方按钮继续";
+    if (/Proceed/i.test(content)) {
+      label = "Proceed (继续)";
+    }
+    return {
+      isProceed: true,
+      planFile,
+      label,
+      promptText,
+    };
+  }
+
+  // 3. Detect plan artifact confirmation patterns
+  if (
+    content.includes("RequestFeedback") ||
+    (content.includes("implementation_plan.md") &&
+      /请审阅|请确认|开始编码|开始实现/i.test(content))
+  ) {
+    return {
+      isProceed: true,
+      planFile: planFile || "implementation_plan.md",
+      label: "Proceed (开始编码)",
+      promptText: "方案已制定完成，点击继续开始编码",
+    };
+  }
+
+  return { isProceed: false, planFile };
+}
+
 /** Memoized message bubble — prevents WS-driven re-renders from destroying caret/selection */
 interface MessageBubbleProps {
   msg: ChatMessage;
   isLocked: boolean;
   isUnconfirmed: boolean;
   suppressImplementationPlan?: boolean;
-  onRevert: (stepIndex: number, editText?: string) => void;
-  onOpenRevertConfirm?: (stepIndex: number, draftContent?: string) => void;
-  onImageClick: (src: string) => void;
+  onRevert?: (stepIndex: number, editText?: string, editMedia?: unknown[]) => void;
+  onOpenRevertConfirm?: (stepIndex: number, draftContent?: string, draftMedia?: unknown[]) => void;
+  onImageClick?: (src: string) => void;
   onQuote?: (text: string) => void;
+  onSendMessage?: (text: string) => void;
+  onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
+  isConversationRunning?: boolean;
+  isLatestAssistantMessage?: boolean;
+  hasProceeded?: boolean;
+  onProceed?: (stepIndex: number) => void;
+  subagentSessions?: SubagentSession[];
+  onSelectSubagent?: (id: string) => void;
 }
 
-const MessageBubble = memo(
+export const MessageBubble = memo(
   function MessageBubble({
     msg,
     isLocked,
@@ -449,6 +1090,14 @@ const MessageBubble = memo(
     onOpenRevertConfirm,
     onImageClick,
     onQuote,
+    onSendMessage,
+    onOpenFile,
+    isConversationRunning = false,
+    isLatestAssistantMessage = false,
+    hasProceeded = false,
+    onProceed,
+    subagentSessions: _subagentSessions = [],
+    onSelectSubagent: _onSelectSubagent,
   }: MessageBubbleProps) {
     const [actionSheetOpen, setActionSheetOpen] = useState(false);
     const touchHandlers = useMessageTouchGesture({
@@ -461,6 +1110,18 @@ const MessageBubble = memo(
     );
     const showImplementationPlan =
       Boolean(msg.thinking) && !suppressImplementationPlan;
+
+    const proceedInfo = useMemo(
+      () => (msg.role === "assistant" ? detectProceedPrompt(msg.content, msg.role) : { isProceed: false }),
+      [msg.content, msg.role],
+    );
+
+    const showProceedCard =
+      msg.role === "assistant" &&
+      isLatestAssistantMessage &&
+      !isConversationRunning &&
+      !hasProceeded &&
+      proceedInfo.isProceed;
 
     if (
       !showImplementationPlan &&
@@ -475,11 +1136,6 @@ const MessageBubble = memo(
         className={`message ${msg.role}${isUnconfirmed ? " unconfirmed" : ""}`}
         {...touchHandlers}
       >
-        {msg.role === "assistant" && (
-          <div className="message-avatar" title="Gemini AI">
-            <IconGemini size={15} />
-          </div>
-        )}
         <div className="chat-block message-body">
           {showImplementationPlan && msg.thinking && (
             <ImplementationPlanBlock
@@ -490,15 +1146,70 @@ const MessageBubble = memo(
           {msg.media && msg.media.length > 0 && (
             <MediaThumbs media={msg.media} onImageClick={onImageClick} />
           )}
+          {/* Normal Assistant Markdown content */}
           {msg.content && <MarkdownContent html={renderedContent} />}
+
+          {/* Interactive Proceed Callout Card — Only shown when this is the latest assistant message, not yet clicked, and agent is idle */}
+          {showProceedCard && (
+            <div className="msg-proceed-card">
+              <div className="msg-proceed-header">
+                <div className="msg-proceed-title-wrap">
+                  <IconSparkles size={14} className="msg-proceed-sparkle" />
+                  <span className="msg-proceed-title">
+                    {proceedInfo.promptText || "方案已确认就绪，点击下方按钮继续"}
+                  </span>
+                </div>
+              </div>
+              <div className="msg-proceed-actions">
+                <button
+                  type="button"
+                  className="msg-proceed-btn primary"
+                  onClick={() => {
+                    triggerHaptic("medium");
+                    if (onProceed) {
+                      onProceed(msg.stepIndex);
+                    }
+                    if (onSendMessage) {
+                      onSendMessage("Proceed");
+                    }
+                  }}
+                  disabled={isConversationRunning}
+                  title="点击发送 Proceed，继续执行后续任务"
+                >
+                  <IconPlay size={13} />
+                  <span>{proceedInfo.label || "Proceed (继续)"}</span>
+                </button>
+
+                {proceedInfo.planFile && onOpenFile && (
+                  <button
+                    type="button"
+                    className="msg-proceed-btn secondary"
+                    onClick={() => {
+                      triggerHaptic("light");
+                      onOpenFile({
+                        name: proceedInfo.planFile!.split("/").pop() || proceedInfo.planFile!,
+                        path: proceedInfo.planFile,
+                        ext: "md",
+                      });
+                    }}
+                    title={`在侧边面板中预览 ${proceedInfo.planFile}`}
+                  >
+                    <IconFileText size={13} />
+                    <span>查看方案详情</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {msg.content && (
             <div className="msg-actions">
               {msg.role === "user" && (
                 <button
                   className="msg-action-btn"
                   onClick={() => {
-                    if (msg.content) {
-                      onRevert(-1, msg.content);
+                    if (msg.content || (msg.media && msg.media.length > 0)) {
+                      onRevert?.(-1, msg.content, msg.media);
                     }
                   }}
                   title="填入输入框（安全编辑，不修改代码）"
@@ -506,7 +1217,7 @@ const MessageBubble = memo(
                   <IconEdit size={13} />
                 </button>
               )}
-              {msg.stepIndex >= 0 && (
+              {msg.role === "user" && msg.stepIndex >= 0 && (
                 <button
                   className={`msg-action-btn ${isLocked ? "locked" : ""}`}
                   onClick={() => {
@@ -514,12 +1225,14 @@ const MessageBubble = memo(
                       if (onOpenRevertConfirm) {
                         onOpenRevertConfirm(
                           msg.stepIndex,
-                          msg.role === "user" ? msg.content : undefined,
+                          msg.content,
+                          msg.media,
                         );
                       } else {
-                        onRevert(
+                        onRevert?.(
                           msg.stepIndex,
-                          msg.role === "user" ? msg.content : undefined,
+                          msg.content,
+                          msg.media,
                         );
                       }
                     }
@@ -559,10 +1272,12 @@ const MessageBubble = memo(
             open={actionSheetOpen}
             onClose={() => setActionSheetOpen(false)}
             messageText={msg.content || ""}
+            media={msg.media}
             isUserMessage={msg.role === "user"}
             stepIndex={msg.stepIndex}
             onQuote={onQuote}
             onRevert={onRevert}
+            onOpenRevertConfirm={onOpenRevertConfirm}
           />
         )}
       </div>
@@ -577,64 +1292,24 @@ const MessageBubble = memo(
     prev.msg.media === next.msg.media &&
     prev.isLocked === next.isLocked &&
     prev.isUnconfirmed === next.isUnconfirmed &&
-    prev.suppressImplementationPlan === next.suppressImplementationPlan,
+    prev.suppressImplementationPlan === next.suppressImplementationPlan &&
+    prev.isConversationRunning === next.isConversationRunning &&
+    prev.isLatestAssistantMessage === next.isLatestAssistantMessage &&
+    prev.hasProceeded === next.hasProceeded &&
+    prev.onProceed === next.onProceed &&
+    prev.onSendMessage === next.onSendMessage &&
+    prev.onOpenFile === next.onOpenFile &&
+    prev.subagentSessions === next.subagentSessions &&
+    prev.onSelectSubagent === next.onSelectSubagent,
 );
 
-/** Fullscreen image lightbox with swipe-down-to-dismiss */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  const [dragY, setDragY] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const startY = useRef(0);
-  const DISMISS_THRESHOLD = 120;
-
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    startY.current = e.touches[0].clientY;
-    setDragging(true);
-  }, []);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    const dy = e.touches[0].clientY - startY.current;
-    // Only allow downward drag
-    setDragY(Math.max(0, dy));
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    setDragging(false);
-    if (dragY > DISMISS_THRESHOLD) {
-      onClose();
-    } else {
-      setDragY(0);
-    }
-  }, [dragY, onClose]);
-
-  const progress = Math.min(dragY / DISMISS_THRESHOLD, 1);
-  const overlayOpacity = 0.9 - progress * 0.5;
-
-  return (
-    <div
-      className="lightbox-overlay"
-      style={{ backgroundColor: `rgba(0, 0, 0, ${overlayOpacity})` }}
-      onClick={onClose}
-    >
-      <img
-        src={src}
-        className="lightbox-img"
-        alt="Expanded"
-        style={{
-          transform: `translateY(${dragY}px) scale(${1 - progress * 0.1})`,
-          transition: dragging ? "none" : "transform 0.25s ease-out",
-        }}
-        onClick={(e) => e.stopPropagation()}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      />
-    </div>
-  );
-}
+const revertPreviewCache = new Map<string, RevertFileChange[]>();
 
 export function ChatPanel({
   cascadeId,
+  activeSubagentId: _activeSubagentIdProp,
+  onSelectSubagent: onSelectSubagentProp,
+  onCloseSubagent: _onCloseSubagentProp,
   onRevert,
   onFilePermission,
   onCommandAction,
@@ -648,8 +1323,15 @@ export function ChatPanel({
   browserNotificationsEnabled = false,
   conversationTitle,
   onQuoteMessage,
+  onOpenFile,
+  onOpenReview,
   onSidebarRefresh,
+  onSendMessage,
 }: Props) {
+  const [proceededStepIndexes, setProceededStepIndexes] = useState<Set<number>>(() => new Set());
+  const handleProceed = useCallback((stepIndex: number) => {
+    setProceededStepIndexes((prev) => new Set(prev).add(stepIndex));
+  }, []);
   const {
     steps: rawSteps,
     baseOffset,
@@ -678,15 +1360,39 @@ export function ChatPanel({
     conversationTitle,
   });
 
-  const [
-    pinnedImplementationPlanStepIndex,
-    setPinnedImplementationPlanStepIndex,
-  ] = useState<number | null>(null);
-
   const [revertConfirmTarget, setRevertConfirmTarget] = useState<{
     stepIndex: number;
     draftContent?: string;
+    draftMedia?: unknown[];
+    files: RevertFileChange[];
   } | null>(null);
+
+  const handleOpenRevertConfirm = useCallback(
+    async (stepIndex: number, draftContent?: string, draftMedia?: unknown[]) => {
+      if (!cascadeId || stepIndex < 0) {
+        setRevertConfirmTarget({ stepIndex, draftContent, draftMedia, files: [] });
+        return;
+      }
+      const targetStep = stepIndex;
+      const key = `${cascadeId}:${targetStep}`;
+      const cached = revertPreviewCache.get(key);
+      if (cached) {
+        setRevertConfirmTarget({ stepIndex, draftContent, draftMedia, files: cached });
+        return;
+      }
+
+      try {
+        const res = await api.getRevertPreview(cascadeId, targetStep);
+        const files = res?.files ?? [];
+        revertPreviewCache.set(key, files);
+        setRevertConfirmTarget({ stepIndex, draftContent, draftMedia, files });
+      } catch (e) {
+        console.warn("Failed to fetch revert preview:", e);
+        setRevertConfirmTarget({ stepIndex, draftContent, draftMedia, files: [] });
+      }
+    },
+    [cascadeId],
+  );
 
   // Soft re-fetch when refreshKey changes (e.g. after send)
   const prevKeyRef = useRef(refreshKey);
@@ -708,19 +1414,19 @@ export function ChatPanel({
 
   // Reset scroll state when switching chats
   const prevCascadeRef = useRef(cascadeId);
+  const initialScrollTimestampRef = useRef(Date.now());
+  const hasUserScrolledRef = useRef(false);
+
   useEffect(() => {
     if (cascadeId !== prevCascadeRef.current) {
       prevCascadeRef.current = cascadeId;
       didInitialScroll.current = false;
-      setPinnedImplementationPlanStepIndex(null);
+      hasUserScrolledRef.current = false;
+      initialScrollTimestampRef.current = Date.now();
     }
   }, [cascadeId]);
 
   const serverMessages = useMemo(() => stepsToMessages(rawSteps, baseOffset), [rawSteps, baseOffset]);
-  const liveImplementationPlan = useMemo(
-    () => latestImplementationPlan(rawSteps),
-    [rawSteps],
-  );
   const {
     messages,
     confirmedOptimisticIds,
@@ -729,6 +1435,20 @@ export function ChatPanel({
     () => mergeOptimisticMessages(serverMessages, optimisticMessages),
     [serverMessages, optimisticMessages],
   );
+
+  const turns = useMemo(
+    () => groupMessagesIntoTurns(messages, wsRunning),
+    [messages, wsRunning],
+  );
+
+  const planData = usePlanTracker(cascadeId, rawSteps, messages);
+
+  const {
+    subagents: subagentSessions,
+    openSubagent: hookOpenSubagent,
+  } = useSubagentViewer(rawSteps);
+
+  const openSubagent = onSelectSubagentProp || hookOpenSubagent;
 
   useEffect(() => {
     if (confirmedOptimisticIds.length === 0 || !onConfirmOptimistic) return;
@@ -740,29 +1460,35 @@ export function ChatPanel({
     lastMsg?.role === "assistant" && Boolean(lastMsg.content.trim());
   const isLocked = wsRunning && !lastIsAssistantWithContent;
   const showTyping = (wsRunning || hasUnconfirmedOptimistic) && !lastIsAssistantWithContent;
-  const liveImplementationPlanActive =
-    (wsRunning || hasUnconfirmedOptimistic) && liveImplementationPlan !== null;
-  const pinnedImplementationPlan =
-    liveImplementationPlan &&
-    (liveImplementationPlanActive ||
-      pinnedImplementationPlanStepIndex === liveImplementationPlan.stepIndex)
-      ? liveImplementationPlan
-      : null;
-  const pinnedPlanInsertBeforeMessageIndex = useMemo(() => {
-    if (!pinnedImplementationPlan) return -1;
-    return messages.findIndex(
-      (msg) =>
-        msg.role === "assistant" &&
-        msg.stepIndex >= pinnedImplementationPlan.stepIndex &&
-        Boolean(msg.content.trim()),
-    );
-  }, [messages, pinnedImplementationPlan]);
 
+  // Preload revert previews in the background so opening modal is 100% instant (0ms)
   useEffect(() => {
-    if (liveImplementationPlanActive && liveImplementationPlan) {
-      setPinnedImplementationPlanStepIndex(liveImplementationPlan.stepIndex);
+    if (!cascadeId || rawSteps.length === 0) return;
+    const targetSteps = messages
+      .filter((m) => m.role === "user" && m.stepIndex >= 0)
+      .slice(-10)
+      .map((m) => m.stepIndex);
+
+    for (const targetStep of targetSteps) {
+      const key = `${cascadeId}:${targetStep}`;
+      if (!revertPreviewCache.has(key)) {
+        api
+          .getRevertPreview(cascadeId, targetStep)
+          .then((res: { files?: RevertFileChange[] }) => {
+            if (res?.files) {
+              revertPreviewCache.set(key, res.files);
+            }
+          })
+          .catch(() => {});
+      }
     }
-  }, [liveImplementationPlanActive, liveImplementationPlan]);
+  }, [cascadeId, messages, rawSteps]);
+
+  // Real-time synchronization of waiting interaction status for sidebar/overview indicator
+  useEffect(() => {
+    if (!cascadeId) return;
+    setConversationWaiting(cascadeId, isAnyStepWaiting(rawSteps));
+  }, [cascadeId, rawSteps]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const didInitialScroll = useRef(false);
@@ -772,28 +1498,61 @@ export function ChatPanel({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const prevMsgCount = useRef(messages.length);
   const suppressScroll = useRef(false);
+  const prevBaseOffsetRef = useRef(baseOffset);
+  const prevScrollHeightRef = useRef(0);
+  const prevScrollTopRef = useRef(0);
+  const isLoadingOlderRef = useRef(false);
 
-  // Auto-scroll: on first render (instant) and when new messages arrive while near bottom
+  // Auto-scroll on initial mount, follow new bottom messages, and restore position on prepend
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     if (!didInitialScroll.current && messages.length > 0) {
-      // eslint-disable-next-line react-hooks/immutability
       didInitialScroll.current = true;
+      initialScrollTimestampRef.current = Date.now();
       el.scrollTop = el.scrollHeight;
+      prevBaseOffsetRef.current = baseOffset;
+      prevMsgCount.current = messages.length;
       return;
     }
 
-    // New messages arrived and user was near the bottom → follow
+    // CASE 1: Older messages prepended at the top (baseOffset decreased)
+    if (baseOffset < prevBaseOffsetRef.current) {
+      const heightDiff = el.scrollHeight - prevScrollHeightRef.current;
+      if (heightDiff > 0) {
+        el.scrollTop = prevScrollTopRef.current + heightDiff;
+      }
+      prevBaseOffsetRef.current = baseOffset;
+      prevMsgCount.current = messages.length;
+      return;
+    }
+
+    prevBaseOffsetRef.current = baseOffset;
+
+    // CASE 2: New messages arrived at the bottom (follow if near bottom)
     if (messages.length > prevMsgCount.current && isNearBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
     prevMsgCount.current = messages.length;
-  }, [messages.length]);
+  }, [messages.length, baseOffset]);
 
-  // Lazy load older steps when user scrolls to top
-  const loadOlderLock = useRef(false);
+  const triggerLoadOlder = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !hasMore || isLoadingOlderRef.current || !didInitialScroll.current) return;
+
+    isLoadingOlderRef.current = true;
+    prevScrollHeightRef.current = el.scrollHeight;
+    prevScrollTopRef.current = el.scrollTop;
+
+    loadOlder().finally(() => {
+      // Cooldown to ensure scroll position settles before allowing next batch on scroll up
+      setTimeout(() => {
+        isLoadingOlderRef.current = false;
+      }, 500);
+    });
+  }, [hasMore, loadOlder]);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el || suppressScroll.current) return;
@@ -807,38 +1566,36 @@ export function ChatPanel({
     }
     isNearBottom.current = distFromBottom < 100;
 
-    // Trigger lazy load when near the top (only after initial scroll-to-bottom)
+    // If user has scrolled significantly away from top, mark user interaction
+    if (el.scrollTop > 80) {
+      hasUserScrolledRef.current = true;
+    }
+
+    // Track scroll snapshot continuously
+    prevScrollHeightRef.current = el.scrollHeight;
+    prevScrollTopRef.current = el.scrollTop;
+
+    // Auto-load older messages ONLY when:
+    // 1. Initial scroll has completed
+    // 2. More than 1200ms has elapsed since opening this chat (prevents loading on switch)
+    // 3. The container is actually long enough to scroll (scrollHeight > clientHeight + 150)
+    // 4. User has actually scrolled down and then reached the extreme top (scrollTop <= 5)
+    // 5. Not currently loading
+    const timeSinceInit = Date.now() - initialScrollTimestampRef.current;
+    const isScrollable = el.scrollHeight > el.clientHeight + 150;
+
     if (
       didInitialScroll.current &&
-      el.scrollTop < 200 &&
+      timeSinceInit > 1200 &&
+      isScrollable &&
+      hasUserScrolledRef.current &&
+      el.scrollTop <= 5 &&
       hasMore &&
-      !loadingOlder &&
-      !loadOlderLock.current
+      !isLoadingOlderRef.current
     ) {
-      loadOlderLock.current = true;
-      const prevHeight = el.scrollHeight;
-      suppressScroll.current = true;
-      loadOlder().then((count) => {
-        if (count > 0 && scrollRef.current) {
-          // Preserve scroll position: offset by the height of prepended content
-          requestAnimationFrame(() => {
-            if (scrollRef.current) {
-              const newHeight = scrollRef.current.scrollHeight;
-              scrollRef.current.scrollTop += newHeight - prevHeight;
-            }
-            // Allow one more frame for the browser to settle before re-enabling
-            requestAnimationFrame(() => {
-              suppressScroll.current = false;
-              loadOlderLock.current = false;
-            });
-          });
-        } else {
-          suppressScroll.current = false;
-          loadOlderLock.current = false;
-        }
-      });
+      triggerLoadOlder();
     }
-  }, [hasMore, loadingOlder, loadOlder]);
+  }, [hasMore, triggerLoadOlder]);
 
   const scrollToBottom = useCallback(() => {
     scrollRef.current?.scrollTo({
@@ -859,35 +1616,20 @@ export function ChatPanel({
 
   const innerRef = useRef<HTMLDivElement>(null);
 
-  // Prevent infinite retry of broken images rendered from markdown.
-  // When an <img> 404s, mark it so subsequent re-renders don't re-request it.
-  const failedImages = useRef<Set<string>>(new Set());
+  // Single capture-phase error listener attached once to handle any broken images in chat
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    const imgs = el.querySelectorAll<HTMLImageElement>(
-      ".message-body img:not([data-failed])",
-    );
-    imgs.forEach((img) => {
-      // If this src already failed, kill it immediately
-      if (failedImages.current.has(img.src)) {
-        img.dataset.failed = "1";
-        img.removeAttribute("src");
-        img.alt = "⚠ 未找到图片";
-        return;
+    const handleError = (e: Event) => {
+      const target = e.target;
+      if (target instanceof HTMLImageElement && target.closest(".message-body")) {
+        target.dataset.failed = "1";
+        target.alt = "⚠ 图片加载失败 (点击可尝试查看)";
       }
-      img.addEventListener(
-        "error",
-        () => {
-          failedImages.current.add(img.src);
-          img.dataset.failed = "1";
-          img.removeAttribute("src");
-          img.alt = "⚠ 未找到图片";
-        },
-        { once: true },
-      );
-    });
-  });
+    };
+    el.addEventListener("error", handleError, true);
+    return () => el.removeEventListener("error", handleError, true);
+  }, []);
 
   // Open lightbox when clicking markdown-rendered <img> in message bodies.
   // Uses React onClick (synthetic event delegation) so it survives dangerouslySetInnerHTML DOM replacement.
@@ -895,8 +1637,7 @@ export function ChatPanel({
     const target = e.target as HTMLElement;
     if (
       target.tagName === "IMG" &&
-      target.closest(".message-body") &&
-      !target.hasAttribute("data-failed")
+      target.closest(".message-body")
     ) {
       e.preventDefault();
       setLightboxSrc((target as HTMLImageElement).src);
@@ -941,123 +1682,227 @@ export function ChatPanel({
   }
 
   return (
-    <div
-      className="chat-area"
-      ref={scrollRef}
-      onScroll={handleScroll}
-      onTouchMove={() => {
-        // Dismiss iOS keyboard when scrolling chat area
-        const el = document.activeElement;
-        if (
-          el instanceof HTMLTextAreaElement ||
-          el instanceof HTMLInputElement
-        ) {
-          el.blur();
-        }
-      }}
-    >
-      <div className="chat-area-inner" ref={innerRef} onClick={handleChatAreaClick}>
-        {loadingOlder && (
-          <div className="loading-older">
-            <div className="loading-spinner" />
-          </div>
-        )}
-
-        {messages.map((msg, i) => {
-          const messageKey = msg.optimisticId ?? `${msg.stepIndex}-${i}`;
-          const pinnedPlanNode =
-            pinnedImplementationPlan &&
-            i === pinnedPlanInsertBeforeMessageIndex ? (
-              <PinnedImplementationPlanMessage
-                implementationPlan={pinnedImplementationPlan}
-                live={liveImplementationPlanActive}
-              />
-            ) : null;
-
-          if (msg.role === "system") {
-            return (
-              <Fragment key={messageKey}>
-                {pinnedPlanNode}
-                <SystemMessage
-                  msg={msg}
-                  onFilePermission={onFilePermission}
-                  onCommandAction={onCommandAction}
-                  onAskQuestion={onAskQuestion}
-                />
-              </Fragment>
-            );
-          }
-
-          return (
-            <Fragment key={messageKey}>
-              {pinnedPlanNode}
-              <MessageBubble
-                msg={msg}
-                isLocked={isLocked}
-                isUnconfirmed={isUnconfirmedOptimisticMessage(msg)}
-                suppressImplementationPlan={
-                  pinnedImplementationPlan?.stepIndex === msg.stepIndex
-                }
-                onRevert={onRevert}
-                onOpenRevertConfirm={(stepIndex, draftContent) =>
-                  setRevertConfirmTarget({ stepIndex, draftContent })
-                }
-                onImageClick={setLightboxSrc}
-                onQuote={onQuoteMessage}
-              />
-            </Fragment>
-          );
-        })}
-        {pinnedImplementationPlan && pinnedPlanInsertBeforeMessageIndex < 0 && (
-          <PinnedImplementationPlanMessage
-            implementationPlan={pinnedImplementationPlan}
-            live={liveImplementationPlanActive}
-          />
-        )}
-        {showTyping && (
-          <div className="message assistant">
-            <div className="message-body">
-              <div className="typing-indicator">
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-      {showScrollBtn && (
-        <button
-          className="scroll-to-bottom-btn"
-          onClick={scrollToBottom}
-          aria-label="滚动到底部"
-        >
-          ↓
-        </button>
-      )}
-      {lightboxSrc &&
-        createPortal(
-          <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />,
-          document.body,
-        )}
-      <ConfirmModal
-        isOpen={revertConfirmTarget !== null}
-        onClose={() => setRevertConfirmTarget(null)}
-        onConfirm={() => {
-          if (revertConfirmTarget) {
-            onRevert(
-              revertConfirmTarget.stepIndex,
-              revertConfirmTarget.draftContent,
-            );
+    <div className="chat-area-container">
+      {/* ── Top-Right Plan & Progress Tracker (1:1 Antigravity Desktop Floating Panel) ── */}
+      <PlanProgressCard
+        planData={planData}
+        subagentSessions={subagentSessions}
+        onSelectSubagent={openSubagent}
+        onOpenPlanDetail={() => {
+          if (onOpenFile) {
+            onOpenFile({
+              name: "implementation_plan.md",
+              path: "implementation_plan.md",
+              ext: "md",
+            });
+          } else if (onOpenReview) {
+            onOpenReview();
           }
         }}
-        title="⚠️ 确认撤回并回滚代码"
-        message="撤回操作会将项目文件和代码恢复至该历史节点的状态，之后的所有代码修改将被清空！"
-        subMessage="💡 提示：如果仅需重新发送提示词，请使用左侧的“编辑”按钮。"
-        confirmText="确认回滚代码"
-        cancelText="取消"
-        type="danger"
+        onOpenSubagents={onOpenReview}
       />
+
+      <div
+        className="chat-area"
+        ref={scrollRef}
+        onScroll={handleScroll}
+        onTouchMove={() => {
+          // Dismiss iOS keyboard when scrolling chat area
+          const el = document.activeElement;
+          if (
+            el instanceof HTMLTextAreaElement ||
+            el instanceof HTMLInputElement
+          ) {
+            el.blur();
+          }
+        }}
+      >
+        <div className="chat-area-inner" ref={innerRef} onClick={handleChatAreaClick}>
+          {hasMore && (
+            <div style={{ textAlign: "center", padding: "10px 0 6px" }}>
+              <button
+                type="button"
+                className="zcode-load-older-banner-btn"
+                onClick={triggerLoadOlder}
+                disabled={loadingOlder}
+                style={{
+                  background: "rgba(255, 255, 255, 0.07)",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  color: "#a1a1aa",
+                  borderRadius: "18px",
+                  padding: "5px 14px",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {loadingOlder ? (
+                  <>
+                    <span className="loading-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                    <span>正在加载历史消息...</span>
+                  </>
+                ) : (
+                  <span>↑ 查看更早的历史对话 (还有 {baseOffset} 条)</span>
+                )}
+              </button>
+            </div>
+          )}
+
+          {loadingOlder && !hasMore && (
+            <div className="loading-older">
+              <div className="loading-spinner" />
+            </div>
+          )}
+
+          {turns.map((turn, turnIdx) => {
+            const hasSteps =
+              turn.stepMessages.length > 0 || Boolean(turn.thinking);
+            const hasErrors =
+              turn.errorMessages && turn.errorMessages.length > 0;
+            return (
+              <Fragment key={turn.id || `turn-${turnIdx}`}>
+                {turn.userMessage && (
+                  <MessageBubble
+                    msg={turn.userMessage}
+                    isLocked={isLocked}
+                    isUnconfirmed={isUnconfirmedOptimisticMessage(
+                      turn.userMessage,
+                    )}
+                    suppressImplementationPlan={true}
+                    onRevert={onRevert}
+                    onOpenRevertConfirm={handleOpenRevertConfirm}
+                    onImageClick={setLightboxSrc}
+                    onQuote={onQuoteMessage}
+                  />
+                )}
+
+                {hasSteps && (
+                  <TurnStepsCollapsible
+                    duration={turn.duration}
+                    thinkingDuration={turn.thinkingDuration}
+                    isLive={turn.isLive}
+                    thinking={turn.thinking}
+                    steps={turn.stepMessages}
+                    onFilePermission={onFilePermission}
+                    onCommandAction={onCommandAction}
+                    onAskQuestion={onAskQuestion}
+                    onOpenFile={onOpenFile}
+                    onSelectSubagent={openSubagent}
+                  />
+                )}
+
+                {hasErrors && (
+                  <div className="turn-error-container">
+                    {turn.errorMessages.map((errMsg, errIdx) => (
+                      <QuotaAlertCard
+                        key={errMsg.optimisticId ?? `${errMsg.stepIndex}-${errIdx}`}
+                        content={errMsg.content}
+                        isHistorical={turnIdx < turns.length - 1}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {turn.assistantMessage && (() => {
+                  const isLastTurn = turnIdx === turns.length - 1;
+                  const isLatestAssistantMessage = isLastTurn && !turn.isLive && !isConversationRunning;
+                  const hasProceeded = proceededStepIndexes.has(turn.assistantMessage.stepIndex);
+                  return (
+                    <MessageBubble
+                      msg={turn.assistantMessage}
+                      isLocked={isLocked}
+                      isUnconfirmed={isUnconfirmedOptimisticMessage(
+                        turn.assistantMessage,
+                      )}
+                      suppressImplementationPlan={true}
+                      onRevert={onRevert}
+                      onOpenRevertConfirm={handleOpenRevertConfirm}
+                      onImageClick={setLightboxSrc}
+                      onQuote={onQuoteMessage}
+                      onSendMessage={onSendMessage}
+                      onOpenFile={onOpenFile}
+                      isConversationRunning={isConversationRunning}
+                      isLatestAssistantMessage={isLatestAssistantMessage}
+                      hasProceeded={hasProceeded}
+                      onProceed={handleProceed}
+                      subagentSessions={subagentSessions}
+                      onSelectSubagent={openSubagent}
+                    />
+                  );
+                })()}
+
+                {/* Turn Completion Artifacts & Files Changed Summary Card (Desktop 1:1) */}
+                {(() => {
+                  const isLastTurn = turnIdx === turns.length - 1;
+                  // Only display after the turn has finished (not live / running)
+                  if (turn.isLive || (isLastTurn && isConversationRunning)) {
+                    return null;
+                  }
+                  const summary = extractTurnSummary(turn.stepMessages, turn.assistantMessage);
+                  if (summary.files.length === 0 && summary.artifacts.length === 0) {
+                    return null;
+                  }
+                  return (
+                    <TurnSummaryCard
+                      summary={summary}
+                      assistantContent={turn.assistantMessage?.content}
+                      onOpenFile={onOpenFile}
+                      onOpenReview={onOpenReview}
+                    />
+                  );
+                })()}
+              </Fragment>
+            );
+          })}
+          {showTyping && (
+            <div className="message assistant">
+              <div className="message-body">
+                <div className="typing-indicator">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        {showScrollBtn && (
+          <button
+            className="scroll-to-bottom-btn"
+            onClick={scrollToBottom}
+            aria-label="滚动到底部"
+          >
+            ↓
+          </button>
+        )}
+        {lightboxSrc &&
+          createPortal(
+            <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />,
+            document.body,
+          )}
+        <RevertConfirmModal
+          isOpen={revertConfirmTarget !== null}
+          onClose={() => setRevertConfirmTarget(null)}
+          onConfirm={() => {
+            if (revertConfirmTarget) {
+              onRevert(
+                revertConfirmTarget.stepIndex,
+                revertConfirmTarget.draftContent,
+                revertConfirmTarget.draftMedia,
+              );
+            }
+          }}
+          files={revertConfirmTarget?.files ?? []}
+          title="确认撤销"
+          subtitle="确认撤回此步骤后，将对项目文件执行以下变更："
+          confirmText="确认撤回 ↵"
+          cancelText="取消"
+        />
+      </div>
+      <ChatScrollSlider targetRef={scrollRef} />
     </div>
   );
 }
