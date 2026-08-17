@@ -197,6 +197,39 @@ function AddContextSelector({
   );
 }
 
+/** Desktop gets a taller composer cap before internal scrolling kicks in */
+function textareaMaxHeight(): number {
+  return typeof window !== "undefined" && window.innerWidth >= 1024 ? 260 : 200;
+}
+
+/* ── Global sent-message history (terminal-style ↑ recall) ── */
+
+const INPUT_HISTORY_KEY = "porta:inputHistory";
+const INPUT_HISTORY_MAX = 20;
+
+function loadInputHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(INPUT_HISTORY_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function appendInputHistory(text: string): string[] {
+  const t = text.trim();
+  if (!t) return loadInputHistory();
+  const list = loadInputHistory();
+  const next = [t, ...list.filter((x) => x !== t)].slice(0, INPUT_HISTORY_MAX);
+  try {
+    localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(next));
+  } catch {}
+  return next;
+}
+
 export function ChatInput({
   onSend,
   onStop,
@@ -330,14 +363,14 @@ export function ChatInput({
     if (draft) {
       el.value = draft;
       el.style.height = "auto";
-      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+      el.style.height = Math.min(el.scrollHeight, textareaMaxHeight()) + "px";
     }
 
     const onInput = () => {
       const val = el.value;
       // 1. Auto-resize
       el.style.height = "auto";
-      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+      el.style.height = Math.min(el.scrollHeight, textareaMaxHeight()) + "px";
       // 2. Enable/disable send button
       setHasLocalText(val.trim().length > 0);
       // 3. Slash / mention autocomplete menus
@@ -372,6 +405,9 @@ export function ChatInput({
   // ── External draft sync (preset insert, send clear, revert) ──
   // Only runs when parent explicitly changes draft to something different from what's in the DOM.
   const lastExternalDraft = useRef(draft);
+  // Terminal-style sent-history browsing (↑ from an empty input)
+  const historyRef = useRef<string[]>(loadInputHistory());
+  const historyIndexRef = useRef<number | null>(null);
   useEffect(() => {
     // Skip if this matches what we last wrote ourselves (avoids echo-clearing)
     if (draft === lastExternalDraft.current) return;
@@ -380,7 +416,7 @@ export function ChatInput({
     if (!el || el.value === draft) return;
     el.value = draft;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    el.style.height = Math.min(el.scrollHeight, textareaMaxHeight()) + "px";
     setHasLocalText(draft.trim().length > 0);
   }, [draft]);
 
@@ -458,7 +494,7 @@ export function ChatInput({
       if (el) {
         el.value = next;
         el.style.height = "auto";
-        el.style.height = Math.min(el.scrollHeight, 200) + "px";
+        el.style.height = Math.min(el.scrollHeight, textareaMaxHeight()) + "px";
       }
       lastExternalDraft.current = next;
       setHasLocalText(next.trim().length > 0);
@@ -533,6 +569,11 @@ export function ChatInput({
       const effectivePlannerType: PlannerType =
         executionMode === "planning" ? "planning" : "conversational";
       onSend(trimmed || " ", model, media, effectivePlannerType, executionMode);
+      // Record into the sent-message history for ↑ recall
+      if (trimmed) {
+        historyRef.current = appendInputHistory(trimmed);
+        historyIndexRef.current = null;
+      }
       // Immediately wipe DOM and state — do NOT wait for parent draft to change
       if (textareaRef.current) {
         textareaRef.current.value = "";
@@ -639,6 +680,47 @@ export function ChatInput({
       e.preventDefault();
       onStop();
       return;
+    }
+
+    // ── Sent-history recall: ↑ from an empty input (or while browsing) recalls
+    // earlier messages, ↓ walks back toward the newest, past the end exits. ──
+    const mentionMenuActive =
+      showMentionMenu && mentionQuery !== null && filteredMentionOptions.length > 0;
+    const slashMenuActive =
+      showSlashMenu && slashQuery !== null && filteredSlashCommands.length > 0;
+
+    // Any non-arrow keypress exits history browsing (recalled text stays editable)
+    if (
+      historyIndexRef.current !== null &&
+      !["ArrowUp", "ArrowDown", "Shift", "Control", "Alt", "Meta"].includes(e.key)
+    ) {
+      historyIndexRef.current = null;
+    }
+
+    if (!mentionMenuActive && !slashMenuActive && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      const hist = historyRef.current;
+      const browsing = historyIndexRef.current !== null;
+      if (e.key === "ArrowUp" && hist.length > 0 && (browsing || getDomValue() === "")) {
+        e.preventDefault();
+        const next = browsing
+          ? Math.min((historyIndexRef.current as number) + 1, hist.length - 1)
+          : 0;
+        historyIndexRef.current = next;
+        setDomAndSyncRef.current?.(hist[next]);
+        return;
+      }
+      if (e.key === "ArrowDown" && browsing) {
+        e.preventDefault();
+        const cur = historyIndexRef.current as number;
+        if (cur <= 0) {
+          historyIndexRef.current = null;
+          setDomAndSyncRef.current?.("");
+        } else {
+          historyIndexRef.current = cur - 1;
+          setDomAndSyncRef.current?.(hist[cur - 1]);
+        }
+        return;
+      }
     }
 
     if (e.key === "Enter" && !e.shiftKey) {

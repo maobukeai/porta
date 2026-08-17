@@ -16,6 +16,7 @@ import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { platformAdapter } from "./platform/index.js";
+import { rememberLsPath } from "./antigravity-launch.js";
 import {
   getTransportOrder,
   rememberSuccessfulTransport,
@@ -30,6 +31,8 @@ export interface LSInstance {
   csrfToken: string;
   workspaceId?: string;
   appDataDir?: string;
+  /** Absolute path of the language_server executable, when known. */
+  executablePath?: string;
   /** Derived from discovery source */
   source: "daemon" | "process";
 }
@@ -95,6 +98,7 @@ async function discoverFromProcess(): Promise<LSInstance[]> {
       csrfToken: string;
       workspaceId?: string;
       appDataDir?: string;
+      executablePath?: string;
       httpsPort: number;
       httpPort: number;
       lspPort: number;
@@ -112,6 +116,7 @@ async function discoverFromProcess(): Promise<LSInstance[]> {
           csrfToken: candidate.csrfToken,
           workspaceId: candidate.workspaceId,
           appDataDir: candidate.appDataDir,
+          executablePath: candidate.executablePath,
           source: "process",
         });
       } else {
@@ -120,6 +125,7 @@ async function discoverFromProcess(): Promise<LSInstance[]> {
           csrfToken: candidate.csrfToken,
           workspaceId: candidate.workspaceId,
           appDataDir: candidate.appDataDir,
+          executablePath: candidate.executablePath,
           httpsPort: 0,
           httpPort: candidate.httpPort,
           lspPort: candidate.lspPort,
@@ -136,21 +142,22 @@ async function discoverFromProcess(): Promise<LSInstance[]> {
           if (pending.lspPort) knownPorts.add(pending.lspPort);
           const candidates = allPorts.filter((port) => !knownPorts.has(port));
 
-          const rpcPort = await probeConnectRpcPort(
-            candidates.length > 0 ? candidates : allPorts,
-            pending.csrfToken,
-          );
+      const rpcPort = await probeConnectRpcPort(
+        candidates.length > 0 ? candidates : allPorts,
+        pending.csrfToken,
+      );
 
-          instances.push({
-            pid: pending.pid,
-            httpsPort: rpcPort,
-            httpPort: pending.httpPort,
-            lspPort: pending.lspPort,
-            csrfToken: pending.csrfToken,
-            workspaceId: pending.workspaceId,
-            appDataDir: pending.appDataDir,
-            source: "process",
-          });
+      instances.push({
+        pid: pending.pid,
+        httpsPort: rpcPort,
+        httpPort: pending.httpPort,
+        lspPort: pending.lspPort,
+        csrfToken: pending.csrfToken,
+        workspaceId: pending.workspaceId,
+        appDataDir: pending.appDataDir,
+        executablePath: pending.executablePath,
+        source: "process",
+      });
         }),
       );
     }
@@ -378,6 +385,8 @@ export async function discoverInstances(): Promise<LSInstance[]> {
       existing.lspPort = existing.lspPort || processInstance.lspPort;
       existing.csrfToken = existing.csrfToken || processInstance.csrfToken;
       existing.appDataDir = existing.appDataDir || processInstance.appDataDir;
+      existing.executablePath =
+        existing.executablePath || processInstance.executablePath;
       if (!existing.workspaceId && processInstance.workspaceId) {
         existing.workspaceId = processInstance.workspaceId;
       }
@@ -387,7 +396,15 @@ export async function discoverInstances(): Promise<LSInstance[]> {
   }
 
   const instances = Array.from(instanceMap.values());
-  return enrichReachableInstances(instances);
+  const enriched = await enrichReachableInstances(instances);
+
+  // Remember how Antigravity was installed while it runs, so the
+  // diagnostics page can relaunch it after the IDE exits.
+  for (const inst of enriched) {
+    if (inst.executablePath) rememberLsPath(inst.executablePath);
+  }
+
+  return enriched;
 }
 
 /**

@@ -55,4 +55,29 @@ export const win32Adapter: PlatformAdapter = {
       return [];
     }
   },
+
+  async findProcessPidsByName(imageName) {
+    const exeName = imageName.toLowerCase().endsWith(".exe")
+      ? imageName
+      : `${imageName}.exe`;
+    try {
+      const output = await runCommand("tasklist", [
+        "/FI",
+        `IMAGENAME eq ${exeName}`,
+        "/FO",
+        "CSV",
+        "/NH",
+      ]);
+      const pids: number[] = [];
+      for (const line of output.split("\n")) {
+        const columns = line.split('","');
+        if (columns.length < 2) continue;
+        const pid = parseInt(columns[1].replace(/[^0-9]/g, ""), 10);
+        if (!Number.isNaN(pid) && pid > 0) pids.push(pid);
+      }
+      return pids;
+    } catch {
+      return [];
+    }
+  },
 };

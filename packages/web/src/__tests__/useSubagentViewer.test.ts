@@ -174,4 +174,56 @@ describe("useSubagentViewer & extractSubagentSessions", () => {
     expect(sessions[1].status).toBe("running");
     expect(sessions[1].conversationId).toBe("subagent-uuid-2");
   });
+
+  it("deduplicates subagents when both plannerResponse.toolCalls and tool execution step metadata are present", () => {
+    const mockSteps: TrajectoryStep[] = [
+      // Step 0: Planner response proposing invoke_subagent with 3 subagents
+      {
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        plannerResponse: {
+          toolCalls: [
+            {
+              name: "invoke_subagent",
+              args: {
+                Subagents: [
+                  { Role: "TypeScript & UI Fixer", TypeName: "self", Prompt: "Fix TS" },
+                  { Role: "Disk Writer & Verifier", TypeName: "self", Prompt: "Write disk" },
+                  { Role: "Self Coding Agent", TypeName: "self", Prompt: "Code logic" },
+                ],
+              },
+            },
+          ],
+        },
+      } as any,
+      // Step 1: Tool execution step with metadata.toolCall containing same subagents
+      {
+        type: "CORTEX_STEP_TYPE_INVOKE_SUBAGENT",
+        status: "RUNNING",
+        metadata: {
+          toolCall: {
+            name: "invoke_subagent",
+            args: {
+              Subagents: [
+                { Role: "TypeScript & UI Fixer", TypeName: "self", Prompt: "Fix TS" },
+                { Role: "Disk Writer & Verifier", TypeName: "self", Prompt: "Write disk" },
+                { Role: "Self Coding Agent", TypeName: "self", Prompt: "Code logic" },
+              ],
+            },
+          },
+          childConversationId: "conv-self-coding-1",
+        },
+      } as any,
+    ];
+
+    const sessions = extractSubagentSessions(mockSteps);
+    // Must be 3, NOT 6!
+    expect(sessions.length).toBe(3);
+    expect(sessions.map((s) => s.role)).toEqual([
+      "TypeScript & UI Fixer",
+      "Disk Writer & Verifier",
+      "Self Coding Agent",
+    ]);
+    expect(sessions[2].conversationId).toBe("conv-self-coding-1");
+  });
 });

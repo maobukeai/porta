@@ -14,7 +14,9 @@ function resolvePathFromUri(uri?: string): string {
     try {
       return fileURLToPath(uri);
     } catch {
-      return uri.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
+      // Only flip slashes to backslashes on Windows — POSIX paths must keep "/".
+      const stripped = uri.replace(/^file:\/\/\/?/, "");
+      return process.platform === "win32" ? stripped.replace(/\//g, "\\") : stripped;
     }
   }
   return uri;

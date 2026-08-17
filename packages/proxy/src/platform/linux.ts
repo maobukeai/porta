@@ -75,4 +75,16 @@ export const linuxAdapter: PlatformAdapter = {
       return [];
     }
   },
+
+  async findProcessPidsByName(imageName) {
+    try {
+      const output = await runCommand("pgrep", ["-f", imageName]);
+      return output
+        .split("\n")
+        .map((line) => parseInt(line.trim(), 10))
+        .filter((pid) => !Number.isNaN(pid) && pid > 0);
+    } catch {
+      return [];
+    }
+  },
 };

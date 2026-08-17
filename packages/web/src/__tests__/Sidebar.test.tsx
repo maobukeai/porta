@@ -386,3 +386,202 @@ describe("Sidebar collapse and expand all conversations", () => {
     expect(mockOnNew).toHaveBeenCalledWith(null);
   });
 });
+
+describe("Sidebar inline type-to-filter", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const filterConvs: ConversationEntry[] = [
+    {
+      id: "conv-f1",
+      summary: {
+        summary: "修复登录界面 Bug",
+        lastModifiedTime: new Date().toISOString(),
+        createdTime: new Date().toISOString(),
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-f1",
+        projectName: "项目A",
+        workspaces: [],
+      },
+    },
+    {
+      id: "conv-f2",
+      summary: {
+        summary: "优化图片上传性能",
+        lastModifiedTime: new Date().toISOString(),
+        createdTime: new Date().toISOString(),
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-f2",
+        projectName: "项目B",
+        workspaces: [],
+      },
+    },
+  ];
+
+  function renderSidebar() {
+    return render(
+      <Sidebar
+        conversations={filterConvs}
+        activeId={null}
+        onSelect={vi.fn()}
+        onNew={vi.fn()}
+        onDelete={vi.fn()}
+        onSettings={vi.fn()}
+        loading={false}
+        connected={true}
+        isOpen={true}
+        onToggle={vi.fn()}
+      />,
+    );
+  }
+
+  it("filters conversations by title as you type and shows the match count", () => {
+    renderSidebar();
+    const input = screen.getByPlaceholderText("筛选会话…");
+    fireEvent.change(input, { target: { value: "登录" } });
+
+    expect(screen.getByText("修复登录界面 Bug")).toBeInTheDocument();
+    expect(screen.queryByText("优化图片上传性能")).toBeNull();
+    // The sidebar also renders group-count chips ("1"), so scope to the filter badge
+    const badge = document.querySelector(".porta-sidebar-filter-count");
+    expect(badge?.textContent).toBe("1");
+  });
+
+  it("matches case-insensitively and by workspace group name", () => {
+    renderSidebar();
+    const input = screen.getByPlaceholderText("筛选会话…");
+    fireEvent.change(input, { target: { value: "项目b" } });
+
+    expect(screen.getByText("优化图片上传性能")).toBeInTheDocument();
+    expect(screen.queryByText("修复登录界面 Bug")).toBeNull();
+  });
+
+  it("shows the empty state and clears via the reset button", () => {
+    renderSidebar();
+    fireEvent.change(screen.getByPlaceholderText("筛选会话…"), {
+      target: { value: "zzz不存在zzz" },
+    });
+    expect(screen.getByText("没有匹配的会话")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("清除筛选"));
+    expect(screen.getByText("修复登录界面 Bug")).toBeInTheDocument();
+    expect(screen.getByText("优化图片上传性能")).toBeInTheDocument();
+  });
+
+  it("clears the filter on Escape in the input", () => {
+    renderSidebar();
+    const input = screen.getByPlaceholderText("筛选会话…");
+    fireEvent.change(input, { target: { value: "性能" } });
+    expect(screen.queryByText("修复登录界面 Bug")).toBeNull();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.getByText("修复登录界面 Bug")).toBeInTheDocument();
+  });
+});
+
+describe("Sidebar status quick-filters (只看运行中/只看未读)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const statusConvs: ConversationEntry[] = [
+    {
+      id: "conv-run",
+      summary: {
+        summary: "正在执行的任务",
+        lastModifiedTime: new Date().toISOString(),
+        createdTime: new Date().toISOString(),
+        status: "CASCADE_RUN_STATUS_RUNNING",
+        stepCount: 1,
+        trajectoryId: "traj-run",
+        projectName: "项目S",
+        workspaces: [],
+      },
+    },
+    {
+      id: "conv-idle",
+      summary: {
+        summary: "空闲的普通任务",
+        lastModifiedTime: new Date().toISOString(),
+        createdTime: new Date().toISOString(),
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-idle",
+        projectName: "项目S",
+        workspaces: [],
+      },
+    },
+  ];
+
+  function renderSidebar() {
+    return render(
+      <Sidebar
+        conversations={statusConvs}
+        activeId={null}
+        onSelect={vi.fn()}
+        onNew={vi.fn()}
+        onDelete={vi.fn()}
+        onSettings={vi.fn()}
+        loading={false}
+        connected={true}
+        isOpen={true}
+        onToggle={vi.fn()}
+      />,
+    );
+  }
+
+  function openPopover() {
+    fireEvent.click(screen.getByTitle("视图与排序方式"));
+  }
+
+  it("filters to running conversations via the popover toggle", () => {
+    renderSidebar();
+    openPopover();
+    fireEvent.click(screen.getByTitle(/仅显示正在执行任务的会话/));
+
+    expect(screen.getByText("正在执行的任务")).toBeInTheDocument();
+    expect(screen.queryByText("空闲的普通任务")).toBeNull();
+    // Active chip appears and the choice persists
+    expect(screen.getByTitle("关闭「只看运行中」过滤")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("porta:sidebarStatusFilter") as string)).toEqual({
+      running: true,
+      unread: false,
+    });
+  });
+
+  it("removing the chip restores the full list", () => {
+    renderSidebar();
+    openPopover();
+    fireEvent.click(screen.getByTitle(/仅显示正在执行任务的会话/));
+    fireEvent.click(screen.getByTitle("关闭「只看运行中」过滤"));
+
+    expect(screen.getByText("正在执行的任务")).toBeInTheDocument();
+    expect(screen.getByText("空闲的普通任务")).toBeInTheDocument();
+  });
+
+  it("combines running and unread filters", () => {
+    // Mark the idle conv as unread-completed
+    localStorage.setItem("porta_unread_completed_tasks_v1", JSON.stringify(["conv-idle"]));
+    renderSidebar();
+    openPopover();
+    fireEvent.click(screen.getByTitle(/仅显示正在执行任务的会话/));
+    fireEvent.click(screen.getByTitle(/仅显示有未读完成消息的会话/));
+
+    // No conversation satisfies both conditions
+    expect(screen.getByText("没有运行中的未读会话")).toBeInTheDocument();
+    expect(screen.queryByText("正在执行的任务")).toBeNull();
+  });
+
+  it("unread-only filter keeps unread conversations", () => {
+    localStorage.setItem("porta_unread_completed_tasks_v1", JSON.stringify(["conv-idle"]));
+    renderSidebar();
+    openPopover();
+    fireEvent.click(screen.getByTitle(/仅显示有未读完成消息的会话/));
+
+    expect(screen.getByText("空闲的普通任务")).toBeInTheDocument();
+    expect(screen.queryByText("正在执行的任务")).toBeNull();
+  });
+});

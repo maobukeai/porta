@@ -22,6 +22,8 @@ import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
 import { useMessageTouchGesture } from "../hooks/useMessageTouchGesture";
 import { MessageActionSheet } from "./MessageActionSheet";
+import { useContextMenu, type ContextMenuItem } from "./ContextMenu";
+import { ChatSearchOverlay } from "./ChatSearchOverlay";
 import { copyText } from "../utils/clipboard";
 import { triggerHaptic } from "../utils/haptics";
 import { Lightbox } from "./Lightbox";
@@ -69,6 +71,9 @@ import { extractTurnSummary } from "../utils/extractTurnSummary";
 import { usePlanTracker } from "../hooks/usePlanTracker";
 import { PlanProgressCard } from "./PlanProgressCard";
 import { useSubagentViewer, type SubagentSession } from "../hooks/useSubagentViewer";
+import { useRunningTasks } from "../hooks/useRunningTasks";
+import { RunningTasksBar } from "./RunningTasksBar";
+import { RunningTasksDrawer } from "./RunningTasksDrawer";
 import type { AskQuestionEntry, ChatMessage } from "../types";
 
 interface Props {
@@ -110,6 +115,8 @@ interface Props {
   onOpenReview?: () => void;
   /** Called when opening the subagents directory */
   onOpenSubagents?: () => void;
+  /** Called when opening the terminal dock */
+  onOpenTerminal?: () => void;
   /** Called when the WS reports the agent went idle — triggers sidebar refresh. */
   onSidebarRefresh?: () => void;
   /** Triggered when the user clicks interactive buttons (e.g. Proceed / Continue) in message cards */
@@ -301,6 +308,8 @@ interface ChatTurn {
   duration?: string | number;
   assistantMessage?: ChatMessage;
   isLive?: boolean;
+  /** Earliest step timestamp in the turn (ms) — drives chat day separators */
+  startedAt?: number;
 }
 
 export const TurnStepsCollapsible = memo(function TurnStepsCollapsible({
@@ -529,6 +538,28 @@ export function deduplicateErrorMessages(errors: ChatMessage[]): ChatMessage[] {
   return unique.slice(0, 1);
 }
 
+/** 今天 / 昨天 / M月d日 / 跨年完整日期 */
+function formatDaySeparator(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return "今天";
+  if (diffDays === 1) return "昨天";
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}月${d.getDate()}日`;
+  }
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/** HH:mm for the message hover tooltip */
+function formatHoverTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export function groupMessagesIntoTurns(
   messages: ChatMessage[],
   isWsRunning: boolean,
@@ -653,6 +684,10 @@ export function groupMessagesIntoTurns(
       if (em.step) collectTime(em.step);
     }
     if (turn.assistantMessage?.step) collectTime(turn.assistantMessage.step);
+
+    if (timestamps.length >= 1) {
+      turn.startedAt = Math.min(...timestamps);
+    }
 
     if (timestamps.length >= 2) {
       const minTime = Math.min(...timestamps);
@@ -1105,6 +1140,70 @@ export const MessageBubble = memo(
     const touchHandlers = useMessageTouchGesture({
       onLongPress: () => setActionSheetOpen(true),
     });
+    const contextMenu = useContextMenu();
+
+    // Desktop right-click menu — mirrors the mobile long-press action sheet
+    const handleMessageContextMenu = (e: React.MouseEvent) => {
+      if (!msg.content) return;
+      const items: ContextMenuItem[] = [
+        {
+          key: "copy",
+          label: "复制全文",
+          icon: <IconCopy size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => {
+            triggerHaptic("light");
+            void copyText(msg.content);
+          },
+        },
+        {
+          key: "quote",
+          label: "引用到输入框",
+          icon: <IconMessageCircle size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => onQuote?.(msg.content),
+        },
+      ];
+      if (msg.role === "user") {
+        items.push({
+          key: "edit",
+          label: "填入输入框（安全编辑）",
+          icon: <IconEdit size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => onRevert?.(-1, msg.content, msg.media),
+        });
+        if (msg.stepIndex >= 0) {
+          items.push({
+            key: "revert",
+            label: "撤回并回滚代码",
+            icon: <IconUndo size={13} className="zcode-dropdown-icon" />,
+            disabled: isLocked,
+            onSelect: () => {
+              if (onOpenRevertConfirm) {
+                onOpenRevertConfirm(msg.stepIndex, msg.content, msg.media);
+              } else {
+                onRevert?.(msg.stepIndex, msg.content, msg.media);
+              }
+            },
+          });
+        }
+      } else {
+        items.push({
+          key: "tts",
+          label: isTTSSpeaking() ? "停止朗读" : "朗读回复",
+          icon: isTTSSpeaking() ? (
+            <IconVolumeX size={13} className="zcode-dropdown-icon" />
+          ) : (
+            <IconVolume size={13} className="zcode-dropdown-icon" />
+          ),
+          onSelect: () => {
+            if (isTTSSpeaking()) {
+              stopTTS();
+            } else {
+              speakTTS(msg.content);
+            }
+          },
+        });
+      }
+      contextMenu.openFromMouse(e, items);
+    };
 
     const renderedContent = useMemo(
       () => (msg.content ? renderMarkdown(msg.content) : ""),
@@ -1133,10 +1232,22 @@ export const MessageBubble = memo(
       return null;
     }
 
+    // Desktop hover tooltip: message time from the step metadata
+    const hoverTime = (() => {
+      const created = msg.step?.metadata?.createdAt;
+      if (!created) return undefined;
+      const t = new Date(created).getTime();
+      return isNaN(t) || t <= 0 ? undefined : `${formatDaySeparator(t)} ${formatHoverTime(t)}`;
+    })();
+
     return (
       <div
         className={`message ${msg.role}${isUnconfirmed ? " unconfirmed" : ""}`}
+        data-step-index={typeof msg.stepIndex === "number" && msg.stepIndex >= 0 ? msg.stepIndex : undefined}
+        data-optimistic-id={msg.optimisticId}
+        title={hoverTime}
         {...touchHandlers}
+        onContextMenu={handleMessageContextMenu}
       >
         <div className="chat-block message-body">
           {showImplementationPlan && msg.thinking && (
@@ -1282,6 +1393,7 @@ export const MessageBubble = memo(
             onOpenRevertConfirm={onOpenRevertConfirm}
           />
         )}
+        {contextMenu.menu}
       </div>
     );
   },
@@ -1328,6 +1440,7 @@ export function ChatPanel({
   onOpenFile,
   onOpenReview,
   onOpenSubagents,
+  onOpenTerminal,
   onSidebarRefresh,
   onSendMessage,
 }: Props) {
@@ -1439,10 +1552,42 @@ export function ChatPanel({
     [serverMessages, optimisticMessages],
   );
 
+  // ── In-conversation search (Ctrl+F, opened from App via custom event) ──
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  useEffect(() => {
+    const openSearch = () => setChatSearchOpen(true);
+    const closeSearch = () => setChatSearchOpen(false);
+    window.addEventListener("porta:open-chat-search", openSearch);
+    window.addEventListener("porta:close-chat-search", closeSearch);
+    return () => {
+      window.removeEventListener("porta:open-chat-search", openSearch);
+      window.removeEventListener("porta:close-chat-search", closeSearch);
+    };
+  }, []);
+  // Notify the App-level Esc layer chain about the search bar state
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("porta:chat-search-state", { detail: { open: chatSearchOpen } }));
+  }, [chatSearchOpen]);
+
   const turns = useMemo(
     () => groupMessagesIntoTurns(messages, wsRunning),
     [messages, wsRunning],
   );
+
+  // Per-turn day keys for chat date separators. Turns without timestamps inherit
+  // the previous day so they never produce a separator of their own.
+  const turnDayKeys = useMemo(() => {
+    let prev: string | null = null;
+    return turns.map((turn) => {
+      if (turn.startedAt) {
+        const key = new Date(turn.startedAt).toDateString();
+        const entry = { key, changed: key !== prev, ts: turn.startedAt };
+        prev = key;
+        return entry;
+      }
+      return { key: prev, changed: false, ts: 0 };
+    });
+  }, [turns]);
 
   const planData = usePlanTracker(cascadeId, rawSteps, messages);
 
@@ -1452,6 +1597,14 @@ export function ChatPanel({
   } = useSubagentViewer(rawSteps);
 
   const openSubagent = onSelectSubagentProp || hookOpenSubagent;
+
+  const {
+    tasks: allRunningTasks,
+    runningTasks,
+    terminateTask,
+    sendInput,
+  } = useRunningTasks(cascadeId, rawSteps, wsRunning);
+  const [runningTasksDrawerOpen, setRunningTasksDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (confirmedOptimisticIds.length === 0 || !onConfirmOptimistic) return;
@@ -1464,15 +1617,21 @@ export function ChatPanel({
   const isLocked = wsRunning && !lastIsAssistantWithContent;
   const showTyping = (wsRunning || hasUnconfirmedOptimistic) && !lastIsAssistantWithContent;
 
-  // Preload revert previews in the background so opening modal is 100% instant (0ms)
-  useEffect(() => {
-    if (!cascadeId || rawSteps.length === 0) return;
-    const targetSteps = messages
-      .filter((m) => m.role === "user" && m.stepIndex >= 0)
-      .slice(-10)
-      .map((m) => m.stepIndex);
+  // Preload revert previews in the background only when idle or when user steps change
+  const userStepIndexes = useMemo(
+    () =>
+      messages
+        .filter((m) => m.role === "user" && m.stepIndex >= 0)
+        .slice(-10)
+        .map((m) => m.stepIndex),
+    [messages],
+  );
+  const userStepKey = userStepIndexes.join(",");
 
-    for (const targetStep of targetSteps) {
+  useEffect(() => {
+    if (!cascadeId || userStepIndexes.length === 0 || wsRunning) return;
+
+    for (const targetStep of userStepIndexes) {
       const key = `${cascadeId}:${targetStep}`;
       if (!revertPreviewCache.has(key)) {
         api
@@ -1485,7 +1644,7 @@ export function ChatPanel({
           .catch(() => {});
       }
     }
-  }, [cascadeId, messages, rawSteps]);
+  }, [cascadeId, userStepKey, wsRunning]);
 
   // Real-time synchronization of waiting interaction status for sidebar/overview indicator
   useEffect(() => {
@@ -1673,12 +1832,27 @@ export function ChatPanel({
 
   if (messages.length === 0) {
     return (
-      <div className="chat-area">
-        <div className="chat-empty">
-          <div className="chat-empty-icon">
-            <IconMessageCircle size={48} />
+      <div className="chat-area-container">
+        <RunningTasksBar
+          runningTasks={runningTasks}
+          onOpenDrawer={() => setRunningTasksDrawerOpen(true)}
+          onTerminateTask={terminateTask}
+        />
+        <RunningTasksDrawer
+          isOpen={runningTasksDrawerOpen}
+          onClose={() => setRunningTasksDrawerOpen(false)}
+          tasks={allRunningTasks}
+          onTerminateTask={terminateTask}
+          onSendInput={sendInput}
+          onOpenTerminal={onOpenTerminal}
+        />
+        <div className="chat-area">
+          <div className="chat-empty">
+            <div className="chat-empty-icon">
+              <IconMessageCircle size={48} />
+            </div>
+            <div className="chat-empty-text">暂无消息</div>
           </div>
-          <div className="chat-empty-text">暂无消息</div>
         </div>
       </div>
     );
@@ -1765,8 +1939,14 @@ export function ChatPanel({
               turn.stepMessages.length > 0 || Boolean(turn.thinking);
             const hasErrors =
               turn.errorMessages && turn.errorMessages.length > 0;
+            const day = turnDayKeys[turnIdx];
             return (
               <Fragment key={turn.id || `turn-${turnIdx}`}>
+                {day.changed && day.key && (
+                  <div className="chat-day-separator" role="separator">
+                    <span>{formatDaySeparator(day.ts)}</span>
+                  </div>
+                )}
                 {turn.userMessage && (
                   <MessageBubble
                     msg={turn.userMessage}
@@ -1906,6 +2086,32 @@ export function ChatPanel({
         />
       </div>
       <ChatScrollSlider targetRef={scrollRef} />
+      <ChatSearchOverlay
+        open={chatSearchOpen}
+        onClose={() => setChatSearchOpen(false)}
+        messages={messages}
+        scrollRef={scrollRef}
+      />
+
+      {/* ── Running Background Tasks Bar (1:1 Antigravity Desktop Floating Capsule Pinned Above Input) ── */}
+      {runningTasks.length > 0 && (
+        <div className="chat-running-tasks-dock">
+          <RunningTasksBar
+            runningTasks={runningTasks}
+            onOpenDrawer={() => setRunningTasksDrawerOpen(true)}
+            onTerminateTask={terminateTask}
+          />
+        </div>
+      )}
+
+      <RunningTasksDrawer
+        isOpen={runningTasksDrawerOpen}
+        onClose={() => setRunningTasksDrawerOpen(false)}
+        tasks={allRunningTasks}
+        onTerminateTask={terminateTask}
+        onSendInput={sendInput}
+        onOpenTerminal={onOpenTerminal}
+      />
     </div>
   );
 }

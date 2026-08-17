@@ -326,6 +326,7 @@ export function ChatHeader({
               }
             }}
             title={`Git 分支: ${gitBranch}${gitChangesCount > 0 ? ` (${gitChangesCount} 文件更改)` : ""} (点击打开 Git 控制台)`}
+            aria-label={`Git 分支: ${gitBranch}${gitChangesCount > 0 ? `，${gitChangesCount} 文件更改` : ""}，点击打开 Git 控制台`}
           >
             <IconGitBranch size={13} className="header-git-icon" />
             <span className="header-git-branch-name">{gitBranch}</span>

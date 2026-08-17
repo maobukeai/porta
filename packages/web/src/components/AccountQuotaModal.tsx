@@ -7,6 +7,7 @@ interface Props {
   onClose: () => void;
   onOpenSettings?: () => void;
   sidebarWidth?: number;
+  initialData?: any;
 }
 
 function formatResetTime(iso?: string): string {
@@ -47,8 +48,20 @@ export function AccountQuotaModal({
   onClose,
   onOpenSettings,
   sidebarWidth = 250,
+  initialData,
 }: Props) {
   const [data, setData] = useState<any>(() => {
+    if (initialData) {
+      const base = initialData?.userStatus ?? initialData ?? {};
+      return {
+        ...base,
+        userQuotaSummary:
+          initialData?.userQuotaSummary ??
+          initialData?.userStatus?.userQuotaSummary ??
+          base?.userQuotaSummary ??
+          getCachedQuotaSummary(),
+      };
+    }
     const cachedStatus = getCachedUserStatus();
     const cachedQuota = getCachedQuotaSummary();
     if (cachedStatus || cachedQuota) {
@@ -63,6 +76,23 @@ export function AccountQuotaModal({
   const [loading, setLoading] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
+  // Sync initialData if updated externally
+  useEffect(() => {
+    if (initialData) {
+      const base = initialData?.userStatus ?? initialData ?? {};
+      setData((prev: any) => ({
+        ...(prev || {}),
+        ...base,
+        userQuotaSummary:
+          initialData?.userQuotaSummary ??
+          initialData?.userStatus?.userQuotaSummary ??
+          base?.userQuotaSummary ??
+          prev?.userQuotaSummary ??
+          getCachedQuotaSummary(),
+      }));
+    }
+  }, [initialData]);
+
   // Fetch / refresh user quota instantly on open or manual click
   const fetchQuota = useCallback(async () => {
     setLoading(true);
@@ -71,12 +101,14 @@ export function AccountQuotaModal({
         api.userStatus().catch(() => null),
         api.quota().catch(() => null),
       ]);
-      const base = statusRes?.userStatus ?? statusRes ?? {};
+      const base = statusRes?.userStatus ?? statusRes ?? initialData?.userStatus ?? initialData ?? {};
       const quotaSummary =
         (quotaRes?.groups && quotaRes.groups.length > 0 ? quotaRes : null) ??
         statusRes?.userQuotaSummary ??
         statusRes?.userStatus?.userQuotaSummary ??
-        base?.userQuotaSummary;
+        base?.userQuotaSummary ??
+        initialData?.userQuotaSummary ??
+        getCachedQuotaSummary();
 
       if (quotaSummary) {
         setCachedQuotaSummary(quotaSummary);
@@ -95,7 +127,7 @@ export function AccountQuotaModal({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initialData]);
 
   // Immediate refresh on open
   useEffect(() => {

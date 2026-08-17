@@ -27,6 +27,11 @@ import {
   syncProjectPermissionPreset,
   getProjectPermissionPreset,
   getAllKnownSubagentConversationIds,
+  isSubagentContent,
+  isValidConversationId,
+  getConversationSubagentIds,
+  deleteDiskConversation,
+  registerSubagentConversationId,
 } from "../metadata.js";
 import { handleRPCError } from "../errors.js";
 import { runConversationMutation } from "../conversation-mutations.js";
@@ -303,14 +308,7 @@ export function registerConversationRoutes(app: Hono): void {
           return true;
         }
         const title = String(summary.summary || "");
-        if (
-          title.startsWith("[Subagent]") ||
-          title.startsWith("subagent:") ||
-          title.startsWith("子智能体") ||
-          /^🤖\s*子智能体/i.test(title) ||
-          /Usage Statistics Auditor/i.test(title) ||
-          /数据统计功能代码审查/i.test(title)
-        ) {
+        if (isSubagentContent(title)) {
           return true;
         }
         return false;
@@ -850,14 +848,41 @@ export function registerConversationRoutes(app: Hono): void {
 
   app.delete("/api/conversations/:id", async (c) => {
     const id = c.req.param("id");
+    // The cascade delete also removes on-disk directories by this ID — reject
+    // anything that is not a plain UUID before it can reach a filesystem path.
+    if (!isValidConversationId(id)) {
+      return c.json({ error: "Invalid conversation ID format" }, 400);
+    }
     try {
       return await runConversationMutation(id, async () => {
+        // 1. Collect all child subagent IDs before deleting parent
+        const childSubagentIds = await getConversationSubagentIds(id);
         const metadata = await getMetadata(true);
+
+        // 2. Cascade delete all child subagents in Language Server + Disk + Tracking
+        for (const subId of childSubagentIds) {
+          try {
+            await registerSubagentConversationId(subId);
+            await rpcForConversation("DeleteCascadeTrajectory", subId, {
+              metadata,
+              cascadeId: subId,
+            }).catch(() => {});
+            messageTracker.clearConversation(subId);
+            await deleteDiskConversation(subId);
+          } catch {}
+        }
+
+        // 3. Delete parent conversation
         const data = await rpcForConversation("DeleteCascadeTrajectory", id, {
           metadata,
           cascadeId: id,
         });
         messageTracker.clearConversation(id);
+        await deleteDiskConversation(id);
+
+        // 4. Force refresh subagent cache
+        await getAllKnownSubagentConversationIds(true);
+
         return c.json(data);
       });
     } catch (err) {

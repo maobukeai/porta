@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { draftStore } from "./useDraftText";
@@ -65,6 +65,20 @@ export function useChatActions({
   );
   const [stepsRefreshKey, setStepsRefreshKey] = useState(0);
   const [hardRefreshKey, setHardRefreshKey] = useState(0);
+
+  // Track burst-refresh timer IDs so they can be cancelled on unmount
+  const burstTimerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    return () => {
+      // Cancel all pending burst-refresh timers when the hook unmounts
+      // to prevent state updates on an unmounted component.
+      for (const id of burstTimerIdsRef.current) {
+        clearTimeout(id);
+      }
+      burstTimerIdsRef.current = [];
+    };
+  }, []);
 
   const clearOptimisticMessages = useCallback(() => {
     setOptimisticMessages([]);
@@ -160,12 +174,17 @@ export function useChatActions({
         setStepsRefreshKey((k) => k + 1);
         refresh();
 
-        // Burst refresh every 1s for 5s to guarantee fast initial streaming sync
+        // Burst refresh every 1s for 5s to guarantee fast initial streaming sync.
+        // Timer IDs are stored in burstTimerIdsRef so they can be cancelled on unmount.
+        burstTimerIdsRef.current = burstTimerIdsRef.current.filter(
+          (id) => { clearTimeout(id); return false; },
+        );
         for (let delay = 1000; delay <= 5000; delay += 1000) {
-          setTimeout(() => {
+          const timerId = setTimeout(() => {
             setStepsRefreshKey((k) => k + 1);
             refresh();
           }, delay);
+          burstTimerIdsRef.current.push(timerId);
         }
       } catch (err) {
         console.error("Failed to send message:", err);

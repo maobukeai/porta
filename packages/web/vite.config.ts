@@ -70,11 +70,34 @@ export default defineConfig(({ mode }) => {
           // hit the network (Cloudflare CDN) for a fresh index.html.
           navigateFallback: null,
         },
-        manifest: false, // Use our existing public/manifest.json
         injectRegister: "script-defer",
         scope: basePath,
       }),
     ],
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (
+                id.includes("react") ||
+                id.includes("react-dom") ||
+                id.includes("react-router")
+              ) {
+                return "vendor-react";
+              }
+              if (id.includes("marked")) {
+                return "vendor-marked";
+              }
+              if (id.includes("@capacitor")) {
+                return "vendor-capacitor";
+              }
+            }
+          },
+        },
+      },
+    },
     envDir: repoRoot,
     server: {
       host: env.PORTA_WEB_HOST || process.env.PORTA_WEB_HOST || "0.0.0.0",

@@ -2,9 +2,10 @@
  * Shared metadata and disk-scanning utilities for the proxy.
  */
 
-import { readdir, stat, readFile, writeFile } from "node:fs/promises";
+import { readdir, stat, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type { LSInstance } from "./discovery.js";
 
 export interface ConversationWorkspaceMetadata {
   workspaceFolderAbsoluteUri?: string;
@@ -92,8 +93,91 @@ export interface DiskPeekMetadata {
   isSubagent?: boolean;
 }
 
+/**
+ * Conversation IDs are 36-character UUIDs. Anything else must never be joined
+ * into a disk path — a crafted ID like `../../..` would otherwise traverse
+ * out of the brain directory (read or, worse, recursive delete).
+ */
+export function isValidConversationId(id: string | undefined | null): boolean {
+  return (
+    typeof id === "string" &&
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)
+  );
+}
+
+export function isSubagentContent(text: string): boolean {
+  if (!text) return false;
+  let testStr = text.trim();
+  const m = testStr.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+  if (m) {
+    testStr = m[1].trim();
+  } else if (testStr.startsWith("{") && testStr.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(testStr);
+      if (parsed.content) {
+        const m2 = String(parsed.content).match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+        testStr = m2 ? m2[1].trim() : String(parsed.content).trim();
+      }
+    } catch {}
+  }
+
+  return (
+    /^你是【.*Agent/i.test(testStr) ||
+    /^你是【.*智能体/i.test(testStr) ||
+    /^你是【/i.test(testStr) ||
+    /^你是一个子智能体/i.test(testStr) ||
+    testStr.startsWith("[Subagent]") ||
+    testStr.startsWith("subagent:") ||
+    testStr.startsWith("子智能体") ||
+    /^🤖\s*子智能体/i.test(testStr)
+  );
+}
+
+// ── In-Memory File Mtime Caches ──
+const transcriptSubagentsMtimeCache = new Map<string, { mtimeMs: number; subagentIds: string[] }>();
+const diskPeekMtimeCache = new Map<string, { mtimeMs: number; data: { summary?: string; stepCount?: number; isSubagent?: boolean } }>();
+
 let cachedSubagentIds: Set<string> | null = null;
 let lastSubagentScanTime = 0;
+
+const PERSISTENT_SUBAGENTS_FILE = join(homedir(), ".gemini", "antigravity", "known_subagents.json");
+
+/** In-memory mirror of the persistent file, loaded once on first use. */
+let persistentSubagentIds: Set<string> | null = null;
+
+async function ensurePersistentSubagentIds(): Promise<Set<string>> {
+  if (persistentSubagentIds === null) {
+    persistentSubagentIds = await loadPersistentSubagentIds();
+  }
+  return persistentSubagentIds;
+}
+
+async function loadPersistentSubagentIds(): Promise<Set<string>> {
+  try {
+    const raw = await readFile(PERSISTENT_SUBAGENTS_FILE, "utf-8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      return new Set(arr.filter((id): id is string => typeof id === "string" && id.length > 0));
+    }
+  } catch {}
+  return new Set();
+}
+
+async function savePersistentSubagentIds(ids: Set<string>): Promise<void> {
+  try {
+    await writeFile(PERSISTENT_SUBAGENTS_FILE, JSON.stringify(Array.from(ids)), "utf-8");
+  } catch {}
+}
+
+export async function registerSubagentConversationId(id: string): Promise<void> {
+  if (!id) return;
+  if (cachedSubagentIds) cachedSubagentIds.add(id);
+  const ids = await ensurePersistentSubagentIds();
+  if (!ids.has(id)) {
+    ids.add(id);
+    await savePersistentSubagentIds(ids);
+  }
+}
 
 export async function getAllKnownSubagentConversationIds(forceRefresh = false): Promise<Set<string>> {
   const now = Date.now();
@@ -102,28 +186,75 @@ export async function getAllKnownSubagentConversationIds(forceRefresh = false): 
   }
 
   const subagentIds = new Set<string>();
+
   for (const appDataDir of KNOWN_APP_DATA_DIRS) {
     const brainDir = join(homedir(), ".gemini", appDataDir, "brain");
     try {
       const convDirs = await readdir(brainDir, { withFileTypes: true });
       for (const ent of convDirs) {
-        if (!ent.isDirectory()) continue;
-        const transcript = join(brainDir, ent.name, ".system_generated", "logs", "transcript.jsonl");
+        if (!ent.isDirectory() || ent.name.length !== 36) continue;
+        const convId = ent.name;
+        const transcript = join(brainDir, convId, ".system_generated", "logs", "transcript.jsonl");
         try {
+          const s = await stat(transcript);
+          const cached = transcriptSubagentsMtimeCache.get(transcript);
+          if (cached && cached.mtimeMs === s.mtimeMs) {
+            for (const id of cached.subagentIds) {
+              subagentIds.add(id);
+            }
+            continue;
+          }
+
           const content = await readFile(transcript, "utf-8");
+          const fileSubagentIds: string[] = [];
           const lines = content.split("\n").filter(Boolean);
+
+          if (lines.length > 0) {
+            try {
+              const firstStep = JSON.parse(lines[0]);
+              if (firstStep.type === "USER_INPUT") {
+                if (isSubagentContent(firstStep.content || lines[0])) {
+                  fileSubagentIds.push(convId);
+                  subagentIds.add(convId);
+                }
+              }
+            } catch {}
+          }
+
           for (const line of lines) {
-            if (line.includes("conversationId") || line.includes("invoke_subagent")) {
+            if (line.includes("Created the following subagents") || line.includes('"invoke_subagent"')) {
               try {
                 const parsed = JSON.parse(line);
                 const raw = parsed.content || JSON.stringify(parsed);
                 const matches = raw.matchAll(/"conversationId":\s*"([0-9a-fA-F-]{36})"/g);
                 for (const m of matches) {
-                  subagentIds.add(m[1]);
+                  const childId = m[1];
+                  if (childId !== convId) {
+                    fileSubagentIds.push(childId);
+                    subagentIds.add(childId);
+                  }
+                }
+              } catch {}
+            }
+            if (line.includes("sender=") && (line.includes("SYSTEM_MESSAGE") || line.includes('"source":"SYSTEM"'))) {
+              try {
+                const parsed = JSON.parse(line);
+                const raw = parsed.content || JSON.stringify(parsed);
+                const senderMatches = raw.matchAll(/sender=([0-9a-fA-F-]{36})/g);
+                for (const sm of senderMatches) {
+                  const childId = sm[1];
+                  if (childId !== convId) {
+                    fileSubagentIds.push(childId);
+                    subagentIds.add(childId);
+                  }
                 }
               } catch {}
             }
           }
+          transcriptSubagentsMtimeCache.set(transcript, {
+            mtimeMs: s.mtimeMs,
+            subagentIds: fileSubagentIds,
+          });
         } catch {}
       }
     } catch {}
@@ -131,12 +262,35 @@ export async function getAllKnownSubagentConversationIds(forceRefresh = false): 
 
   cachedSubagentIds = subagentIds;
   lastSubagentScanTime = now;
+
+  // Restore previously registered IDs and persist only when the set actually
+  // changed — avoids rewriting the file on every 10s scan.
+  try {
+    const persisted = await ensurePersistentSubagentIds();
+    let changed = false;
+    for (const id of persisted) {
+      if (!subagentIds.has(id)) {
+        subagentIds.add(id);
+      }
+    }
+    for (const id of subagentIds) {
+      if (!persisted.has(id)) {
+        persisted.add(id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      await savePersistentSubagentIds(persisted);
+    }
+  } catch {}
+
   return subagentIds;
 }
 
 export async function peekDiskConversationMetadata(
   conversationId: string,
 ): Promise<{ summary?: string; stepCount?: number; isSubagent?: boolean }> {
+  if (!isValidConversationId(conversationId)) return {};
   const knownSubagents = await getAllKnownSubagentConversationIds();
   if (knownSubagents.has(conversationId)) {
     return { isSubagent: true };
@@ -154,6 +308,12 @@ export async function peekDiskConversationMetadata(
       "transcript.jsonl",
     );
     try {
+      const s = await stat(transcriptPath);
+      const cached = diskPeekMtimeCache.get(transcriptPath);
+      if (cached && cached.mtimeMs === s.mtimeMs) {
+        return cached.data;
+      }
+
       const content = await readFile(transcriptPath, "utf-8");
       const lines = content.split("\n").filter((l) => l.trim().length > 0);
       const stepCount = lines.length;
@@ -161,22 +321,14 @@ export async function peekDiskConversationMetadata(
       let summary: string | undefined;
       let isSubagent = false;
 
-      for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      for (let i = 0; i < Math.min(lines.length, 15); i++) {
         const line = lines[i];
+        if (isSubagentContent(line)) {
+          isSubagent = true;
+        }
+
         try {
           const parsed = JSON.parse(line);
-          const raw = JSON.stringify(parsed);
-          if (
-            raw.includes('"isSubagent":true') ||
-            raw.includes("parentTrajectoryId") ||
-            raw.includes("parentCascadeId") ||
-            raw.includes("invoke_subagent") ||
-            raw.includes("subagent:") ||
-            raw.includes("Usage Statistics Auditor")
-          ) {
-            isSubagent = true;
-          }
-
           if (!summary && parsed.type === "USER_INPUT" && parsed.content) {
             let rawText = String(parsed.content)
               .replace(/<user_safety_directive[\s\S]*?<\/user_safety_directive>\s*/gi, "")
@@ -190,19 +342,83 @@ export async function peekDiskConversationMetadata(
             if (rawText) {
               summary = rawText.slice(0, 60);
             }
+            if (isSubagentContent(rawText)) {
+              isSubagent = true;
+            }
           }
         } catch {}
       }
 
-      if (summary || stepCount > 0 || isSubagent) {
-        return { summary, stepCount, isSubagent };
+      if (summary && isSubagentContent(summary)) {
+        isSubagent = true;
       }
+
+      if (isSubagent) {
+        void registerSubagentConversationId(conversationId);
+      }
+
+      const result = (summary || stepCount > 0 || isSubagent) ? { summary, stepCount, isSubagent } : {};
+      diskPeekMtimeCache.set(transcriptPath, { mtimeMs: s.mtimeMs, data: result });
+      return result;
     } catch {
       // file missing
     }
   }
 
   return {};
+}
+
+export async function getConversationSubagentIds(conversationId: string): Promise<string[]> {
+  if (!isValidConversationId(conversationId)) return [];
+  const subagentIds = new Set<string>();
+  for (const appDataDir of KNOWN_APP_DATA_DIRS) {
+    const transcriptPath = join(
+      homedir(),
+      ".gemini",
+      appDataDir,
+      "brain",
+      conversationId,
+      ".system_generated",
+      "logs",
+      "transcript.jsonl",
+    );
+    try {
+      const content = await readFile(transcriptPath, "utf-8");
+      const lines = content.split("\n").filter(Boolean);
+      for (const line of lines) {
+        if (line.includes("conversationId") || line.includes("invoke_subagent") || line.includes("sender=")) {
+          const matches = line.matchAll(/"conversationId":\s*"([0-9a-fA-F-]{36})"/g);
+          for (const m of matches) {
+            if (m[1] !== conversationId) subagentIds.add(m[1]);
+          }
+          const senderMatches = line.matchAll(/sender=([0-9a-fA-F-]{36})/g);
+          for (const sm of senderMatches) {
+            if (sm[1] !== conversationId) subagentIds.add(sm[1]);
+          }
+        }
+      }
+    } catch {}
+  }
+  return Array.from(subagentIds);
+}
+
+export async function deleteDiskConversation(conversationId: string): Promise<void> {
+  // Guard against path traversal: never rm anything outside the brain dir.
+  if (!isValidConversationId(conversationId)) return;
+  for (const appDataDir of KNOWN_APP_DATA_DIRS) {
+    const brainDir = join(homedir(), ".gemini", appDataDir, "brain", conversationId);
+    try {
+      await rm(brainDir, { recursive: true, force: true });
+    } catch {}
+
+    const convDir = join(homedir(), ".gemini", appDataDir, "conversations");
+    for (const ext of CONVERSATION_EXTENSIONS) {
+      const pbFile = join(convDir, `${conversationId}${ext}`);
+      try {
+        await rm(pbFile, { force: true });
+      } catch {}
+    }
+  }
 }
 
 export interface DiskConversationStepsResult {
@@ -216,6 +432,7 @@ export async function readDiskConversationSteps(
   offset = 0,
   limit = 100,
 ): Promise<DiskConversationStepsResult | null> {
+  if (!isValidConversationId(conversationId)) return null;
   for (const appDataDir of KNOWN_APP_DATA_DIRS) {
     const transcriptPath = join(
       homedir(),
@@ -395,7 +612,15 @@ function safeDecodeUriComponent(value: string): string {
   }
 }
 
+let cachedProjectNameMap: Map<string, string> | null = null;
+let lastProjectNameMapScanTime = 0;
+
 export async function getProjectNameMap(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (cachedProjectNameMap && now - lastProjectNameMapScanTime < 10000) {
+    return cachedProjectNameMap;
+  }
+
   const map = new Map<string, string>();
   const projectsDir = join(homedir(), ".gemini", "config", "projects");
   try {
@@ -416,6 +641,8 @@ export async function getProjectNameMap(): Promise<Map<string, string>> {
   } catch {
     // projects dir missing or unreadable
   }
+  cachedProjectNameMap = map;
+  lastProjectNameMapScanTime = now;
   return map;
 }
 
@@ -467,8 +694,8 @@ function normalizeUriPath(uri?: string): string {
 export async function syncProjectPermissionPreset(
   workspaceUri?: string,
   preset?: string | number,
-  rpcClient?: { call: (method: string, body?: Record<string, unknown>, instance?: any) => Promise<unknown> },
-  instance?: any,
+  rpcClient?: { call: (method: string, body?: Record<string, unknown>, instance?: LSInstance) => Promise<unknown> },
+  instance?: LSInstance,
 ): Promise<void> {
   let presetEnum = "AGENT_PERMISSION_PRESET_DEFAULT";
   if (preset === "AGENT_PERMISSION_PRESET_DEFAULT" || preset === 1 || preset === "auto_edit") {
@@ -501,8 +728,7 @@ export async function syncProjectPermissionPreset(
           const normFolder = normalizeUriPath(folderUri);
           if (
             (normWs && normFolder && (normFolder === normWs || normFolder.includes(normWs) || normWs.includes(normFolder))) ||
-            (!normWs && normFolder && (normFolder.includes(cwdNorm) || cwdNorm.includes(normFolder))) ||
-            (data.name === "antigravity移动端")
+            (!normWs && normFolder && (normFolder.includes(cwdNorm) || cwdNorm.includes(normFolder)))
           ) {
             matched = true;
             if (res.gitFolder) {

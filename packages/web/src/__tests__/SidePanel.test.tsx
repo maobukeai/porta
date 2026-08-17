@@ -1,16 +1,54 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SidePanel } from "../components/SidePanel";
 import type { TrajectoryStep } from "../types";
+
+/** The desktop tab bar duplicates the picker card labels — scope lookups to the picker. */
+function pickerEl(): HTMLElement {
+  const el = document.querySelector(".zcode-tab-picker-container");
+  if (!el) throw new Error("tab picker container not rendered");
+  return el as HTMLElement;
+}
 
 describe("SidePanel Component", () => {
   it("renders tab picker empty state matching design with 3 cards", () => {
     render(<SidePanel steps={[]} messages={[]} />);
     expect(screen.getByText("打开标签页")).toBeInTheDocument();
     expect(screen.getByText("选择要在侧边面板中打开的标签。")).toBeInTheDocument();
-    expect(screen.getByText("辅助对话")).toBeInTheDocument();
-    expect(screen.getByText("审查")).toBeInTheDocument();
-    expect(screen.getByText("终端")).toBeInTheDocument();
+    const picker = pickerEl();
+    expect(within(picker).getByText("辅助对话")).toBeInTheDocument();
+    expect(within(picker).getByText("审查")).toBeInTheDocument();
+    expect(within(picker).getByText("终端")).toBeInTheDocument();
+  });
+
+  it("renders the desktop persistent tab bar with core tabs and switches 审查 via tab button", () => {
+    render(<SidePanel steps={[]} messages={[]} />);
+    expect(screen.getByRole("tab", { name: "辅助对话" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "审查" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Git" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "终端" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "审查" }));
+    expect(screen.getByText("代码审查中心")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "审查" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps the terminal mounted (keep-alive) when switching to another tab", async () => {
+    render(<SidePanel steps={[]} messages={[]} projectName="测试项目" />);
+    fireEvent.click(screen.getByRole("tab", { name: "终端" }));
+    expect(await screen.findByTitle("新建终端")).toBeInTheDocument();
+
+    // Switch to review — terminal wrapper stays mounted but hidden
+    fireEvent.click(screen.getByRole("tab", { name: "审查" }));
+    const keepalive = document.querySelector(".zcode-sidepanel-keepalive");
+    expect(keepalive).not.toBeNull();
+    expect((keepalive as HTMLElement).style.display).toBe("none");
+    expect(screen.getByText("代码审查中心")).toBeInTheDocument();
+
+    // Switch back — terminal is still alive (no re-create from scratch)
+    fireEvent.click(screen.getByRole("tab", { name: "终端" }));
+    expect((keepalive as HTMLElement).style.display).toBe("flex");
+    expect(screen.getByTitle("新建终端")).toBeInTheDocument();
   });
 
   it("activates 审查 tab when clicking 审查 card and shows code review center", () => {
@@ -25,7 +63,7 @@ describe("SidePanel Component", () => {
     ];
 
     render(<SidePanel steps={mockSteps} messages={[]} />);
-    const reviewCard = screen.getByText("审查");
+    const reviewCard = within(pickerEl()).getByText("审查");
     fireEvent.click(reviewCard);
 
     // Tab bar appears and review content shows Code Review Dashboard
@@ -46,7 +84,7 @@ describe("SidePanel Component", () => {
 
   it("activates 辅助对话 tab when clicking 辅助对话 card", () => {
     render(<SidePanel steps={[]} messages={[]} />);
-    const chatCard = screen.getByText("辅助对话");
+    const chatCard = within(pickerEl()).getByText("辅助对话");
     fireEvent.click(chatCard);
 
     expect(
@@ -54,19 +92,19 @@ describe("SidePanel Component", () => {
     ).toBeInTheDocument();
   });
 
-  it("activates 终端 tab when clicking 终端 card and allows creating tabs", () => {
+  it("activates 终端 tab when clicking 终端 card and allows creating tabs", async () => {
     render(<SidePanel steps={[]} messages={[]} projectName="测试项目" />);
-    const terminalCard = screen.getByText("终端");
+    const terminalCard = within(pickerEl()).getByText("终端");
     fireEvent.click(terminalCard);
 
-    expect(screen.getByTitle("新建终端")).toBeInTheDocument();
+    expect(await screen.findByTitle("新建终端")).toBeInTheDocument();
     expect(screen.getByTitle("切换面板")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked in empty state", () => {
     const onClose = vi.fn();
     render(<SidePanel steps={[]} messages={[]} onClose={onClose} />);
-    const closeBtn = screen.getByTitle("关闭面板");
+    const closeBtn = within(pickerEl()).getByTitle("关闭面板");
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalledTimes(1);
   });

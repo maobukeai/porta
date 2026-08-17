@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ClientSettings } from "../types";
 
-const STORAGE_KEY = "porta:settings";
+export const SETTINGS_STORAGE_KEY = "porta:settings";
 
 const DEFAULT_SETTINGS: ClientSettings = {
   defaultModel: null,
@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: ClientSettings = {
 
 function readSettings(): ClientSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
     // Legacy migration: if stored defaultModel was the hardcoded legacy "gemini-3.6-flash-high",
@@ -35,7 +35,7 @@ function readSettings(): ClientSettings {
 
 function writeSettings(settings: ClientSettings): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   } catch {
     // Storage full or unavailable — silently degrade
   }
@@ -47,7 +47,7 @@ export function useClientSettings() {
   // Listen for cross-tab storage events
   useEffect(() => {
     const handler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) {
+      if (e.key === SETTINGS_STORAGE_KEY) {
         setSettings(readSettings());
       }
     };

@@ -5,6 +5,7 @@ import { workspaceNameFromMetadata, workspaceNameFromUri } from "../utils/worksp
 import { prefetchSteps } from "../hooks/useStepsStream";
 import { usePolling } from "../hooks/usePolling";
 import { AccountQuotaModal } from "./AccountQuotaModal";
+import { useContextMenu, type ContextMenuItem } from "./ContextMenu";
 import {
   IconMCode,
   IconPlus,
@@ -16,6 +17,7 @@ import {
   IconGear,
   IconPencil,
   IconTrash,
+  IconArchive,
   IconSparkles,
   IconFilter,
   IconFolder,
@@ -29,8 +31,11 @@ import {
   IconCheck,
   IconPin,
   IconHelpCircle,
+  IconPlay,
+  IconEye,
 } from "./Icons";
 import { loadWaitingTasks } from "../utils/waitingTasks";
+import { isSubagentConversation } from "../utils/subagents";
 
 interface Props {
   conversations: ConversationEntry[];
@@ -38,6 +43,7 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: (workspaceUri?: string | null) => void;
   onDelete: (id: string) => void;
+  onToggleArchive?: (id: string) => void;
   onSettings: () => void;
   loading: boolean;
   connected: boolean;
@@ -118,6 +124,7 @@ export function Sidebar({
   onSelect,
   onNew,
   onDelete,
+  onToggleArchive,
   onSettings,
   loading,
   connected: _connected,
@@ -127,6 +134,7 @@ export function Sidebar({
   const [unreadIds, setUnreadIds] = useState<Set<string>>(() => loadUnreadTasks());
   const [waitingIds, setWaitingIds] = useState<Set<string>>(() => loadWaitingTasks());
   const prevStatusesRef = useRef<Map<string, string>>(new Map());
+  const conversationContextMenu = useContextMenu();
 
   // Listen for waiting task updates across conversations
   useEffect(() => {
@@ -209,6 +217,28 @@ export function Sidebar({
     } catch {}
     return "updated";
   });
+
+  // Status quick-filters (只看运行中 / 只看未读), combinable with the text filter
+  const [statusFilter, setStatusFilter] = useState<{ running: boolean; unread: boolean }>(() => {
+    try {
+      const raw = localStorage.getItem("porta:sidebarStatusFilter");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return { running: parsed?.running === true, unread: parsed?.unread === true };
+      }
+    } catch {}
+    return { running: false, unread: false };
+  });
+
+  const toggleStatusFilter = useCallback((key: "running" | "unread") => {
+    setStatusFilter((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      try {
+        localStorage.setItem("porta:sidebarStatusFilter", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
 
   const [viewSortMenuOpen, setViewSortMenuOpen] = useState(false);
   const viewSortMenuRef = useRef<HTMLDivElement>(null);
@@ -534,24 +564,7 @@ export function Sidebar({
 
     const isSubagentConv = (conv: ConversationEntry): boolean => {
       if (!conv || !conv.summary) return false;
-      if (conv.id === "279fd6a0-e70d-42ea-bc6c-3f0ed5ff8c39") return true;
-      const s = conv.summary as any;
-      const meta = s.trajectoryMetadata as any;
-      if (s.isSubagent || meta?.isSubagent || meta?.parentTrajectoryId || meta?.parentCascadeId || s.parentTrajectoryId || s._isSubagent) {
-        return true;
-      }
-      const title = String(s.summary || "");
-      if (
-        title.startsWith("[Subagent]") ||
-        title.startsWith("subagent:") ||
-        title.startsWith("子智能体") ||
-        /^🤖\s*子智能体/.test(title) ||
-        /Usage Statistics Auditor/i.test(title) ||
-        /数据统计功能代码审查/i.test(title)
-      ) {
-        return true;
-      }
-      return false;
+      return isSubagentConversation(conv.summary);
     };
 
     return conversations.filter((conv) => !sideIds.has(conv.id) && !isSubagentConv(conv));
@@ -694,6 +707,69 @@ export function Sidebar({
     return sortConversations(validConversations);
   }, [validConversations, sortConversations]);
 
+  // ── Inline type-to-filter (local, title-based; the server-side search modal stays untouched) ──
+  const [filterQuery, setFilterQuery] = useState("");
+  const filterInputRef = useRef<HTMLInputElement | null>(null);
+
+  const displayTitleOf = useCallback(
+    (conv: ConversationEntry) => {
+      const rawTitle = conv.summary.summary || "";
+      const isRawHash =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTitle.trim()) ||
+        /^[0-9a-f]{8}(?:…|\.\.\.)$/i.test(rawTitle.trim()) ||
+        rawTitle === conv.id;
+      const cleanSummary = !isRawHash && rawTitle ? rawTitle : "";
+      return customTitles[conv.id] || cleanSummary || `任务 (${conv.id.slice(0, 6)})`;
+    },
+    [customTitles],
+  );
+
+  const filterActive = filterQuery.trim().length > 0;
+  const statusFilterActive = statusFilter.running || statusFilter.unread;
+  const anyFilterActive = filterActive || statusFilterActive;
+
+  const convMatchesFilter = useCallback(
+    (conv: ConversationEntry, groupName: string) => {
+      if (
+        statusFilter.running &&
+        conv.summary.status !== "CASCADE_RUN_STATUS_RUNNING"
+      ) {
+        return false;
+      }
+      if (statusFilter.unread && !(unreadIds.has(conv.id) && conv.id !== activeId)) {
+        return false;
+      }
+      if (!filterActive) return true;
+      const q = filterQuery.trim().toLowerCase();
+      return (
+        displayTitleOf(conv).toLowerCase().includes(q) ||
+        groupName.toLowerCase().includes(q)
+      );
+    },
+    [filterQuery, filterActive, statusFilter, unreadIds, activeId, displayTitleOf],
+  );
+
+  const filteredTimeline = useMemo(() => {
+    if (!anyFilterActive) return timelineConversations;
+    return timelineConversations.filter((c) => convMatchesFilter(c, ""));
+  }, [anyFilterActive, timelineConversations, convMatchesFilter]);
+
+  const filteredGroups = useMemo(() => {
+    if (!anyFilterActive) return groups;
+    return groups
+      .map((g) => ({
+        ...g,
+        conversations: g.conversations.filter((c) => convMatchesFilter(c, g.name)),
+      }))
+      .filter((g) => g.conversations.length > 0);
+  }, [anyFilterActive, groups, convMatchesFilter]);
+
+  const filterMatchCount = anyFilterActive
+    ? viewMode === "timeline"
+      ? filteredTimeline.length
+      : filteredGroups.reduce((n, g) => n + g.conversations.length, 0)
+    : 0;
+
   const toggleGroup = (name: string) => {
     setCollapsed((prev) => {
       const next = { ...prev, [name]: !prev[name] };
@@ -727,16 +803,12 @@ export function Sidebar({
     }
   }, [allCollapsed, groups]);
 
-  // Keyboard shortcut listeners (Ctrl+N, Ctrl+K)
+  // Keyboard shortcut listener (Ctrl+N; Ctrl+K is owned by the App-level command palette)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
         onNew();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSearchOpen(true);
-        setTimeout(() => searchInputRef.current?.focus(), 50);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -778,26 +850,62 @@ export function Sidebar({
     const isRunning = conv.summary.status === "CASCADE_RUN_STATUS_RUNNING";
     const isWaiting = waitingIds.has(conv.id);
     const isUnread = unreadIds.has(conv.id) && conv.id !== activeId;
-    const rawTitle = conv.summary.summary || "";
-    const isRawHash =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawTitle.trim()) ||
-      /^[0-9a-f]{8}(?:…|\.\.\.)$/i.test(rawTitle.trim()) ||
-      rawTitle === conv.id;
-    const cleanSummary = !isRawHash && rawTitle ? rawTitle : "";
-    const displayTitle =
-      customTitles[conv.id] ||
-      cleanSummary ||
-      `任务 (${conv.id.slice(0, 6)})`;
+    const displayTitle = displayTitleOf(conv);
+
+    const isConvArchived = isArchived(conv) || archivedIds.has(conv.id);
+
+    const handleConversationContextMenu = (e: React.MouseEvent) => {
+      const items: ContextMenuItem[] = [
+        {
+          key: "open",
+          label: "打开对话",
+          icon: <IconMessageCheck size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => onSelect(conv.id),
+        },
+        {
+          key: "pin",
+          label: pinnedIds.has(conv.id) ? "取消置顶" : "置顶",
+          icon: <IconPin size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => togglePin(conv.id),
+        },
+      ];
+      if (onToggleArchive) {
+        items.push({
+          key: "archive",
+          label: isConvArchived ? "取消归档" : "归档",
+          icon: <IconArchive size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => onToggleArchive(conv.id),
+        });
+      }
+      items.push(
+        {
+          key: "rename",
+          label: "重命名",
+          icon: <IconPencil size={13} className="zcode-dropdown-icon" />,
+          onSelect: () => startRename(conv),
+        },
+        {
+          key: "delete",
+          label: "删除对话",
+          icon: <IconTrash size={13} className="zcode-dropdown-icon" />,
+          danger: true,
+          dividerBefore: true,
+          onSelect: () => onDelete(conv.id),
+        },
+      );
+      conversationContextMenu.openFromMouse(e, items);
+    };
 
     return (
       <div
         key={conv.id}
-        className={`sidebar-item zcode-tree-item ${conv.id === activeId ? "active" : ""} ${isWaiting ? "waiting" : isRunning ? "running" : ""} ${isArchived(conv) ? "dimmed" : ""}`}
+        className={`sidebar-item zcode-tree-item ${conv.id === activeId ? "active" : ""} ${isWaiting ? "waiting" : isRunning ? "running" : ""} ${isConvArchived ? "dimmed" : ""}`}
         draggable={false}
         onDragStart={(e) => {
           e.preventDefault();
           e.stopPropagation();
         }}
+        onContextMenu={handleConversationContextMenu}
         onMouseEnter={() => prefetchSteps(conv.id)}
         onTouchStart={() => prefetchSteps(conv.id)}
         onClick={() => {
@@ -947,7 +1055,7 @@ export function Sidebar({
           <button
             className="sidebar-icon-btn"
             onClick={() => setSearchOpen(true)}
-            title="搜索 (Ctrl+K)"
+            title="搜索对话"
           >
             <IconSearch size={16} />
           </button>
@@ -1011,13 +1119,12 @@ export function Sidebar({
             setSearchOpen(true);
             setTimeout(() => searchInputRef.current?.focus(), 50);
           }}
-          title="搜索对话 (Ctrl+K)"
+          title="搜索对话"
         >
           <div className="zcode-nav-btn-left">
             <IconSearch size={15} />
             <span>搜索</span>
           </div>
-          <span className="zcode-hotkey-badge">Ctrl+K</span>
         </button>
 
         <button
@@ -1033,6 +1140,79 @@ export function Sidebar({
           </div>
         </button>
       </div>
+
+      {/* 1b. Inline type-to-filter (desktop; mobile keeps the search modal) */}
+      <div className="porta-sidebar-filter">
+        <IconSearch size={13} className="porta-sidebar-filter-icon" />
+        <input
+          ref={filterInputRef}
+          type="text"
+          className="porta-sidebar-filter-input"
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              if (filterQuery) {
+                setFilterQuery("");
+              } else {
+                filterInputRef.current?.blur();
+              }
+            }
+          }}
+          placeholder="筛选会话…"
+          spellCheck={false}
+          autoComplete="off"
+          title="输入以按标题即时筛选会话列表（Esc 清除）"
+        />
+        {filterActive && (
+          <>
+            <span className="porta-sidebar-filter-count">{filterMatchCount}</span>
+            <button
+              type="button"
+              className="porta-sidebar-filter-clear"
+              onClick={() => {
+                setFilterQuery("");
+                filterInputRef.current?.focus();
+              }}
+              title="清除筛选"
+              aria-label="清除筛选"
+            >
+              <IconX size={12} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* 1c. Active status-filter chips (removable; shown on all viewports) */}
+      {statusFilterActive && (
+        <div className="porta-sidebar-status-chips">
+          {statusFilter.running && (
+            <button
+              type="button"
+              className="porta-status-chip running"
+              onClick={() => toggleStatusFilter("running")}
+              title="关闭「只看运行中」过滤"
+            >
+              <span className="porta-status-chip-dot" />
+              只看运行中
+              <IconX size={11} />
+            </button>
+          )}
+          {statusFilter.unread && (
+            <button
+              type="button"
+              className="porta-status-chip unread"
+              onClick={() => toggleStatusFilter("unread")}
+              title="关闭「只看未读」过滤"
+            >
+              <span className="porta-status-chip-dot" />
+              只看未读
+              <IconX size={11} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 2. Project Toolbar (项目, 收起/展开全部, 筛选/排序, 新建) */}
       <div className="zcode-project-toolbar">
@@ -1154,6 +1334,36 @@ export function Sidebar({
                   <IconCheck size={13} className="zcode-filter-check" />
                 )}
               </button>
+
+              <div className="zcode-filter-divider" />
+
+              <div className="zcode-filter-section-title">快捷过滤</div>
+              <button
+                className={`zcode-filter-item ${statusFilter.running ? "active" : ""}`}
+                onClick={() => toggleStatusFilter("running")}
+                title="仅显示正在执行任务的会话（可与未读组合）"
+              >
+                <div className="zcode-filter-item-left">
+                  <IconPlay size={14} className="zcode-filter-icon" />
+                  <span>只看运行中</span>
+                </div>
+                {statusFilter.running && (
+                  <IconCheck size={13} className="zcode-filter-check" />
+                )}
+              </button>
+              <button
+                className={`zcode-filter-item ${statusFilter.unread ? "active" : ""}`}
+                onClick={() => toggleStatusFilter("unread")}
+                title="仅显示有未读完成消息的会话（可与运行中组合）"
+              >
+                <div className="zcode-filter-item-left">
+                  <IconEye size={14} className="zcode-filter-icon" />
+                  <span>只看未读</span>
+                </div>
+                {statusFilter.unread && (
+                  <IconCheck size={13} className="zcode-filter-check" />
+                )}
+              </button>
             </div>
           )}
         </div>
@@ -1167,14 +1377,39 @@ export function Sidebar({
           >
             <div className="loading-spinner" />
           </div>
+        ) : anyFilterActive && filterMatchCount === 0 ? (
+          <div className="porta-sidebar-filter-empty">
+            <span>
+              {filterActive
+                ? "没有匹配的会话"
+                : statusFilter.running && statusFilter.unread
+                  ? "没有运行中的未读会话"
+                  : statusFilter.running
+                    ? "没有运行中的会话"
+                    : "没有未读会话"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterQuery("");
+                if (statusFilter.running) toggleStatusFilter("running");
+                if (statusFilter.unread) toggleStatusFilter("unread");
+              }}
+            >
+              清除筛选
+            </button>
+          </div>
         ) : viewMode === "timeline" ? (
           <div className="workspace-group-items zcode-tree-items">
-            {timelineConversations.map(renderItem)}
+            {filteredTimeline.map(renderItem)}
           </div>
         ) : (
-          groups.map((group) => {
+          filteredGroups.map((group) => {
             const totalCount = group.conversations.length;
-            const isGroupCollapsed = collapsed[group.name] ?? false;
+            // Filtering forces groups open so matches stay visible
+            const isGroupCollapsed = anyFilterActive
+              ? false
+              : collapsed[group.name] ?? false;
             const isTask = isTaskGroupName(group.name);
 
             return (
@@ -1368,7 +1603,11 @@ export function Sidebar({
         onClose={() => setQuotaOpen(false)}
         onOpenSettings={onSettings}
         sidebarWidth={sidebarWidth}
+        initialData={userStatusData}
       />
+
+      {/* Desktop right-click menu for conversations (portal → body) */}
+      {conversationContextMenu.menu}
     </aside>
   );
 }

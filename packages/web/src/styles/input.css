@@ -9,18 +9,8 @@
   background: var(--bg-canvas);
 }
 
-.chat-input-model-row {
-  max-width: 840px;
-  margin: 0 auto 8px;
-  width: 100%;
-  padding: 0 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .chat-input-wrap {
-  max-width: 840px;
+  max-width: var(--chat-col, 840px);
   margin: 0 auto;
   width: 100%;
   display: flex;
@@ -47,14 +37,6 @@
 [data-theme="light"] .chat-input-wrap:focus-within {
   border-color: rgba(0, 0, 0, 0.3);
   box-shadow: var(--shadow-floating), 0 0 0 2px rgba(0, 0, 0, 0.1);
-}
-
-.chat-input-pill-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 2px;
-  flex-wrap: wrap;
 }
 
 .chat-input-top {
@@ -495,7 +477,7 @@
 /* ── Slash Autocomplete Menu (Command Palette Style) ── */
 
 .slash-autocomplete-menu {
-  max-width: 840px;
+  max-width: var(--chat-col, 840px);
   margin: 0 auto 8px;
   width: 100%;
   background: var(--glass-bg-elevated);
@@ -584,7 +566,7 @@
 /* ── File error toast ── */
 
 .file-error-toast {
-  max-width: 840px;
+  max-width: var(--chat-col, 840px);
   margin: 0 auto 8px;
   width: 100%;
   padding: 8px 14px;
@@ -610,7 +592,7 @@
 /* ── Attachment previews ── */
 
 .attachment-previews {
-  max-width: 840px;
+  max-width: var(--chat-col, 840px);
   margin: 0 auto 8px;
   width: 100%;
   display: flex;
@@ -702,14 +684,6 @@
   text-overflow: ellipsis;
   text-align: left;
   font-weight: 500;
-}
-
-.model-label-full {
-  display: inline;
-}
-
-.model-label-short {
-  display: none;
 }
 
 .model-selector-caret {

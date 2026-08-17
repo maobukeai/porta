@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { setCustomApiBase } from '../api/client';
+import { setCustomApiBase, authHeaders } from '../api/client';
 
 export function SetupWizard({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState('');
@@ -27,6 +27,7 @@ export function SetupWizard({ onClose }: { onClose: () => void }) {
       const target = `http://${ip}:${PORT}`;
       try {
         const res = await fetch(`${target}/api/health`, {
+          headers: authHeaders(),
           signal: AbortSignal.timeout(600),
         });
         if (res.ok) return target;

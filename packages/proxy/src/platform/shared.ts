@@ -77,6 +77,7 @@ export function parseCommandCandidate(
     csrfToken,
     workspaceId: parseArgValue(args, "--workspace_id"),
     ...(appDataDir ? { appDataDir } : {}),
+    executablePath: executable,
     httpsPort: parsePort(args, "--server_port"),
     httpPort: parsePort(args, "--extension_server_port"),
     lspPort: parsePort(args, "--lsp_port"),

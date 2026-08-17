@@ -1,0 +1,950 @@
+/* ─────────────────────────────────────────────────────────────────
+   Desktop enhancement layer (≥1024px)
+
+   Everything mobile-first stays untouched in the other stylesheets.
+   Rules here only apply on wide viewports / pointer-capable devices,
+   so phone and tablet behaviour is identical to before.
+   ───────────────────────────────────────────────────────────────── */
+
+/* ── 1. Layout, density & typography ───────────────────────────── */
+
+@media (min-width: 1024px) {
+  :root {
+    --header-height: 56px;
+    --sidebar-width: 280px;
+    --chat-col: 780px;
+  }
+
+  [data-chat-width="wide"] {
+    --chat-col: 1000px;
+  }
+
+  /* Chat column: comfortable centered reading width */
+  .chat-area {
+    padding: 24px 0;
+    gap: 10px;
+  }
+
+  .chat-area-inner {
+    max-width: var(--chat-col);
+    padding: 0 32px;
+    gap: 20px;
+  }
+
+  .message-body {
+    font-size: 15px;
+    line-height: 1.7;
+    letter-spacing: 0.1px;
+  }
+
+  .message.user .message-body {
+    font-size: 14.5px;
+    max-width: 78%;
+    padding: 10px 16px;
+    border-radius: 12px;
+  }
+
+  /* Keep the input aligned with the chat column on ultra-wide screens */
+  .chat-input-area {
+    max-width: calc(var(--chat-col) + 64px);
+    width: 100%;
+    margin: 0 auto;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* Composer polish: roomier capsule, aligned with the message column */
+  .chat-input-wrap {
+    padding: 14px 16px 12px;
+  }
+
+  .chat-input {
+    font-size: 15px;
+    max-height: 260px; /* mirrors textareaMaxHeight() desktop cap */
+  }
+
+  .chat-input-bottom-left {
+    gap: 8px;
+  }
+
+  .chat-send-btn,
+  .chat-stop-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  /* Compact density preference (Settings → 外观与布局) */
+  [data-density="compact"] .chat-area {
+    padding: 12px 0;
+    gap: 4px;
+  }
+
+  [data-density="compact"] .chat-area-inner {
+    gap: 10px;
+  }
+
+  [data-density="compact"] .message-body {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  [data-density="compact"] .message.user .message-body {
+    font-size: 13.5px;
+    padding: 8px 13px;
+  }
+
+  /* Empty state: bigger hero */
+  .chat-empty {
+    max-width: 720px;
+    gap: 24px;
+    padding: 48px 24px;
+  }
+
+  .chat-empty-title {
+    font-size: 26px;
+    letter-spacing: -0.5px;
+  }
+
+  .chat-empty-subtitle {
+    font-size: 14px;
+    max-width: 520px;
+  }
+
+  .chat-empty-grid {
+    gap: 12px;
+  }
+
+  .chat-prompt-card {
+    padding: 14px 16px;
+  }
+
+  .chat-prompt-title {
+    font-size: 13.5px;
+  }
+
+  .chat-prompt-desc {
+    font-size: 12px;
+  }
+
+  /* Header: roomier spacing */
+  .main-header {
+    padding-left: 14px;
+    padding-right: 14px;
+    gap: 10px;
+  }
+
+  .main-header-title {
+    font-size: 14px;
+  }
+
+  /* Desktop scrollbars: slim, rounded, hover-accented */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  [data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.16);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* ── QuickSwitchSheet: bottom drawer → centered modal ── */
+  .quick-switch-overlay {
+    justify-content: center;
+    align-items: center;
+  }
+
+  .quick-switch-sheet {
+    width: min(560px, 90vw);
+    max-height: min(640px, 82vh);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--glass-border);
+    border-top: 1px solid var(--glass-border);
+    padding: 8px 12px 14px;
+    box-shadow: var(--shadow-floating);
+    animation: desktop-modal-pop 0.22s var(--ease-spring);
+    touch-action: auto;
+  }
+
+  .quick-switch-handle-bar {
+    display: none;
+  }
+
+  /* ── MessageActionSheet: bottom sheet → centered dialog ──
+     The component uses inline styles, so important is required. */
+  .action-sheet-backdrop {
+    justify-content: center !important;
+    align-items: center !important;
+  }
+
+  .action-sheet-container {
+    width: min(400px, 90vw) !important;
+    border-radius: 14px !important;
+    border-top-left-radius: 14px !important;
+    border-top-right-radius: 14px !important;
+    border: 1px solid var(--border-default);
+    animation: desktop-modal-pop 0.2s var(--ease-spring) !important;
+  }
+
+  .action-sheet-container > div:first-child {
+    display: none !important; /* hide the mobile drag handle */
+  }
+}
+
+/* ── 2. Ultra-wide refinements (≥1440px) ───────────────────────── */
+
+@media (min-width: 1440px) {
+  .chat-empty {
+    max-width: 800px;
+  }
+
+  .chat-empty-title {
+    font-size: 28px;
+  }
+
+  .chat-empty-grid {
+    gap: 14px;
+  }
+
+  .chat-prompt-card {
+    padding: 16px 18px;
+  }
+}
+
+/* ── 3. Pointer-device refinements (hover-reveal, cursors) ─────── */
+
+@media (min-width: 1024px) and (hover: hover) and (pointer: fine) {
+  /* Message action buttons appear on hover instead of always-on */
+  .msg-actions {
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .message:hover .msg-actions,
+  .msg-actions:focus-within {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Keep the latest assistant actions visible so copy stays reachable */
+  .message.assistant:last-of-type .msg-actions,
+  .message.is-latest .msg-actions {
+    opacity: 1;
+    transform: none;
+  }
+
+  .chat-prompt-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .chat-prompt-card:hover .chat-prompt-title {
+    color: var(--text-primary);
+  }
+}
+
+/* ── 4. Keyboard focus rings (desktop only) ────────────────────── */
+
+@media (min-width: 1024px) {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.4);
+    outline-offset: 2px;
+  }
+
+  [data-theme="light"] button:focus-visible,
+  [data-theme="light"] a:focus-visible,
+  [data-theme="light"] input:focus-visible,
+  [data-theme="light"] textarea:focus-visible,
+  [data-theme="light"] select:focus-visible,
+  [data-theme="light"] [tabindex]:focus-visible {
+    outline: 2px solid rgba(24, 24, 27, 0.5);
+  }
+}
+
+@keyframes desktop-modal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   5. Desktop-only components (command palette, context menu,
+      shortcuts overlay). Rendered exclusively through desktop
+      interactions, so no media query is needed for these selectors.
+   ───────────────────────────────────────────────────────────────── */
+
+/* ── Command palette (Ctrl+K) ── */
+
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+  animation: fade-in 0.15s ease-out;
+}
+
+.command-palette {
+  width: min(620px, 100%);
+  max-height: min(520px, 70vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg-elevated);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+  animation: desktop-modal-pop 0.2s var(--ease-spring);
+}
+
+.command-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.command-palette-input-row svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.command-palette-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.command-palette-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.command-palette-esc {
+  flex-shrink: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.command-palette-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.command-palette-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  padding: 8px 10px 4px;
+  text-transform: uppercase;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-palette-item svg {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.command-palette-item.selected {
+  background: var(--bg-active);
+}
+
+.command-palette-item.selected svg {
+  color: var(--text-primary);
+}
+
+.command-palette-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-item-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-item kbd,
+.command-palette-esc,
+.shortcuts-kbd {
+  font-family: var(--font-mono);
+}
+
+.command-palette-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.command-palette-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.command-palette-footer kbd {
+  display: inline-block;
+  border: 1px solid var(--border-default);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  padding: 0 5px;
+  margin-right: 3px;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--text-secondary);
+}
+
+/* ── Context menu (right-click, pointer devices) ── */
+
+.porta-context-menu {
+  position: fixed;
+  left: 0;
+  top: 0;
+  min-width: 180px;
+  z-index: 1600;
+  /* reuse .zcode-header-dropdown-menu visual language */
+}
+
+/* ── Side panel desktop tab bar (≥1024px; mobile keeps card picker + back) ── */
+
+/* Hidden below desktop widths — base .zcode-sidepanel-tabbar is display:flex,
+   this later import overrides it outside the media query. */
+.porta-sidepanel-desktop-tabbar {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .porta-sidepanel-desktop-tabbar {
+    display: flex;
+  }
+}
+
+/* Terminal keep-alive layer: fills the panel while visible, display comes inline */
+.zcode-sidepanel-keepalive {
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.porta-tabbar-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.porta-tabbar-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Light theme for the side panel tab bar (base styles are dark-hardcoded) */
+[data-theme="light"] .zcode-sidepanel-tabbar {
+  background: #f4f4f5;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .zcode-sidepanel-tab-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #18181b;
+}
+
+[data-theme="light"] .zcode-sidepanel-tab-item.active {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Redundant back-to-picker buttons: hidden on desktop (tab bar replaces them).
+   title is the only attribute distinguishing them from same-class tool buttons
+   (trash / git refresh / new terminal / close). Mobile keeps the back flow. ── */
+
+@media (min-width: 1024px) {
+  .zcode-panel-tool-btn[title="切换面板"],
+  .vscode-breadcrumb-btn[title="返回"] {
+    display: none;
+  }
+}
+
+/* ── Sidebar inline type-to-filter (≥1024px; mobile keeps the search modal) ── */
+
+.porta-sidebar-filter {
+  display: none;
+}
+
+.porta-sidebar-filter-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+}
+
+.porta-sidebar-filter-empty button {
+  border: 1px solid var(--border-default);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.porta-sidebar-filter-empty button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+@media (min-width: 1024px) {
+  .porta-sidebar-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 8px;
+    padding: 0 10px;
+    height: 32px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    transition: border-color var(--transition-fast);
+  }
+
+  .porta-sidebar-filter:focus-within {
+    border-color: var(--border-focus);
+  }
+
+  .porta-sidebar-filter-icon {
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+
+  .porta-sidebar-filter-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+  }
+
+  .porta-sidebar-filter-input::placeholder {
+    color: var(--text-tertiary);
+  }
+
+  .porta-sidebar-filter-count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .porta-sidebar-filter-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: var(--radius-xs);
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .porta-sidebar-filter-clear:hover {
+    background: var(--bg-active);
+    color: var(--text-primary);
+  }
+}
+
+/* ── Sidebar status-filter chips (removable, all viewports) ── */
+
+.porta-sidebar-status-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 12px 8px;
+  flex-wrap: wrap;
+}
+
+.porta-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast);
+}
+
+.porta-status-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-emphasis);
+  background: var(--bg-hover);
+}
+
+.porta-status-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.porta-status-chip.running .porta-status-chip-dot {
+  background: rgb(var(--c-accent));
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+
+.porta-status-chip.unread .porta-status-chip-dot {
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+}
+
+/* ── Chat day separators (rendered when a turn's date changes) ── */
+
+.chat-day-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0 2px;
+  color: var(--text-tertiary);
+  font-size: 11.5px;
+  user-select: none;
+}
+
+.chat-day-separator::before,
+.chat-day-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.chat-day-separator span {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  line-height: 1.5;
+}
+
+/* ── In-conversation search bar (Ctrl+F, opened from App via event) ── */
+
+.chat-search-bar {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--glass-bg-elevated);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  animation: desktop-modal-pop 0.18s var(--ease-spring);
+}
+
+.chat-search-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.chat-search-input {
+  width: 220px;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.chat-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.chat-search-count {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  padding: 0 2px;
+}
+
+.chat-search-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-search-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-search-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Target message flash while navigating search results */
+.message.search-flash {
+  animation: search-flash-ring 1.6s var(--ease-spring);
+}
+
+@keyframes search-flash-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(64, 153, 255, 0.55);
+    background: rgba(64, 153, 255, 0.12);
+    border-radius: 8px;
+  }
+  35% {
+    background: rgba(64, 153, 255, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(64, 153, 255, 0);
+    background: transparent;
+    border-radius: 8px;
+  }
+}
+
+/* ── Shortcuts help overlay (? key) ── */
+
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fade-in 0.15s ease-out;
+}
+
+.shortcuts-card {
+  width: min(680px, 100%);
+  max-height: min(600px, 84vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-floating);
+  overflow: hidden;
+  animation: desktop-modal-pop 0.2s var(--ease-spring);
+}
+
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.shortcuts-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.shortcuts-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.shortcuts-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.shortcuts-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 18px 16px;
+}
+
+.shortcuts-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 14px 0 6px;
+}
+
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 24px;
+}
+
+@media (max-width: 560px) {
+  .shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.shortcut-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.shortcuts-kbd {
+  display: inline-block;
+  border: 1px solid var(--border-default);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 17px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}

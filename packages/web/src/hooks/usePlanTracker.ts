@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { TrajectoryStep, ChatMessage, PlanTaskItem, ConversationPlanResponse } from "../types";
 import { api } from "../api/client";
 import { extractSubagentSessions } from "./useSubagentViewer";
+import { cleanPath } from "../utils/pathUtils";
 
 export interface PlanProgressData {
   hasPlan: boolean;
@@ -24,15 +25,6 @@ export interface PlanProgressData {
   refresh: () => Promise<void>;
 }
 
-function cleanPath(p?: string): string {
-  if (!p) return "";
-  return p
-    .replace(/^file:\/\/\/?/, "")
-    .replace(/^[a-zA-Z]:[\\/]/, "")
-    .replace(/^[/\\]+/, "")
-    .replace(/\\/g, "/")
-    .trim();
-}
 
 /**
  * Extracts emoji icon at start of string or within string.
@@ -261,7 +253,11 @@ export function applyDynamicStepProgress(tasks: PlanTaskItem[], steps: Trajector
 
     // 3. Check commit tasks
     const isCommitTask = text.includes("commit") || text.includes("提交");
-    const commitDone = isCommitTask && (hasGitCommit || hasWalkthrough || i < updated.length - 1);
+    // A commit task is done only when git commit actually ran (hasGitCommit)
+    // or the full walkthrough was written (hasWalkthrough).
+    // The previous condition `i < updated.length - 1` was incorrect: it marked
+    // any non-last commit task as done even when git never ran.
+    const commitDone = isCommitTask && (hasGitCommit || hasWalkthrough);
 
     if (fileMatched || testRan || commitDone) {
       task.status = "completed";

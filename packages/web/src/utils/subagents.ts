@@ -237,3 +237,51 @@ export function subagentDataFromStep(
     items,
   };
 }
+
+/**
+ * Checks if a string contains subagent signatures or prompts.
+ */
+export function isSubagentText(text?: string): boolean {
+  if (!text) return false;
+  let testStr = text.trim();
+  const m = testStr.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+  if (m) {
+    testStr = m[1].trim();
+  } else if (testStr.startsWith("{") && testStr.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(testStr);
+      if (parsed.content) {
+        const m2 = String(parsed.content).match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
+        testStr = m2 ? m2[1].trim() : String(parsed.content).trim();
+      }
+    } catch {}
+  }
+
+  return (
+    /^你是【.*Agent/i.test(testStr) ||
+    /^你是【.*智能体/i.test(testStr) ||
+    /^你是【/i.test(testStr) ||
+    /^你是一个子智能体/i.test(testStr) ||
+    testStr.startsWith("[Subagent]") ||
+    testStr.startsWith("subagent:") ||
+    testStr.startsWith("子智能体") ||
+    /^🤖\s*子智能体/i.test(testStr)
+  );
+}
+
+/**
+ * Checks if a conversation summary is a subagent conversation.
+ */
+export function isSubagentConversation(summary?: any): boolean {
+  if (!summary) return false;
+  if (summary.isSubagent || summary._isSubagent) return true;
+  const meta = summary.trajectoryMetadata;
+  if (meta && (meta.isSubagent || meta.parentTrajectoryId || meta.parentCascadeId || meta.spawnedBy)) {
+    return true;
+  }
+  const title = String(summary.summary || "");
+  if (isSubagentText(title)) {
+    return true;
+  }
+  return false;
+}

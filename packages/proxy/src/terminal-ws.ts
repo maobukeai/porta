@@ -16,7 +16,9 @@ function resolvePathFromUri(uri?: string): string {
     try {
       return fileURLToPath(uri);
     } catch {
-      return uri.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
+      // Only flip slashes to backslashes on Windows — POSIX paths must keep "/".
+      const stripped = uri.replace(/^file:\/\/\/?/, "");
+      return process.platform === "win32" ? stripped.replace(/\//g, "\\") : stripped;
     }
   }
   return uri;
@@ -41,49 +43,59 @@ export function handleTerminalWebSocket(ws: WebSocket, req: IncomingMessage, por
 
   let ptyProcess: pty.IPty | null = null;
 
-  try {
-    ptyProcess = pty.spawn(shell, args, {
-      name: "xterm-256color",
-      cols: isNaN(cols) ? 120 : cols,
-      rows: isNaN(rows) ? 30 : rows,
-      cwd: initialCwd,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-        COLORTERM: "truecolor",
-        LANG: "zh_CN.UTF-8",
-        LC_ALL: "zh_CN.UTF-8",
-        PYTHONIOENCODING: "utf-8",
-      } as Record<string, string>,
-    });
-  } catch (err) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: "output",
-        data: `\r\n\x1b[31m无法启动终端进程: ${(err as Error).message}\x1b[0m\r\n`,
-      }));
-      ws.close();
-    }
-    return;
-  }
+  const spawnPty = (): pty.IPty | null => {
+    try {
+      const proc = pty.spawn(shell, args, {
+        name: "xterm-256color",
+        cols: isNaN(cols) ? 120 : cols,
+        rows: isNaN(rows) ? 30 : rows,
+        cwd: initialCwd,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+          COLORTERM: "truecolor",
+          LANG: "zh_CN.UTF-8",
+          LC_ALL: "zh_CN.UTF-8",
+          PYTHONIOENCODING: "utf-8",
+        } as Record<string, string>,
+      });
 
-  // PTY → WebSocket: forward all terminal output as ANSI
-  ptyProcess.onData((data: string) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "output", data }));
-    }
-  });
+      // PTY → WebSocket: forward all terminal output as ANSI
+      proc.onData((data: string) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "output", data }));
+        }
+      });
 
-  // PTY exit → notify client
-  ptyProcess.onExit(({ exitCode }) => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: "output",
-        data: `\r\n\x1b[90m[进程已退出 (代码 ${exitCode ?? 0})]\x1b[0m\r\n`,
-      }));
-      ws.close();
+      // PTY exit → notify client. When another process has already replaced
+      // this one (restart), the exit belongs to the old shell — stay silent.
+      proc.onExit(({ exitCode }) => {
+        if (ptyProcess !== proc) return;
+        ptyProcess = null;
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "output",
+            data: `\r\n\x1b[90m[进程已退出 (代码 ${exitCode ?? 0})]\x1b[0m\r\n`,
+          }));
+          ws.close();
+        }
+      });
+
+      return proc;
+    } catch (err) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "output",
+          data: `\r\n\x1b[31m无法启动终端进程: ${(err as Error).message}\x1b[0m\r\n`,
+        }));
+        ws.close();
+      }
+      return null;
     }
-  });
+  };
+
+  ptyProcess = spawnPty();
+  if (!ptyProcess) return;
 
   // WebSocket → PTY: forward keystrokes and resize events
   ws.on("message", (raw: Buffer | string) => {
@@ -96,9 +108,17 @@ export function handleTerminalWebSocket(ws: WebSocket, req: IncomingMessage, por
           ptyProcess?.resize(msg.cols, msg.rows);
         } catch {}
       } else if (msg.type === "restart") {
+        // Kill the current shell and spawn a fresh one on the same socket.
         try {
           ptyProcess?.kill();
         } catch {}
+        ptyProcess = spawnPty();
+        if (ptyProcess && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "output",
+            data: "\r\n\x1b[90m[终端已重启]\x1b[0m\r\n",
+          }));
+        }
       }
     } catch {
       // Raw input fallback

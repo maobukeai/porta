@@ -47,9 +47,13 @@ import {
   IconDownload,
   IconVolume,
   IconBarChart,
+  IconList,
+  IconMaximize,
+  IconPanelRight,
 } from "./Icons";
 import { UsageStatisticsView } from "./UsageStatisticsView";
-import { api, getApiBase, setCustomApiBase } from "../api/client";
+import { CockpitAccountManager } from "./CockpitAccountManager";
+import { api, getApiBase, setCustomApiBase, getApiToken, setApiToken } from "../api/client";
 import { CircularProgressRing } from "./ModelSelector";
 import { SetupWizard } from "./SetupWizard";
 import { CustomSelect } from "./CustomSelect";
@@ -228,20 +232,32 @@ const ALL_MOBILE_MENU_ITEMS = [
   ...BASIC_SETTINGS_TABS,
 ];
 
+/**
+ * Stable defaults — inline `= []` would create a fresh array on every render,
+ * changing `workspaces` identity, recreating fetchCapabilities (whose deps
+ * include workspaces) and re-running its mount effect in an infinite
+ * fetch/setState/render loop.
+ */
+const EMPTY_WORKSPACES: WorkspaceItem[] = [];
+const EMPTY_CONVERSATIONS: ConversationItem[] = [];
+
 export function SettingsPanel({
   settings,
   onUpdate,
   onBack,
-  workspaces = [],
-  conversations = [],
+  workspaces = EMPTY_WORKSPACES,
+  conversations = EMPTY_CONVERSATIONS,
   onSelectProject,
   onSelectChat,
 }: Props) {
+  const safeWorkspaces: WorkspaceItem[] = workspaces ?? EMPTY_WORKSPACES;
+  const safeConversations: ConversationItem[] = conversations ?? EMPTY_CONVERSATIONS;
   const [activeTab, setActiveTab] = useState<SettingsTab>("memory");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
   const [showAllProjects, setShowAllProjects] = useState(false);
   const [customServerUrl, setCustomServerUrl] = useState<string>(() => getApiBase());
+  const [authToken, setAuthToken] = useState<string>(() => getApiToken());
   const [proxyStatus, setProxyStatus] = useState<"idle" | "saving" | "ok" | "error">("idle");
   const [healthData, setHealthData] = useState<import("../types").HealthResponse | null>(null);
   const [showSetupWizardLocal, setShowSetupWizardLocal] = useState(false);
@@ -350,13 +366,13 @@ export function SettingsPanel({
   const fetchCapabilities = useCallback(async () => {
     try {
       const [mem, plugs, sks, subs, mcps, cmds, hks] = await Promise.allSettled([
-        api.agentCapabilities.memory(workspaces[0]?.uri),
+        api.agentCapabilities.memory(safeWorkspaces[0]?.uri),
         api.agentCapabilities.plugins(),
         api.agentCapabilities.skills(),
         api.agentCapabilities.subagents(),
         api.agentCapabilities.mcp(),
         api.agentCapabilities.commands(),
-        api.agentCapabilities.hooks(workspaces[0]?.uri),
+        api.agentCapabilities.hooks(safeWorkspaces[0]?.uri),
       ]);
 
       if (!isMountedRef.current) return;
@@ -382,7 +398,7 @@ export function SettingsPanel({
     } catch (err) {
       console.warn("Failed to fetch capabilities:", err);
     }
-  }, [workspaces]);
+  }, [safeWorkspaces]);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -951,7 +967,7 @@ export function SettingsPanel({
           event: hookFormEvent,
           originalEvent: editingHook.event,
           scope: hookFormScope,
-          workspaceUri: workspaces[0]?.uri,
+          workspaceUri: safeWorkspaces[0]?.uri,
           filePath: editingHook.filePath,
           runType: hookFormRunType,
           matcher: hookFormMatcher.trim() || undefined,
@@ -965,7 +981,7 @@ export function SettingsPanel({
           name: hookFormName.trim() || undefined,
           event: hookFormEvent,
           scope: hookFormScope,
-          workspaceUri: workspaces[0]?.uri,
+          workspaceUri: safeWorkspaces[0]?.uri,
           runType: hookFormRunType,
           matcher: hookFormMatcher.trim() || undefined,
           command: hookFormCommand.trim(),
@@ -991,7 +1007,7 @@ export function SettingsPanel({
     hookFormName,
     hookFormEvent,
     hookFormScope,
-    workspaces,
+    safeWorkspaces,
     hookFormRunType,
     hookFormMatcher,
     hookFormTimeout,
@@ -1010,7 +1026,7 @@ export function SettingsPanel({
           name: h.name,
           filePath: h.filePath,
           scope: h.source === "workspace" ? "workspace" : "user",
-          workspaceUri: workspaces[0]?.uri,
+          workspaceUri: safeWorkspaces[0]?.uri,
           enabled: nextEnabled,
         });
         flashSaved();
@@ -1021,7 +1037,7 @@ export function SettingsPanel({
         );
       }
     },
-    [workspaces, flashSaved]
+    [safeWorkspaces, flashSaved]
   );
 
   const handleDeleteHook = useCallback(
@@ -1033,7 +1049,7 @@ export function SettingsPanel({
           event: h.event,
           filePath: h.filePath,
           scope: h.source === "workspace" ? "workspace" : "user",
-          workspaceUri: workspaces[0]?.uri,
+          workspaceUri: safeWorkspaces[0]?.uri,
         });
         setHooksList((prev) => prev.filter((item) => item.id !== h.id));
         flashSaved();
@@ -1041,7 +1057,7 @@ export function SettingsPanel({
         console.error("Failed to delete hook:", err);
       }
     },
-    [workspaces, flashSaved]
+    [safeWorkspaces, flashSaved]
   );
 
   const filteredAndGroupedHooks = useMemo(() => {
@@ -1161,7 +1177,7 @@ export function SettingsPanel({
     }
   }, [fetchCapabilities, flashSaved]);
 
-  const displayedProjects = showAllProjects ? workspaces : workspaces.slice(0, 4);
+  const displayedProjects = (showAllProjects ? safeWorkspaces : safeWorkspaces.slice(0, 4)) ?? [];
 
   return (
     <>
@@ -1269,11 +1285,11 @@ export function SettingsPanel({
             </div>
 
             {/* Section: Projects */}
-            {workspaces.length > 0 && (
+            {safeWorkspaces.length > 0 && (
               <div className="settings-nav-group">
                 <div className="settings-group-header">工作区项目</div>
                 <div className="settings-nav">
-                  {displayedProjects.map((ws) => (
+                  {(displayedProjects ?? []).map((ws) => (
                     <button
                       key={ws.uri}
                       className="settings-nav-item project-item"
@@ -1288,7 +1304,7 @@ export function SettingsPanel({
                       <span className="project-name-text">{ws.name}</span>
                     </button>
                   ))}
-                  {workspaces.length > 4 && (
+                  {safeWorkspaces.length > 4 && (
                     <button
                       className="settings-nav-item show-all-btn"
                       onClick={() => setShowAllProjects((v) => !v)}
@@ -1301,11 +1317,11 @@ export function SettingsPanel({
             )}
 
             {/* Section: Recent Conversations */}
-            {conversations.length > 0 && onSelectChat && (
+            {safeConversations.length > 0 && onSelectChat && (
               <div className="settings-nav-group">
                 <div className="settings-group-header">最近会话</div>
                 <div className="settings-nav">
-                  {conversations.slice(0, 3).map((chat) => (
+                  {(safeConversations.slice(0, 3) ?? []).map((chat) => (
                     <button
                       key={chat.id}
                       className="settings-nav-item project-item"
@@ -2971,6 +2987,9 @@ export function SettingsPanel({
                 </div>
               </div>
 
+              {/* Cockpit 多账号管理（对接本机 cockpit-tools） */}
+              <CockpitAccountManager />
+
               {/* Proxy Server URL */}
               <div className="settings-card-group">
                 <div className="settings-card-group-title">代理服务器连接 (Proxy Server)</div>
@@ -3020,6 +3039,7 @@ export function SettingsPanel({
                           setProxyStatus("saving");
                           try {
                             setCustomApiBase(customServerUrl);
+                            setApiToken(authToken);
                             await Promise.all([fetchModels(1), fetchUserStatus()]);
                             setProxyStatus("ok");
                             setTimeout(() => setProxyStatus("idle"), 2500);
@@ -3031,6 +3051,36 @@ export function SettingsPanel({
                       >
                         {proxyStatus === "saving" ? "连接中…" : proxyStatus === "ok" ? "✓ 已保存" : "保存地址"}
                       </button>
+                    </div>
+
+                    <div className="settings-official-info" style={{ marginTop: 4 }}>
+                      <div className="settings-official-label">访问令牌 (可选)</div>
+                      <div className="settings-official-desc">
+                        若电脑端 Proxy 启用了 <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, padding: "1px 4px", background: "var(--bg-tertiary)", borderRadius: 3 }}>PORTA_TOKEN</code> 环境变量鉴权，请填入相同令牌；未启用则留空。
+                      </div>
+                    </div>
+                    <div className="proxy-input-row" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
+                      <input
+                        type="password"
+                        id="proxy-auth-token-input"
+                        placeholder="与电脑端 PORTA_TOKEN 一致，未启用留空"
+                        value={authToken}
+                        onChange={(e) => setAuthToken(e.target.value)}
+                        autoComplete="off"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          height: 38,
+                          padding: "0 12px",
+                          fontSize: 13,
+                          fontFamily: "var(--font-mono)",
+                          background: "var(--bg-tertiary)",
+                          border: "1px solid var(--border-default)",
+                          borderRadius: 8,
+                          color: "var(--text-primary)",
+                          outline: "none",
+                        }}
+                      />
                     </div>
 
                     <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
@@ -3182,6 +3232,86 @@ export function SettingsPanel({
                       <span>深色</span>
                     </button>
                   </div>
+                </div>
+              </div>
+              <div className="settings-card-group">
+                <div className="settings-card-group-title">桌面布局</div>
+                <div className="settings-card-row">
+                  <div className="settings-card-info">
+                    <div className="settings-card-label">界面密度</div>
+                    <div className="settings-card-desc">控制消息间距与字号（仅桌面端生效）。</div>
+                  </div>
+                  <div className="theme-segmented-control" role="radiogroup" aria-label="界面密度">
+                    <button
+                      type="button"
+                      className={`theme-segment-btn ${(settings.density ?? "comfortable") === "comfortable" ? "active" : ""}`}
+                      onClick={() => {
+                        onUpdate({ density: "comfortable" });
+                        flashSaved();
+                      }}
+                    >
+                      <IconLayers size={15} />
+                      <span>舒适</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`theme-segment-btn ${settings.density === "compact" ? "active" : ""}`}
+                      onClick={() => {
+                        onUpdate({ density: "compact" });
+                        flashSaved();
+                      }}
+                    >
+                      <IconList size={15} />
+                      <span>紧凑</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-card-row">
+                  <div className="settings-card-info">
+                    <div className="settings-card-label">聊天区宽度</div>
+                    <div className="settings-card-desc">对话内容列的最大宽度（仅桌面端生效）。</div>
+                  </div>
+                  <div className="theme-segmented-control" role="radiogroup" aria-label="聊天区宽度">
+                    <button
+                      type="button"
+                      className={`theme-segment-btn ${(settings.chatWidth ?? "standard") === "standard" ? "active" : ""}`}
+                      onClick={() => {
+                        onUpdate({ chatWidth: "standard" });
+                        flashSaved();
+                      }}
+                    >
+                      <IconPanelRight size={15} />
+                      <span>标准</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`theme-segment-btn ${settings.chatWidth === "wide" ? "active" : ""}`}
+                      onClick={() => {
+                        onUpdate({ chatWidth: "wide" });
+                        flashSaved();
+                      }}
+                    >
+                      <IconMaximize size={15} />
+                      <span>加宽</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-card-row" style={{ alignItems: "center" }}>
+                  <div className="settings-card-info">
+                    <div className="settings-card-label">启动时展开侧边栏</div>
+                    <div className="settings-card-desc">桌面端打开页面时侧边栏默认展开。</div>
+                  </div>
+                  <label className="settings-switch" title={settings.sidebarDefaultOpen === false ? "启动时侧边栏折叠" : "启动时侧边栏展开"}>
+                    <input
+                      type="checkbox"
+                      checked={settings.sidebarDefaultOpen !== false}
+                      onChange={(e) => {
+                        onUpdate({ sidebarDefaultOpen: e.target.checked });
+                        flashSaved();
+                      }}
+                    />
+                    <span className="settings-slider" />
+                  </label>
                 </div>
               </div>
             </div>
@@ -3389,7 +3519,7 @@ export function SettingsPanel({
                       <div className="settings-official-label">已监控工作区总数</div>
                       <div className="settings-official-desc">语言服务当前实时监控的项目工作区数量</div>
                     </div>
-                    <div className="settings-card-badge-val">{workspaces.length} 个工作区</div>
+                    <div className="settings-card-badge-val">{safeWorkspaces.length} 个工作区</div>
                   </div>
                 </div>
               </div>

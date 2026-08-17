@@ -28,26 +28,67 @@ export function setCustomApiBase(url: string): void {
   }
 }
 
+let cachedApiToken: string | null = null;
+
+/**
+ * Shared access token for proxies that enable PORTA_TOKEN auth.
+ * Empty/unset means the proxy runs without auth (loopback setups).
+ */
+export function getApiToken(): string {
+  if (cachedApiToken !== null) return cachedApiToken;
+  try {
+    const stored =
+      typeof localStorage !== "undefined" ? localStorage.getItem("porta_auth_token") : null;
+    cachedApiToken = stored?.trim() ?? "";
+  } catch {
+    cachedApiToken = "";
+  }
+  return cachedApiToken;
+}
+
+export function setApiToken(token: string): void {
+  const normalized = token.trim();
+  cachedApiToken = normalized;
+  try {
+    if (normalized) {
+      localStorage.setItem("porta_auth_token", normalized);
+    } else {
+      localStorage.removeItem("porta_auth_token");
+    }
+  } catch {}
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = getApiToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function resolveWsUrl(path: string): string {
   const apiBase = getApiBase();
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
 
+  let url: string;
   if (apiBase) {
     if (apiBase.startsWith("https://")) {
-      return `${apiBase.replace(/^https:\/\//, "wss://")}${cleanPath}`;
+      url = `${apiBase.replace(/^https:\/\//, "wss://")}${cleanPath}`;
+    } else if (apiBase.startsWith("http://")) {
+      url = `${apiBase.replace(/^http:\/\//, "ws://")}${cleanPath}`;
+    } else {
+      url = `ws://${apiBase}${cleanPath}`;
     }
-    if (apiBase.startsWith("http://")) {
-      return `${apiBase.replace(/^http:\/\//, "ws://")}${cleanPath}`;
-    }
-    return `ws://${apiBase}${cleanPath}`;
-  }
-
-  if (typeof window !== "undefined" && window.location?.host) {
+  } else if (typeof window !== "undefined" && window.location?.host) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    return `${protocol}//${window.location.host}${cleanPath}`;
+    url = `${protocol}//${window.location.host}${cleanPath}`;
+  } else {
+    url = `ws://localhost:3170${cleanPath}`;
   }
 
-  return `ws://localhost:3170${cleanPath}`;
+  const token = getApiToken();
+  if (token) {
+    // Browser WebSocket cannot set headers — pass the shared token as a query param.
+    return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  }
+  return url;
 }
 
 function previewBody(text: string): string {
@@ -65,6 +106,7 @@ export function clearGitStatusCache(): void {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...authHeaders(),
     ...((options.headers as Record<string, string>) ?? {}),
   };
 
@@ -128,6 +170,33 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   health: () => request<import("../types").HealthResponse>("/api/health"),
+
+  systemDiagnostics: () =>
+    request<import("../types").SystemDiagnostics>("/api/system/diagnostics"),
+
+  launchAntigravity: () =>
+    request<import("../types").LaunchAntigravityResponse>(
+      "/api/system/antigravity/launch",
+      { method: "POST" },
+    ),
+
+  cockpitStatus: () =>
+    request<import("../types").CockpitStatus>("/api/cockpit/status"),
+
+  cockpitAccounts: () =>
+    request<import("../types").CockpitAccountsResponse>("/api/cockpit/accounts"),
+
+  cockpitSwitchAccount: (accountId: string) =>
+    request<import("../types").CockpitSwitchResponse>(
+      `/api/cockpit/accounts/${encodeURIComponent(accountId)}/switch`,
+      { method: "POST" },
+    ),
+
+  cockpitRefreshQuota: (accountId: string) =>
+    request<import("../types").CockpitRefreshQuotaResponse>(
+      `/api/cockpit/accounts/${encodeURIComponent(accountId)}/refresh-quota`,
+      { method: "POST" },
+    ),
 
   conversations: () =>
     request<import("../types").ConversationsResponse>("/api/conversations"),
@@ -752,5 +821,20 @@ export const api = {
   getPlan: (conversationId: string) =>
     request<import("../types").ConversationPlanResponse>(
       `/api/conversations/${encodeURIComponent(conversationId)}/plan`,
+    ),
+
+  terminateTask: (conversationId: string, taskId: string) =>
+    request<{ ok: boolean; status?: string }>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/tasks/${encodeURIComponent(taskId)}/kill`,
+      { method: "POST" },
+    ),
+
+  sendTaskInput: (conversationId: string, taskId: string, input: string) =>
+    request<{ ok: boolean }>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/tasks/${encodeURIComponent(taskId)}/input`,
+      {
+        method: "POST",
+        body: JSON.stringify({ input }),
+      },
     ),
 };

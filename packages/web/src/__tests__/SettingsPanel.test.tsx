@@ -86,6 +86,8 @@ vi.mock("../api/client", () => ({
   },
   getApiBase: vi.fn().mockReturnValue("http://localhost:3170"),
   setCustomApiBase: vi.fn(),
+  getApiToken: vi.fn().mockReturnValue(""),
+  setApiToken: vi.fn(),
 }));
 
 describe("SettingsPanel with 7 Agent Capabilities", () => {

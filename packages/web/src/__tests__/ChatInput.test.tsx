@@ -79,3 +79,81 @@ describe("ChatInput", () => {
     });
   });
 });
+
+describe("ChatInput sent-history recall (↑)", () => {
+  const mockOnSend = vi.fn();
+  const mockOnDraftChange = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  const props = {
+    onSend: mockOnSend,
+    onStop: vi.fn(),
+    onDraftChange: mockOnDraftChange,
+    isRunning: false,
+    draft: "",
+  };
+
+  function setup() {
+    render(<ChatInput {...props} />);
+    return screen.getByPlaceholderText(
+      "提出后续修改要求，输入 @ 引用或 / 快捷指令...",
+    ) as HTMLTextAreaElement;
+  }
+
+  async function sendText(textarea: HTMLTextAreaElement, text: string) {
+    textarea.value = text;
+    fireEvent.input(textarea);
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    await waitFor(() => {
+      expect(mockOnSend).toHaveBeenCalled();
+    });
+  }
+
+  it("records sent messages and recalls the latest with ↑", async () => {
+    const textarea = setup();
+    await sendText(textarea, "帮我修复登录 Bug");
+    expect(textarea.value).toBe("");
+
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(textarea.value).toBe("帮我修复登录 Bug");
+  });
+
+  it("walks history with ↑↑ and returns to empty with ↓", async () => {
+    const textarea = setup();
+    await sendText(textarea, "第一条消息");
+    await sendText(textarea, "第二条消息");
+
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(textarea.value).toBe("第二条消息");
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    expect(textarea.value).toBe("第一条消息");
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    expect(textarea.value).toBe("第二条消息");
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    expect(textarea.value).toBe("");
+  });
+
+  it("deduplicates consecutive identical sends", async () => {
+    const textarea = setup();
+    await sendText(textarea, "重复消息");
+    await sendText(textarea, "重复消息");
+
+    const raw = localStorage.getItem("porta:inputHistory");
+    const list = JSON.parse(raw as string);
+    expect(list.filter((x: string) => x === "重复消息")).toHaveLength(1);
+  });
+
+  it("does not recall when the input already has text", async () => {
+    const textarea = setup();
+    await sendText(textarea, "历史消息");
+    textarea.value = "正在打字";
+    fireEvent.input(textarea);
+    fireEvent.keyDown(textarea, { key: "ArrowUp" });
+    // Non-empty input keeps native caret behaviour — value unchanged by recall
+    expect(textarea.value).toBe("正在打字");
+  });
+});

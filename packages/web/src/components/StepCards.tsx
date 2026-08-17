@@ -584,12 +584,18 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
   if (!cmd) return null;
 
   const isWaiting = isStepWaiting(step);
+  const exitCode = cmd.exitCode;
+  const stepStatus = String(step.status ?? "").toUpperCase();
+  const isRunning =
+    !isWaiting &&
+    exitCode === undefined &&
+    (!stepStatus.includes("DONE") && !stepStatus.includes("COMPLETE") && !stepStatus.includes("CANCEL"));
+
   // When waiting for approval, show the proposed command; otherwise show executed
   const command = isWaiting
     ? (cmd.proposedCommandLine ?? cmd.commandLine ?? cmd.command ?? "")
     : (cmd.commandLine ?? cmd.command ?? "");
   const output = cmd.combinedOutput?.full ?? cmd.output ?? "";
-  const exitCode = cmd.exitCode;
 
   const trajectoryId =
     (step as any).trajectoryId ??
@@ -600,9 +606,9 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
 
   const statusClass = isWaiting
     ? "cmd-wait"
-    : exitCode === undefined
-      ? ""
-      : exitCode === 0
+    : isRunning
+      ? "cmd-running"
+      : exitCode === undefined || exitCode === 0
         ? "cmd-ok"
         : "cmd-fail";
 
@@ -617,7 +623,7 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
     }
   };
 
-  const labelText = isWaiting ? "等待执行" : "已执行";
+  const labelText = isWaiting ? "等待执行" : isRunning ? "运行中" : exitCode === 0 ? "已执行" : exitCode === undefined ? "已执行" : "失败";
 
   return (
     <div className={`zcode-command-row-container ${statusClass}`}>
@@ -628,7 +634,7 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
         aria-expanded={expanded}
       >
         <div className="zcode-command-header-left">
-          <span className="zcode-command-terminal-icon">
+          <span className={`zcode-command-terminal-icon ${isRunning ? "icon-spin" : ""}`}>
             <IconTerminalSquare size={14} />
           </span>
           <span className="zcode-command-status-label">{labelText}</span>

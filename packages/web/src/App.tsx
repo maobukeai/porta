@@ -19,7 +19,25 @@ import {
   type AttachmentPreview,
 } from "./utils/imageAttachments";
 import { IconFolder, IconSparkles, IconSpinner, IconTerminal } from "./components/Icons";
+import {
+  IconPlus,
+  IconGear,
+  IconTerminalSquare,
+  IconGitBranch,
+  IconDownload,
+  IconPanelRight,
+  IconFileText,
+  IconMoon,
+  IconSun,
+  IconMonitor,
+  IconKeyboard,
+  IconSearch,
+  IconStop,
+} from "./components/Icons";
+import { CommandPalette, type CommandPaletteAction, type CommandPaletteRecent } from "./components/CommandPalette";
+import { ShortcutsHelpOverlay } from "./components/ShortcutsHelpOverlay";
 import { ConnectionLoadingScreen } from "./components/ConnectionLoadingScreen";
+import { AntigravityDiagnostics } from "./components/AntigravityDiagnostics";
 
 const SettingsPanel = lazy(() =>
   import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel })),
@@ -40,7 +58,7 @@ import { getStepsFromCache } from "./hooks/useStepsStream";
 import { useWorkspaces, slugFromUri } from "./hooks/useWorkspaces";
 import { useDraftText } from "./hooks/useDraftText";
 import { useChatActions } from "./hooks/useChatActions";
-import { useClientSettings } from "./hooks/useClientSettings";
+import { useClientSettings, SETTINGS_STORAGE_KEY } from "./hooks/useClientSettings";
 import { useVisualViewport } from "./hooks/useVisualViewport";
 import { useSidebarSwipe } from "./hooks/useSidebarSwipe";
 import { api } from "./api/client";
@@ -119,8 +137,54 @@ function ChatView() {
   const location = useLocation();
   const isSettingsPage = location.pathname.endsWith("/settings");
   const activeId = chatId ?? null;
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 480);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // Desktop honors the saved layout preference (Settings → 外观与布局)
+    if (window.innerWidth >= 1024) {
+      try {
+        const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.sidebarDefaultOpen === "boolean") {
+            return parsed.sidebarDefaultOpen;
+          }
+        }
+      } catch {}
+      return true;
+    }
+    return window.innerWidth > 480;
+  });
   const [quickSwitchOpen, setQuickSwitchOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  // Command palette usage memory (最近 group), persisted across sessions
+  const [paletteRecents, setPaletteRecents] = useState<CommandPaletteRecent[]>(() => {
+    try {
+      const raw = localStorage.getItem("porta:paletteRecents");
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+    } catch {
+      return [];
+    }
+  });
+  const handlePaletteExecute = useCallback((entry: CommandPaletteRecent) => {
+    setPaletteRecents((prev) => {
+      const key = `${entry.kind}:${entry.id}`;
+      const next = [entry, ...prev.filter((r) => `${r.kind}:${r.id}` !== key)].slice(0, 5);
+      try {
+        localStorage.setItem("porta:paletteRecents", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+  // Mirrors ChatPanel's in-conversation search bar state for the Esc layer chain
+  const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  useEffect(() => {
+    const onSearchState = (e: Event) => {
+      setChatSearchOpen((e as CustomEvent<{ open: boolean }>).detail?.open === true);
+    };
+    window.addEventListener("porta:chat-search-state", onSearchState);
+    return () => window.removeEventListener("porta:chat-search-state", onSearchState);
+  }, []);
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const [sidePanelTab, setSidePanelTab] = useState<SidePanelTab | null>(null);
   const [sidePanelWidth, setSidePanelWidth] = useState<number>(() => {
@@ -190,7 +254,7 @@ function ChatView() {
   const panelDraggingRef = useRef(false);
   const isMobile = () => window.innerWidth <= 480;
   const { conversations, loading, refresh, optimisticRemove } = useConversations(8_000);
-  const { data: health } = usePolling<HealthResponse>(api.health, 30_000);
+  const { data: health, refresh: refreshHealth } = usePolling<HealthResponse>(api.health, 30_000);
 
   const handleOpenFile = useCallback(
     (file: { name: string; path?: string; ext?: string; range?: string }) => {
@@ -201,11 +265,70 @@ function ChatView() {
     [],
   );
 
-  // ── Global Keyboard Shortcuts (Ctrl+` for Terminal in Side Panel, Ctrl+Alt+B for Side Pane) ──
+  // ── Global Keyboard Shortcuts ──
+  // Ctrl+K palette · Ctrl+N new chat (Sidebar) · Ctrl+B sidebar ·
+  // Ctrl+Alt+B side panel · Ctrl+` terminal · Ctrl+E export · Esc layered close · ? help
   useEffect(() => {
+    const isEditableTarget = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      return (
+        el.tagName === "INPUT" ||
+        el.tagName === "TEXTAREA" ||
+        el.isContentEditable
+      );
+    };
     const handleGlobalKeys = (e: KeyboardEvent) => {
-      // Ctrl+` -> Toggle Terminal in Side Panel
-      if ((e.ctrlKey || e.metaKey) && (e.key === "`" || e.key === "~")) {
+      const mod = e.ctrlKey || e.metaKey;
+
+      // Ctrl+K / Ctrl+Shift+P → command palette (usable even while typing)
+      if (
+        (mod && (e.key === "k" || e.key === "K")) ||
+        (mod && e.shiftKey && (e.key === "p" || e.key === "P"))
+      ) {
+        e.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+        return;
+      }
+
+      // Ctrl+F → in-conversation search (usable even while typing)
+      if (mod && (e.key === "f" || e.key === "F")) {
+        e.preventDefault();
+        window.dispatchEvent(new Event("porta:open-chat-search"));
+        return;
+      }
+
+      // Esc → close the topmost layer
+      if (e.key === "Escape") {
+        if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
+        if (shortcutsHelpOpen) {
+          setShortcutsHelpOpen(false);
+          return;
+        }
+        if (chatSearchOpen) {
+          window.dispatchEvent(new Event("porta:close-chat-search"));
+          return;
+        }
+        if (exportOpen) {
+          setExportOpen(false);
+          return;
+        }
+        // Skip when typing (terminal/input Esc keeps native behaviour) or in terminal tab
+        if (
+          !isEditableTarget(e.target) &&
+          artifactsOpen &&
+          sidePanelTab !== "terminal"
+        ) {
+          setArtifactsOpen(false);
+        }
+        return;
+      }
+
+      // Ctrl+` → toggle Terminal in Side Panel
+      if (mod && (e.key === "`" || e.key === "~")) {
         e.preventDefault();
         setArtifactsOpen((prev) => {
           if (prev && sidePanelTab === "terminal") {
@@ -214,16 +337,49 @@ function ChatView() {
           setSidePanelTab("terminal");
           return true;
         });
+        return;
       }
-      // Ctrl+Alt+B -> Toggle Side Panel
-      if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === "b" || e.key === "B")) {
+
+      // Ctrl+Alt+B → toggle Side Panel (checked before plain Ctrl+B)
+      if (mod && e.altKey && (e.key === "b" || e.key === "B")) {
         e.preventDefault();
         setArtifactsOpen((prev) => !prev);
+        return;
+      }
+
+      if (isEditableTarget(e.target) || e.isComposing) return;
+
+      // Ctrl+B → toggle sidebar
+      if (mod && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        setSidebarOpen((v: boolean) => !v);
+        return;
+      }
+
+      // Ctrl+E → export conversation
+      if (mod && (e.key === "e" || e.key === "E")) {
+        e.preventDefault();
+        if (activeId) setExportOpen(true);
+        return;
+      }
+
+      // ? → shortcuts help
+      if (e.key === "?") {
+        e.preventDefault();
+        setShortcutsHelpOpen(true);
       }
     };
     window.addEventListener("keydown", handleGlobalKeys);
     return () => window.removeEventListener("keydown", handleGlobalKeys);
-  }, [sidePanelTab]);
+  }, [
+    sidePanelTab,
+    commandPaletteOpen,
+    shortcutsHelpOpen,
+    chatSearchOpen,
+    exportOpen,
+    artifactsOpen,
+    activeId,
+  ]);
 
   // ── Steps Cache for Artifacts Extraction & Subagent Viewer ──
   const steps = getStepsFromCache(activeId ?? "");
@@ -254,7 +410,7 @@ function ChatView() {
     onClose: () => setSidebarOpen(false),
   });
 
-  // ── Global Theme Application ──
+  // ── Global Theme & Layout Attributes ──
   useEffect(() => {
     const currentTheme = settings.theme ?? "dark";
     const apply = (t: string) => {
@@ -281,9 +437,45 @@ function ChatView() {
     }
   }, [settings.theme]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute(
+      "data-density",
+      settings.density === "compact" ? "compact" : "comfortable",
+    );
+    document.documentElement.setAttribute(
+      "data-chat-width",
+      settings.chatWidth === "wide" ? "wide" : "standard",
+    );
+  }, [settings.density, settings.chatWidth]);
+
   const activeConv = conversations.find((c) => c.id === activeId);
   const isRunning = activeConv?.summary.status === "CASCADE_RUN_STATUS_RUNNING";
   const connected = !!health && health.languageServers.length > 0;
+
+  // ── Antigravity offline diagnostics overlay ──
+  // Proxy reachable but zero Language Servers → Antigravity was closed on the
+  // desktop. Show the diagnostics page; it can relaunch the IDE remotely.
+  const [diagDismissed, setDiagDismissed] = useState(false);
+  // Suppress during cockpit account switches: cockpit-tools restarts
+  // Antigravity, so the LS briefly disappears and comes back on its own.
+  const [cockpitSwitching, setCockpitSwitching] = useState(false);
+  useEffect(() => {
+    const onSwitch = (e: Event) => {
+      setCockpitSwitching(
+        (e as CustomEvent<{ active: boolean }>).detail?.active === true,
+      );
+    };
+    window.addEventListener("porta:cockpit-switch", onSwitch);
+    return () => window.removeEventListener("porta:cockpit-switch", onSwitch);
+  }, []);
+  useEffect(() => {
+    if (connected) setDiagDismissed(false);
+  }, [connected]);
+  const handleDiagRecovered = useCallback(() => {
+    setDiagDismissed(false);
+    refreshHealth();
+    refresh();
+  }, [refreshHealth, refresh]);
 
   const {
     optimisticMessages,
@@ -569,6 +761,161 @@ function ChatView() {
     ? (customTitles[activeId] || (activeConv?.summary.summary ?? "会话"))
     : "新建对话";
 
+  // ── Command palette (Ctrl+K): actions + data mapping ──
+  const paletteActions = useMemo<CommandPaletteAction[]>(() => {
+    const acts: CommandPaletteAction[] = [
+      {
+        id: "new-chat",
+        label: "新建对话",
+        hint: "Ctrl+N",
+        keywords: "新建 new chat 任务 对话",
+        icon: <IconPlus size={14} />,
+        run: () => handleNew(),
+      },
+      {
+        id: "settings",
+        label: "打开设置",
+        keywords: "设置 settings 偏好 配置",
+        icon: <IconGear size={14} />,
+        run: () => navigate(`/${projectSlug ?? "unknown"}/settings`),
+      },
+      {
+        id: "terminal",
+        label: "打开终端",
+        hint: "Ctrl+`",
+        keywords: "终端 terminal 命令行 shell",
+        icon: <IconTerminalSquare size={14} />,
+        run: () => {
+          setSidePanelTab("terminal");
+          setArtifactsOpen(true);
+        },
+      },
+      {
+        id: "git",
+        label: "打开 Git 控制台",
+        keywords: "git 分支 提交 变更",
+        icon: <IconGitBranch size={14} />,
+        run: () => {
+          setSidePanelTab("git");
+          setArtifactsOpen(true);
+        },
+      },
+      {
+        id: "review",
+        label: "打开代码审查",
+        keywords: "审查 review 文件 diff 产物",
+        icon: <IconFileText size={14} />,
+        run: () => {
+          setSelectedFile(null);
+          setSidePanelTab("review");
+          setArtifactsOpen(true);
+        },
+      },
+      {
+        id: "toggle-panel",
+        label: "切换右侧面板",
+        hint: "Ctrl+Alt+B",
+        keywords: "面板 panel 侧栏 右侧",
+        icon: <IconPanelRight size={14} />,
+        run: () => setArtifactsOpen((v) => !v),
+      },
+      {
+        id: "export",
+        label: "导出当前对话",
+        hint: "Ctrl+E",
+        keywords: "导出 export 分享 下载",
+        icon: <IconDownload size={14} />,
+        run: () => setExportOpen(true),
+      },
+      {
+        id: "chat-search",
+        label: "在对话中查找",
+        hint: "Ctrl+F",
+        keywords: "查找 搜索 find search 对话内",
+        icon: <IconSearch size={14} />,
+        run: () => window.dispatchEvent(new Event("porta:open-chat-search")),
+      },
+      {
+        id: "stop-task",
+        label: "停止当前任务",
+        keywords: "停止 中断 stop 取消 运行",
+        icon: <IconStop size={14} />,
+        run: () => handleStop(),
+      },
+      {
+        id: "theme-dark",
+        label: "切换为深色主题",
+        keywords: "主题 深色 dark 外观 夜间",
+        icon: <IconMoon size={14} />,
+        run: () => updateSettings({ theme: "dark" }),
+      },
+      {
+        id: "theme-light",
+        label: "切换为浅色主题",
+        keywords: "主题 浅色 light 外观 白天",
+        icon: <IconSun size={14} />,
+        run: () => updateSettings({ theme: "light" }),
+      },
+      {
+        id: "theme-system",
+        label: "主题跟随系统",
+        keywords: "主题 系统 system 外观 自动",
+        icon: <IconMonitor size={14} />,
+        run: () => updateSettings({ theme: "system" }),
+      },
+      {
+        id: "shortcuts",
+        label: "查看键盘快捷键",
+        keywords: "快捷键 帮助 keyboard shortcuts",
+        icon: <IconKeyboard size={14} />,
+        run: () => setShortcutsHelpOpen(true),
+      },
+    ];
+    return acts.filter((a) => {
+      if ((a.id === "export" || a.id === "chat-search") && !activeId) return false;
+      if (a.id === "stop-task" && !isRunning) return false;
+      return true;
+    });
+  }, [handleNew, navigate, projectSlug, updateSettings, activeId, handleStop, isRunning]);
+
+  const paletteConversations = useMemo(
+    () =>
+      conversations.map((c) => {
+        const rawTitle = c.summary.summary || "";
+        const isUuidLike =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            rawTitle.trim(),
+          ) || rawTitle === c.id;
+        const wsUri = c.summary.workspaces?.[0]?.workspaceFolderAbsoluteUri;
+        const wsName = workspaces.find((w) => w.uri === wsUri)?.name;
+        return {
+          id: c.id,
+          title:
+            customTitles[c.id] ||
+            (isUuidLike ? "" : rawTitle) ||
+            `任务 (${c.id.slice(0, 6)})`,
+          workspaceName: wsName,
+          lastModifiedTime: c.summary.lastModifiedTime,
+        };
+      }),
+    [conversations, customTitles, workspaces],
+  );
+
+  const handlePaletteSelectConversation = useCallback(
+    (id: string) => {
+      setOptimisticMessages([]);
+      navigate(chatUrl(id));
+    },
+    [navigate, chatUrl, setOptimisticMessages],
+  );
+
+  const handlePaletteSelectWorkspace = useCallback(
+    (uri: string) => {
+      navigate(`/${slugFromUri(uri)}`);
+    },
+    [navigate],
+  );
+
   // ── Mobile Swipe Gestures ──
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
@@ -625,6 +972,7 @@ function ChatView() {
         }}
         onNew={handleNew}
         onDelete={handleDelete}
+        onToggleArchive={handleToggleArchive}
         onSettings={() => {
           navigate(`/${projectSlug ?? "unknown"}/settings`);
           if (isMobile()) setSidebarOpen(false);
@@ -632,7 +980,7 @@ function ChatView() {
         loading={loading}
         connected={connected}
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen((v) => !v)}
+        onToggle={() => setSidebarOpen((v: boolean) => !v)}
       />
       {/* Mobile/Responsive backdrop: click or tap anywhere outside to close sidebar */}
       {sidebarOpen && (
@@ -765,6 +1113,10 @@ function ChatView() {
                     }}
                     onOpenSubagents={() => {
                       setSidePanelTab("subagent_directory");
+                      setArtifactsOpen(true);
+                    }}
+                    onOpenTerminal={() => {
+                      setSidePanelTab("terminal");
                       setArtifactsOpen(true);
                     }}
                     onSidebarRefresh={refresh}
@@ -1046,6 +1398,27 @@ function ChatView() {
         cascadeId={activeId}
         initialMessages={stepsToMessages(steps)}
       />
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        actions={paletteActions}
+        conversations={paletteConversations}
+        workspaces={workspaces}
+        onSelectConversation={handlePaletteSelectConversation}
+        onSelectWorkspace={handlePaletteSelectWorkspace}
+        recents={paletteRecents}
+        onExecute={handlePaletteExecute}
+      />
+      <ShortcutsHelpOverlay
+        open={shortcutsHelpOpen}
+        onClose={() => setShortcutsHelpOpen(false)}
+      />
+      {!connected && health !== null && !diagDismissed && !cockpitSwitching && (
+        <AntigravityDiagnostics
+          onRecovered={handleDiagRecovered}
+          onDismiss={() => setDiagDismissed(true)}
+        />
+      )}
     </div>
   );
 }

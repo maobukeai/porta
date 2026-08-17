@@ -4,6 +4,8 @@ import { usePolling } from "./usePolling";
 import type { ConversationSummary, ConversationsResponse } from "../types";
 import { setConversationWaiting } from "../utils/waitingTasks";
 
+import { isSubagentConversation } from "../utils/subagents";
+
 export interface ConversationEntry {
   id: string;
   summary: ConversationSummary;
@@ -81,22 +83,7 @@ export function useConversations(intervalMs = 15_000) {
     return Object.entries(activeData.trajectorySummaries)
       .filter(([id, summary]) => {
         if (deletedIds.has(id)) return false;
-        if ((summary as any).isSubagent || (summary as any)._isSubagent) return false;
-        const meta = (summary as any).trajectoryMetadata;
-        if (meta && (meta.isSubagent || meta.parentTrajectoryId || meta.parentCascadeId || meta.spawnedBy)) {
-          return false;
-        }
-        const title = String(summary.summary || "");
-        if (
-          title.startsWith("[Subagent]") ||
-          title.startsWith("subagent:") ||
-          title.startsWith("子智能体") ||
-          /^🤖\s*子智能体/i.test(title) ||
-          /Usage Statistics Auditor/i.test(title) ||
-          /数据统计功能代码审查/i.test(title)
-        ) {
-          return false;
-        }
+        if (isSubagentConversation(summary)) return false;
         return true;
       })
       .map(([id, summary]) => ({ id, summary }))

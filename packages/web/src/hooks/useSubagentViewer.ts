@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import type { TrajectoryStep } from "../types";
+import { cleanPath } from "../utils/pathUtils";
 
 export interface SubagentArtifactItem {
   type: "file" | "symbol";
@@ -39,38 +40,67 @@ export interface SubagentSession {
   timestamp?: string;
 }
 
-function cleanPath(p?: string): string {
-  if (!p) return "";
-  return p
-    .replace(/^file:\/\/\/?/, "")
-    .replace(/^[a-zA-Z]:[\\/]/, "")
-    .replace(/^[/\\]+/, "")
-    .replace(/\\/g, "/")
-    .trim();
-}
-
 export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentSession[] {
   const sessions: SubagentSession[] = [];
   const seenIds = new Set<string>();
 
+  // Suffix-existence arrays computed once (O(n)) so the per-step lookups below
+  // don't rescan the whole trajectory (previously O(n²) on long conversations).
+  // suffixUserInput[i]: any user input exists at or after step i.
+  // suffixActivity[i]: any SYSTEM_MESSAGE / RUN_COMMAND / CODE_ACTION /
+  //   PLANNER_RESPONSE step exists at or after step i.
+  const n = steps.length;
+  const suffixUserInput = new Array<boolean>(n + 1).fill(false);
+  const suffixActivity = new Array<boolean>(n + 1).fill(false);
+  for (let i = n - 1; i >= 0; i--) {
+    const s = steps[i];
+    const typeStr = String(s.type || "");
+    suffixUserInput[i] =
+      suffixUserInput[i + 1] ||
+      s.type === "USER_INPUT" ||
+      s.type === "CORTEX_STEP_TYPE_USER_INPUT" ||
+      typeStr.includes("USER_INPUT") ||
+      (s as any).source === "USER_EXPLICIT";
+    suffixActivity[i] =
+      suffixActivity[i + 1] ||
+      typeStr.includes("SYSTEM_MESSAGE") ||
+      typeStr.includes("RUN_COMMAND") ||
+      typeStr.includes("CODE_ACTION") ||
+      typeStr.includes("PLANNER_RESPONSE");
+  }
+
   for (let idx = 0; idx < steps.length; idx++) {
     const step = steps[idx];
-    const rawToolCalls: any[] = Array.isArray((step as any).tool_calls)
-      ? (step as any).tool_calls
-      : step.metadata?.toolCall
-        ? [step.metadata.toolCall]
-        : (step as any).toolCall
-          ? [(step as any).toolCall]
-          : [];
+    const prToolCalls = (step as any).plannerResponse?.toolCalls || (step as any).plannerResponse?.tool_calls || [];
+    const stepToolCalls = (step as any).toolCalls || (step as any).tool_calls;
+    const rawToolCalls: any[] = Array.isArray(stepToolCalls) && stepToolCalls.length > 0
+      ? stepToolCalls
+      : Array.isArray(prToolCalls) && prToolCalls.length > 0
+        ? prToolCalls
+        : step.metadata?.toolCall
+          ? [step.metadata.toolCall]
+          : (step as any).toolCall
+            ? [(step as any).toolCall]
+            : [];
+
+    const prevStep = idx > 0 ? steps[idx - 1] : undefined;
+    const prevHadInvoke = Boolean(
+      prevStep && (
+        (prevStep as any).plannerResponse?.toolCalls?.some((t: any) => t.name === "invoke_subagent") ||
+        (prevStep as any).tool_calls?.some((t: any) => t.name === "invoke_subagent") ||
+        (prevStep as any).toolCalls?.some((t: any) => t.name === "invoke_subagent") ||
+        (prevStep as any).metadata?.toolCall?.name === "invoke_subagent"
+      )
+    );
 
     const isNativeInvoke =
-      (step.type === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
+      Boolean(step.invokeSubagent) ||
+      ((step.type === "CORTEX_STEP_TYPE_INVOKE_SUBAGENT" ||
         step.type === "CORTEX_STEP_TYPE_SUBAGENT" ||
-        step.type === "INVOKE_SUBAGENT") &&
-      Boolean(step.invokeSubagent);
+        step.type === "INVOKE_SUBAGENT") && !prevHadInvoke);
 
-    // If no tool_calls array but it's a native invoke step with explicit subagent payload
-    if (rawToolCalls.length === 0 && (isNativeInvoke || step.invokeSubagent)) {
+    // If no tool_calls array but it's a standalone native invoke step with explicit subagent payload
+    if (rawToolCalls.length === 0 && isNativeInvoke) {
       rawToolCalls.push({ name: "invoke_subagent", args: {} });
     }
 
@@ -135,7 +165,7 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
             const sStr =
               typeof (s as any)?.content === "string"
                 ? (s as any).content
-                : JSON.stringify(s);
+                : (s as any)?.plannerResponse?.text || JSON.stringify(s);
             const m = sStr.match(/"conversationId":\s*"([^"]+)"/);
             if (m) {
               convId = m[1];
@@ -147,17 +177,30 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
         let isDone = false;
         let isError = false;
         if (convId) {
+          // Scan forward within this turn for the subagent's report-back.
+          // Subagent reports arrive in the turn that spawned them, so stop at
+          // the next user input — this also bounds the scan on long traces.
           for (let j = idx + 1; j < steps.length; j++) {
             const nextStep = steps[j];
+            if (
+              nextStep.type === "USER_INPUT" ||
+              nextStep.type === "CORTEX_STEP_TYPE_USER_INPUT" ||
+              (nextStep as any).source === "USER_EXPLICIT"
+            ) {
+              break;
+            }
             const isSystemMsg =
               nextStep.type === "SYSTEM_MESSAGE" ||
+              nextStep.type === "CORTEX_STEP_TYPE_SYSTEM_MESSAGE" ||
+              String(nextStep.type || "").includes("SYSTEM") ||
               (nextStep as any).source === "SYSTEM";
 
+            const str =
+              typeof (nextStep as any).content === "string"
+                ? (nextStep as any).content
+                : (nextStep as any)?.plannerResponse?.text || JSON.stringify(nextStep);
+
             if (isSystemMsg) {
-              const str =
-                typeof (nextStep as any).content === "string"
-                  ? (nextStep as any).content
-                  : JSON.stringify(nextStep);
               if (
                 str.includes("sender=" + convId) ||
                 str.includes('"sender":"' + convId + '"') ||
@@ -169,24 +212,31 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
                   str.includes("failed with result") ||
                   str.includes("errored") ||
                   str.includes("cancel") ||
-                  nextStep.status === "ERROR"
+                  nextStep.status === "ERROR" ||
+                  nextStep.status === "CORTEX_STEP_STATUS_ERROR"
                 ) {
                   isError = true;
                 }
                 break;
               }
+            } else if (
+              str.includes("sender=" + convId) ||
+              str.includes('"sender":"' + convId + '"') ||
+              str.includes(`sender=${convId}`)
+            ) {
+              isDone = true;
+              break;
             }
           }
         }
 
-        // If a subsequent user request arrived after this invocation, previous turn has ended
-        const hasSubsequentUserInput = steps.slice(idx + 1).some(
-          (s) =>
-            s.type === "USER_INPUT" ||
-            s.type === "CORTEX_STEP_TYPE_USER_INPUT" ||
-            (s as any).source === "USER_EXPLICIT",
-        );
-        if (hasSubsequentUserInput) {
+        // If a subsequent user request or subsequent subagent invocation occurred, previous subagent turn is done
+        if (suffixUserInput[idx + 1]) {
+          isDone = true;
+        }
+
+        // If subsequent planner/tool steps executed after invocation and system report
+        if (steps.length > idx + 2 && !isDone && suffixActivity[idx + 1]) {
           isDone = true;
         }
 
@@ -201,9 +251,9 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
             stepStatus = "completed";
           }
         } else {
-          if (step.status === "ERROR" || step.errorMessage || (step as any).isError) {
+          if (step.status === "ERROR" || step.errorMessage || (step as any).isError || step.status === "CORTEX_STEP_STATUS_ERROR") {
             stepStatus = "failed";
-          } else if (step.status === "RUNNING" || step.status === "WAITING") {
+          } else if (step.status === "RUNNING" || step.status === "WAITING" || step.status === "CORTEX_STEP_STATUS_RUNNING") {
             stepStatus = "running";
           } else {
             stepStatus = "completed";
@@ -386,7 +436,6 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
           const typeName = String(item.TypeName || item.typeName || "subagent").trim();
           const model = item.Model || item.model || item.ModelTier || item.modelTier || undefined;
           const prompt = String(item.Prompt || item.prompt || item.initialPrompt || item.instructions || "").trim();
-          const id = `subagent-${idx}-${sIdx}-${role.replace(/\s+/g, "_")}`;
 
           // Link child conversation if role matches
           const childConversationId =
@@ -397,25 +446,72 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
             args?.ConversationId ||
             args?.conversationId;
 
-          if (!seenIds.has(id)) {
-            seenIds.add(id);
-            sessions.push({
-              id,
-              stepIndex: idx,
-              role,
-              typeName,
-              model,
-              prompt,
-              duration: (step as any).duration || (step.metadata as any)?.duration,
-              status: stepStatus,
-              output,
-              workSteps,
-              rawSteps,
-              conversationId: childConversationId,
-              artifacts,
-              diffSummary,
-              timestamp: (step as any).timestamp,
-            });
+          // Check if this subagent session was already created (e.g. planner response vs tool execution step)
+          const existing = sessions.find((s) => {
+            const sameRole = s.role.toLowerCase() === role.toLowerCase();
+            if (!sameRole) return false;
+
+            if (childConversationId && s.conversationId && s.conversationId === childConversationId) {
+              return true;
+            }
+            if (!s.prompt || !prompt || s.prompt === prompt || s.prompt.startsWith(prompt.slice(0, 50)) || prompt.startsWith(s.prompt.slice(0, 50))) {
+              if (Math.abs(s.stepIndex - idx) <= 6) {
+                return true;
+              }
+            }
+            return false;
+          });
+
+          if (existing) {
+            // Merge / update existing session with the newest metadata and status
+            if (childConversationId && !existing.conversationId) {
+              existing.conversationId = childConversationId;
+            }
+            if (stepStatus === "running" || (existing.status !== "running" && stepStatus === "failed")) {
+              existing.status = stepStatus;
+            } else if (existing.status === "running" && stepStatus === "completed") {
+              existing.status = "completed";
+            }
+            if (output && (!existing.output || output.length > existing.output.length)) {
+              existing.output = output;
+            }
+            if (workSteps.length > (existing.workSteps?.length || 0)) {
+              existing.workSteps = workSteps;
+            }
+            if (diffSummary && !existing.diffSummary) {
+              existing.diffSummary = diffSummary;
+            }
+            if (artifacts.length > (existing.artifacts?.length || 0)) {
+              existing.artifacts = artifacts;
+            }
+            if (prompt && (!existing.prompt || prompt.length > existing.prompt.length)) {
+              existing.prompt = prompt;
+            }
+            if (model && !existing.model) {
+              existing.model = model;
+            }
+          } else {
+            const id = `subagent-${idx}-${sIdx}-${role.replace(/\s+/g, "_")}`;
+            if (!seenIds.has(id)) {
+              seenIds.add(id);
+              sessions.push({
+                id,
+                stepIndex: idx,
+                role,
+                typeName,
+                model,
+                prompt,
+                duration: (step as any).duration || (step.metadata as any)?.duration,
+                status: stepStatus,
+                output,
+                workSteps,
+                rawSteps,
+                conversationId: childConversationId,
+                artifacts,
+                diffSummary,
+                timestamp: (step as any).timestamp,
+              });
+            }
           }
         }
       }

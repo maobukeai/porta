@@ -4375,3 +4375,386 @@
 }
 
 
+
+/* ── Cockpit Account Manager (Antigravity 多账号) ── */
+
+.cockpit-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+
+.cockpit-status-text {
+  color: var(--text-secondary, #8e8e96);
+  font-size: 11.5px;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.settings-status-offline {
+  font-size: 12.5px;
+  color: rgb(var(--c-danger, 239 68 68));
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cockpit-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 10px 8px;
+}
+
+.cockpit-account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.cockpit-account-row:hover:not(.is-current):not(.is-disabled) {
+  border-color: var(--border-default, rgba(255, 255, 255, 0.16));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.cockpit-account-row.is-current {
+  border-color: rgb(var(--c-success, 16 163 127) / 0.45);
+  background: rgb(var(--c-success, 16 163 127) / 0.06);
+  cursor: default;
+}
+
+.cockpit-account-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cockpit-account-avatar {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  background: var(--bg-active, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary, #8e8e96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cockpit-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cockpit-account-email {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary, #f4f4f5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-account-meta {
+  font-size: 11px;
+  color: var(--text-tertiary, #686870);
+}
+
+.cockpit-account-current-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgb(var(--c-success, 16 163 127));
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgb(var(--c-success, 16 163 127) / 0.1);
+  border: 1px solid rgb(var(--c-success, 16 163 127) / 0.35);
+  flex-shrink: 0;
+}
+
+.cockpit-account-switch-hint {
+  font-size: 11px;
+  color: var(--text-cyan, #4099ff);
+  flex-shrink: 0;
+}
+
+.cockpit-empty {
+  font-size: 11.5px;
+  color: var(--text-tertiary, #686870);
+  padding: 8px 6px;
+}
+
+.cockpit-confirm-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(var(--c-warning, 245 158 11) / 0.07);
+  border: 1px solid rgb(var(--c-warning, 245 158 11) / 0.3);
+}
+
+.cockpit-confirm-text {
+  font-size: 11.5px;
+  color: var(--text-secondary, #d4d4d8);
+  line-height: 1.5;
+}
+
+.cockpit-confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.cockpit-btn {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.16));
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.05));
+  color: var(--text-primary, #f4f4f5);
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.cockpit-btn:active {
+  transform: scale(0.97);
+}
+
+.cockpit-btn.is-cancel:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+}
+
+.cockpit-btn.is-ok {
+  background: #f4f4f5;
+  border-color: #f4f4f5;
+  color: #18181b;
+}
+
+.cockpit-btn.is-ok:hover {
+  background: #ffffff;
+}
+
+[data-theme="light"] .cockpit-btn.is-ok {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+}
+
+.cockpit-btn.is-refresh {
+  align-self: flex-start;
+  margin: 0 12px 10px;
+}
+
+.cockpit-error {
+  margin: 0 12px 8px;
+  font-size: 11.5px;
+  color: rgb(var(--c-danger, 239 68 68));
+  background: rgb(var(--c-danger, 239 68 68) / 0.08);
+  border: 1px solid rgb(var(--c-danger, 239 68 68) / 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+  line-height: 1.45;
+}
+
+.cockpit-success {
+  margin: 0 12px 8px;
+  font-size: 11.5px;
+  color: rgb(var(--c-success, 16 163 127));
+  background: rgb(var(--c-success, 16 163 127) / 0.08);
+  border: 1px solid rgb(var(--c-success, 16 163 127) / 0.3);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.cockpit-note {
+  margin: 0 12px 8px;
+  font-size: 10.5px;
+  color: var(--text-tertiary, #686870);
+  line-height: 1.55;
+}
+
+/* ── Cockpit quota chips ── */
+
+.cockpit-quota-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.cockpit-quota-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cockpit-quota-chip.is-ok {
+  color: rgb(var(--c-success, 16 163 127));
+  background: rgb(var(--c-success, 16 163 127) / 0.1);
+  border: 1px solid rgb(var(--c-success, 16 163 127) / 0.3);
+}
+
+.cockpit-quota-chip.is-warn {
+  color: rgb(var(--c-warning, 245 158 11));
+  background: rgb(var(--c-warning, 245 158 11) / 0.1);
+  border: 1px solid rgb(var(--c-warning, 245 158 11) / 0.3);
+}
+
+.cockpit-quota-chip.is-low {
+  color: rgb(var(--c-danger, 239 68 68));
+  background: rgb(var(--c-danger, 239 68 68) / 0.1);
+  border: 1px solid rgb(var(--c-danger, 239 68 68) / 0.35);
+}
+
+.cockpit-quota-empty {
+  font-size: 10px;
+  color: var(--text-tertiary, #686870);
+  margin-top: 3px;
+}
+
+/* ── Cockpit per-account quota refresh ── */
+
+.cockpit-quota-refresh-btn {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  color: var(--text-secondary, #8e8e96);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.cockpit-quota-refresh-btn:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
+  color: var(--text-cyan, #4099ff);
+  border-color: rgba(64, 153, 255, 0.4);
+}
+
+.cockpit-quota-refresh-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.cockpit-quota-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cockpit-quota-refresh-error {
+  font-size: 10px;
+  color: rgb(var(--c-danger, 239 68 68));
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* ── Cockpit switch confirmation modal ── */
+
+.cockpit-switch-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  background: rgba(9, 9, 11, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.cockpit-switch-modal {
+  width: 100%;
+  max-width: 340px;
+  background: var(--bg-secondary, #202020);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.12));
+  border-radius: 12px;
+  padding: 18px 16px 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  animation: cockpitModalIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cockpitModalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cockpit-switch-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #f4f4f5);
+}
+
+.cockpit-switch-modal-email {
+  font-size: 12.5px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-cyan, #4099ff);
+  word-break: break-all;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--bg-tertiary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.cockpit-switch-modal-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary, #8e8e96);
+  line-height: 1.55;
+}
+
+.cockpit-switch-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.cockpit-switch-modal-switching {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px;
+  color: var(--text-cyan, #4099ff);
+}
+
+[data-theme="light"] .cockpit-switch-modal {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+}

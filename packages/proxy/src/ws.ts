@@ -32,6 +32,7 @@ import {
 } from "./step-recovery.js";
 import { conversationSignals } from "./signals.js";
 import { readDiskConversationSteps } from "./metadata.js";
+import { extractBearerToken, getAuthToken, isAuthorized } from "./auth.js";
 
 /** Active polling interval (ms). */
 const ACTIVE_INTERVAL = 200;
@@ -81,7 +82,7 @@ type PollState = "idle" | "active";
 type UpgradeValidationResult =
   | { ok: true; type: "conversation"; cascadeId: string }
   | { ok: true; type: "terminal" }
-  | { ok: false; code: "not_found" | "forbidden_origin" };
+  | { ok: false; code: "not_found" | "forbidden_origin" | "unauthorized" };
 
 function unrefTimer(
   timer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>,
@@ -156,10 +157,20 @@ export function validateWebSocketUpgrade(
   origin: string | undefined,
   port: number,
   allowedOrigins: AllowedOrigin[] = getAllowedOrigins(),
+  auth?: { header?: string; env?: NodeJS.ProcessEnv },
 ): UpgradeValidationResult {
   const url = new URL(reqUrl ?? "", `http://localhost:${port}`);
   if (!isWebSocketOriginAllowed(origin, allowedOrigins)) {
     return { ok: false, code: "forbidden_origin" };
+  }
+
+  const env = auth?.env ?? process.env;
+  if (getAuthToken(env)) {
+    const presented =
+      extractBearerToken(auth?.header) ?? url.searchParams.get("token")?.trim();
+    if (!isAuthorized(presented, env)) {
+      return { ok: false, code: "unauthorized" };
+    }
   }
 
   if (url.pathname === "/api/terminal/ws") {
@@ -175,23 +186,27 @@ export function validateWebSocketUpgrade(
 }
 
 export function setupWebSocket(
-  server: { on: Function },
+  server: { on: (event: string, listener: (...args: unknown[]) => void) => void },
   port: number,
   allowedOrigins: AllowedOrigin[] = getAllowedOrigins(),
 ): void {
   const wss = new WebSocketServer({ noServer: true });
 
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+  server.on("upgrade", (...args: unknown[]) => {
+    const [req, socket, head] = args as [IncomingMessage, Duplex, Buffer];
     const upgrade = validateWebSocketUpgrade(
       req.url,
       req.headers.origin,
       port,
       allowedOrigins,
+      { header: req.headers.authorization },
     );
 
     if (!upgrade.ok) {
-      if (upgrade.code === "forbidden_origin") {
-        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      if (upgrade.code === "forbidden_origin" || upgrade.code === "unauthorized") {
+        socket.end(
+          `HTTP/1.1 ${upgrade.code === "unauthorized" ? "401 Unauthorized" : "403 Forbidden"}\r\nConnection: close\r\n\r\n`,
+        );
       } else {
         socket.destroy();
       }
@@ -424,7 +439,7 @@ export function setupWebSocket(
           try {
             const diskResult = await readDiskConversationSteps(
               cascadeId,
-              fetchOffset,
+              minFetchOffset,
               100,
             );
             if (diskResult && diskResult.steps.length > 0) {

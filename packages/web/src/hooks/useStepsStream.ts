@@ -90,6 +90,13 @@ export function useStepsStream(
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [wsRunning, setWsRunning] = useState(false);
+  // Mirror wsRunning into a ref so closures (ws.onclose, syncLatestSteps)
+  // always read the latest value without stale-closure issues.
+  const wsRunningRef = useRef(false);
+  const setWsRunningSync = useCallback((val: boolean) => {
+    wsRunningRef.current = val;
+    setWsRunning(val);
+  }, []);
 
   const mountedRef = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -107,15 +114,19 @@ export function useStepsStream(
     genRef.current += 1;
   }, []);
 
-  const rafIdRef = useRef<number | null>(null);
+  const rafIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleStepsFlush = useCallback(() => {
     if (rafIdRef.current !== null) return;
-    rafIdRef.current = requestAnimationFrame(() => {
+    // Use setTimeout(0) instead of requestAnimationFrame:
+    // rAF is throttled/paused when the Capacitor Android WebView is backgrounded,
+    // which would stall real-time step updates. A macrotask is not subject to
+    // visibility throttling.
+    rafIdRef.current = setTimeout(() => {
       rafIdRef.current = null;
       if (mountedRef.current) {
         setSteps([...stepsRef.current]);
       }
-    });
+    }, 0);
   }, []);
 
   useEffect(() => {
@@ -265,7 +276,7 @@ export function useStepsStream(
             if (msg.type === "status") {
               // Instant running state from the proxy's adaptive polling.
               const running = !!msg.running;
-              setWsRunning(running);
+              setWsRunningSync(running);
               if (!running) {
                 // Agent just went idle — trigger sidebar refresh for metadata update
                 onIdleRef.current?.();
@@ -306,7 +317,7 @@ export function useStepsStream(
           }
 
           const shouldKeepAlive =
-            keepAliveWhenHidden || runningHintRef.current || wsRunning;
+            keepAliveWhenHidden || runningHintRef.current || wsRunningRef.current;
 
           if (
             typeof document !== "undefined" &&
@@ -386,9 +397,9 @@ export function useStepsStream(
       mountedRef.current = false;
       bumpGeneration();
       clearReconnectTimer();
-      // Cancel any pending RAF flush to avoid setState on unmounted component
+      // Cancel any pending deferred flush to avoid setState on unmounted component
       if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current);
+        clearTimeout(rafIdRef.current);
         rafIdRef.current = null;
       }
       if (wsRef.current) {
@@ -497,8 +508,8 @@ export function useStepsStream(
         if (convRes) {
           const isRunningOnServer =
             convRes.status === "CASCADE_RUN_STATUS_RUNNING";
-          setWsRunning(isRunningOnServer);
-          if (!isRunningOnServer && wsRunning) {
+          setWsRunningSync(isRunningOnServer);
+          if (!isRunningOnServer && wsRunningRef.current) {
             onIdleRef.current?.();
           }
         }

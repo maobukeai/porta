@@ -46,6 +46,95 @@ export interface HealthResponse {
   }[];
 }
 
+export interface SystemDiagnostics {
+  proxy: { port: number; uptime: number };
+  languageServers: {
+    pid: number;
+    httpsPort: number;
+    workspaceId?: string;
+    source: string;
+  }[];
+  antigravity: {
+    processRunning: boolean;
+    pids: number[];
+    idePath: string | null;
+    idePathSource: "env" | "last-seen" | "default" | "none";
+    launchable: boolean;
+    launchMethod: "bat" | "exe" | null;
+    batPath: string | null;
+  };
+}
+
+export interface LaunchAntigravityResponse {
+  started: boolean;
+  method?: "bat" | "exe";
+  command?: string;
+  reason?: string;
+  languageServers?: number;
+}
+
+// ── cockpit-tools (Antigravity 多账号管理) ──
+
+export interface CockpitModelQuota {
+  name: string;
+  remainingPercent: number;
+  resetTime?: string;
+}
+
+export interface CockpitQuotaBucket {
+  window: "weekly" | "5h" | string;
+  remainingPercent: number;
+  resetTime?: string;
+}
+
+export interface CockpitQuotaGroup {
+  name: string;
+  buckets: CockpitQuotaBucket[];
+}
+
+export interface CockpitQuota {
+  updatedAt: number;
+  models: CockpitModelQuota[];
+  /** Real usage per model group (what cockpit's UI shows). */
+  groups?: CockpitQuotaGroup[];
+}
+
+export interface CockpitAccount {
+  id: string;
+  email: string;
+  name?: string;
+  is_current: boolean;
+  disabled: boolean;
+  last_used: number;
+  subscription_tier?: string;
+  quota?: CockpitQuota | null;
+}
+
+export interface CockpitStatus {
+  connected: boolean;
+  version?: string;
+  wsPort?: number;
+  error?: string;
+  code?: string;
+}
+
+export interface CockpitAccountsResponse {
+  accounts: CockpitAccount[];
+  currentAccountId: string | null;
+}
+
+export interface CockpitSwitchResponse {
+  ok: boolean;
+  message: string;
+}
+
+export interface CockpitRefreshQuotaResponse {
+  ok: boolean;
+  email: string;
+  quota: CockpitQuota;
+  tierId?: string;
+}
+
 export type ConversationStatus =
   | "CASCADE_RUN_STATUS_IDLE"
   | "CASCADE_RUN_STATUS_RUNNING"
@@ -378,6 +467,12 @@ export interface ClientSettings {
   browserNotificationsEnabled: boolean;
   /** Theme preference: dark, light, or system */
   theme?: "dark" | "light" | "system";
+  /** Desktop UI density: comfortable (default) or compact */
+  density?: "comfortable" | "compact";
+  /** Desktop chat column width: standard (780px) or wide (1000px) */
+  chatWidth?: "standard" | "wide";
+  /** Whether the sidebar starts expanded on desktop */
+  sidebarDefaultOpen?: boolean;
   /** List of disabled skills */
   disabledSkills?: string[];
   /** List of disabled MCP tools */
@@ -591,5 +686,37 @@ export interface ConversationPlanResponse {
   };
 }
 
+// ── Running Background Tasks ──
 
+export type RunningTaskStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "terminated"
+  | "waiting";
 
+export type RunningTaskKind =
+  | "command"
+  | "daemon"
+  | "subagent"
+  | "timer"
+  | "task";
+
+export interface RunningTask {
+  id: string;
+  stepIndex: number;
+  command: string;
+  displayCommand: string;
+  commandId?: string;
+  trajectoryId?: string;
+  cwd?: string;
+  status: RunningTaskStatus;
+  kind: RunningTaskKind;
+  startTime?: number;
+  durationMs?: number;
+  exitCode?: number;
+  output?: string;
+  isDaemon?: boolean;
+  pid?: number;
+  timestamp?: string;
+}

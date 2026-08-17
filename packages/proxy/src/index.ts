@@ -25,12 +25,16 @@ import { registerAgentCapabilitiesRoutes } from "./routes/agentCapabilities.js";
 import { registerTerminalRoutes } from "./routes/terminal.js";
 import { registerStatisticsRoutes } from "./routes/statistics.js";
 import { registerPlanRoutes } from "./routes/plan.js";
+import { registerTaskRoutes } from "./routes/tasks.js";
+import { registerSystemRoutes } from "./routes/system.js";
+import { registerCockpitRoutes } from "./routes/cockpit.js";
 import {
   assertSupportedListenHost,
   formatListenAddress,
   resolveProxyHost,
 } from "./exposure.js";
 import { getAllowedOrigins, resolveCorsOrigin } from "./origins.js";
+import { tokenAuth } from "./auth.js";
 import { setupWebSocket } from "./ws.js";
 
 const PORT = parseInt(process.env.PORTA_PORT ?? "3170", 10);
@@ -58,10 +62,15 @@ app.use(
       "Authorization",
       "X-Requested-With",
       "X-Workspace-Uri",
+      "X-Porta-Token",
     ],
     exposeHeaders: ["Content-Length", "X-Cascade-ID"],
   }),
 );
+
+// Shared-token auth: when PORTA_TOKEN is set, every /api request (including
+// /api/terminal) must present it. No-op when unset.
+app.use("/api/*", tokenAuth());
 
 // ── Health ──
 
@@ -94,12 +103,18 @@ registerAgentCapabilitiesRoutes(app);
 registerTerminalRoutes(app);
 registerStatisticsRoutes(app);
 registerPlanRoutes(app);
+registerTaskRoutes(app);
+registerSystemRoutes(app);
+registerCockpitRoutes(app);
 
 // ── Start ──
 
 const listenAddress = formatListenAddress(HOST, PORT);
 
 console.log(`🚀 Porta proxy starting on ${listenAddress}`);
+if (process.env.PORTA_TOKEN?.trim()) {
+  console.log(`🔒 Token auth enabled (PORTA_TOKEN is set)`);
+}
 
 const server = createAdaptorServer({ fetch: app.fetch, port: PORT });
 

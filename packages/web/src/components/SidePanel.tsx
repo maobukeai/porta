@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import React from "react";
 import {
   IconFileCode,
@@ -33,7 +33,7 @@ import {
 import { triggerHaptic } from "../utils/haptics";
 import { copyText } from "../utils/clipboard";
 import type { TrajectoryStep, ChatMessage } from "../types";
-import { api, resolveWsUrl } from "../api/client";
+import { api } from "../api/client";
 import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
 import { extractArtifactsFromSteps } from "../utils/extractArtifacts";
@@ -41,9 +41,10 @@ import { useSubagentViewer } from "../hooks/useSubagentViewer";
 import { useStepsStream } from "../hooks/useStepsStream";
 import { SubagentDetailViewer } from "./SubagentDetailViewer";
 import { SubagentDirectoryView } from "./SubagentDirectoryView";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
+
+const SideTerminalView = lazy(() =>
+  import("./SideTerminalView").then((m) => ({ default: m.SideTerminalView })),
+);
 
 export type SidePanelTab = "chat" | "review" | "git" | "terminal" | "artifacts" | "subagent" | "subagent_directory";
 
@@ -2641,332 +2642,6 @@ function SideGitView({
   );
 }
 
-interface TabMeta {
-  id: string;
-  title: string;
-}
-
-interface TerminalInstance {
-  term: Terminal;
-  fitAddon: FitAddon;
-  ws: WebSocket;
-  container: HTMLDivElement;
-}
-
-/** 4. 嵌入式多标签终端 View */
-function SideTerminalView({
-  workspaceUri,
-  projectName,
-  onBack,
-  onClose,
-}: {
-  workspaceUri?: string;
-  projectName?: string;
-  onBack?: () => void;
-  onClose?: () => void;
-}) {
-  const dockBodyRef = useRef<HTMLDivElement>(null);
-  const instancesRef = useRef<Map<string, TerminalInstance>>(new Map());
-  const [tabs, setTabs] = useState<TabMeta[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string>("");
-  const counterRef = useRef(1);
-
-  const createNewTab = useCallback(() => {
-    if (!dockBodyRef.current) return;
-
-    const baseTitle = projectName || "终端";
-    const currentCount = counterRef.current;
-    const tabTitle = currentCount === 1 ? baseTitle : `${baseTitle} ${currentCount}`;
-    counterRef.current += 1;
-
-    const tabId = `tab_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-    const container = document.createElement("div");
-    container.className = "zcode-terminal-instance-container";
-    container.id = `term-container-${tabId}`;
-    dockBodyRef.current.appendChild(container);
-
-    const isLight = document.documentElement.getAttribute("data-theme") === "light";
-    const term = new Terminal({
-      cursorBlink: true,
-      cursorStyle: "block",
-      fontSize: 12.5,
-      lineHeight: 1.35,
-      letterSpacing: 0,
-      fontFamily: 'Consolas, "Cascadia Code", "Courier New", "JetBrains Mono", monospace',
-      theme: isLight
-        ? {
-            background: "#ffffff",
-            foreground: "#18181b",
-            cursor: "#18181b",
-            cursorAccent: "#ffffff",
-            selectionBackground: "rgba(0, 0, 0, 0.15)",
-            selectionForeground: "#000000",
-            black: "#18181b",
-            red: "#dc2626",
-            green: "#16a34a",
-            yellow: "#ca8a04",
-            blue: "#2563eb",
-            magenta: "#9333ea",
-            cyan: "#0284c7",
-            white: "#f8fafc",
-            brightBlack: "#64748b",
-            brightRed: "#ef4444",
-            brightGreen: "#22c55e",
-            brightYellow: "#eab308",
-            brightBlue: "#3b82f6",
-            brightMagenta: "#a855f7",
-            brightCyan: "#06b6d4",
-            brightWhite: "#0f172a",
-          }
-        : {
-            background: "#161616",
-            foreground: "#d4d4d8",
-            cursor: "#ffffff",
-            cursorAccent: "#161616",
-            selectionBackground: "rgba(255, 255, 255, 0.22)",
-            selectionForeground: "#ffffff",
-            black: "#161616",
-            red: "#f87171",
-            green: "#4ade80",
-            yellow: "#facc15",
-            blue: "#60a5fa",
-            magenta: "#c084fc",
-            cyan: "#38bdf8",
-            white: "#d4d4d8",
-            brightBlack: "#71717a",
-            brightRed: "#fca5a5",
-            brightGreen: "#86efac",
-            brightYellow: "#fef08a",
-            brightBlue: "#93c5fd",
-            brightMagenta: "#e9d5ff",
-            brightCyan: "#7dd3fc",
-            brightWhite: "#ffffff",
-          },
-      convertEol: true,
-      allowTransparency: true,
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(container);
-    try {
-      fitAddon.fit();
-    } catch {}
-
-    const initialCols = term.cols || 80;
-    const initialRows = term.rows || 25;
-    const query = new URLSearchParams();
-    if (workspaceUri) query.set("workspaceUri", workspaceUri);
-    query.set("cols", String(initialCols));
-    query.set("rows", String(initialRows));
-    const wsUrl = `${resolveWsUrl("/api/terminal/ws")}?${query.toString()}`;
-
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      term.focus();
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === "output" && typeof msg.data === "string") {
-          term.write(msg.data);
-        }
-      } catch {
-        term.write(event.data);
-      }
-    };
-
-    ws.onclose = () => {
-      term.write("\r\n\x1b[90m[终端连接已断开]\x1b[0m\r\n");
-    };
-
-    ws.onerror = () => {
-      term.write("\r\n\x1b[31m[终端 WebSocket 连接失败]\x1b[0m\r\n");
-    };
-
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "input", data }));
-      }
-    });
-
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "resize", cols, rows }));
-      }
-    });
-
-    instancesRef.current.set(tabId, { term, fitAddon, ws, container });
-
-    setTabs((prev) => [...prev, { id: tabId, title: tabTitle }]);
-    setActiveTabId(tabId);
-
-    instancesRef.current.forEach((inst, id) => {
-      inst.container.style.display = id === tabId ? "block" : "none";
-    });
-
-    setTimeout(() => {
-      try {
-        fitAddon.fit();
-        term.focus();
-      } catch {}
-    }, 60);
-  }, [projectName, workspaceUri]);
-
-  const switchTab = useCallback((tabId: string) => {
-    setActiveTabId(tabId);
-    instancesRef.current.forEach((inst, id) => {
-      inst.container.style.display = id === tabId ? "block" : "none";
-    });
-    const targetInst = instancesRef.current.get(tabId);
-    if (targetInst) {
-      setTimeout(() => {
-        try {
-          targetInst.fitAddon.fit();
-          targetInst.term.focus();
-        } catch {}
-      }, 30);
-    }
-  }, []);
-
-  const closeTab = useCallback(
-    (e: React.MouseEvent, tabIdToClose: string) => {
-      e.stopPropagation();
-
-      const inst = instancesRef.current.get(tabIdToClose);
-      if (inst) {
-        try {
-          inst.ws.close();
-          inst.term.dispose();
-          inst.container.remove();
-        } catch {}
-        instancesRef.current.delete(tabIdToClose);
-      }
-
-      setTabs((prev) => {
-        const remaining = prev.filter((t) => t.id !== tabIdToClose);
-        if (remaining.length === 0) {
-          if (onBack) onBack();
-          else if (onClose) onClose();
-          counterRef.current = 1;
-          return [];
-        }
-
-        if (activeTabId === tabIdToClose) {
-          const nextActive = remaining[remaining.length - 1];
-          setActiveTabId(nextActive.id);
-          instancesRef.current.forEach((item, id) => {
-            item.container.style.display = id === nextActive.id ? "block" : "none";
-          });
-          const nextInst = instancesRef.current.get(nextActive.id);
-          if (nextInst) {
-            setTimeout(() => {
-              try {
-                nextInst.fitAddon.fit();
-                nextInst.term.focus();
-              } catch {}
-            }, 30);
-          }
-        }
-        return remaining;
-      });
-    },
-    [activeTabId, onBack, onClose],
-  );
-
-  useEffect(() => {
-    if (instancesRef.current.size === 0) {
-      const timer = setTimeout(() => {
-        createNewTab();
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [createNewTab]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (activeTabId) {
-        const inst = instancesRef.current.get(activeTabId);
-        try {
-          inst?.fitAddon.fit();
-        } catch {}
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [activeTabId]);
-
-  const shell = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows") ? "PowerShell" : "bash";
-
-  return (
-    <div className="zcode-side-terminal-wrap">
-      <div className="zcode-panel-header">
-        <div className="zcode-panel-header-left" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0, overflow: "hidden" }}>
-          <IconTerminalSquare size={14} style={{ color: "#10b981", flexShrink: 0 }} />
-          <span className="zcode-panel-header-title" style={{ flexShrink: 0 }}>终端</span>
-          <span className="zcode-terminal-shell-badge" style={{ flexShrink: 0 }}>{shell}</span>
-
-          <div className="zcode-terminal-tab-list" style={{ display: "flex", alignItems: "center", gap: "4px", overflowX: "auto", scrollbarWidth: "none" }}>
-            {tabs.map((tab) => {
-              const isActive = tab.id === activeTabId;
-              return (
-                <div
-                  key={tab.id}
-                  className={`zcode-terminal-tab ${isActive ? "active" : "inactive"}`}
-                  onClick={() => switchTab(tab.id)}
-                >
-                  <span className="zcode-terminal-tab-name">{tab.title}</span>
-                  <button
-                    className="zcode-terminal-tab-close"
-                    onClick={(e) => closeTab(e, tab.id)}
-                    title="关闭此终端"
-                    type="button"
-                  >
-                    <IconX size={11} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="zcode-panel-header-actions" style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-          <button
-            className="zcode-panel-tool-btn"
-            onClick={createNewTab}
-            title="新建终端"
-            type="button"
-          >
-            <IconPlus size={14} />
-          </button>
-          {onBack && (
-            <button className="zcode-panel-tool-btn" onClick={onBack} title="切换面板">
-              <IconChevron size={12} style={{ transform: "rotate(90deg)" }} />
-            </button>
-          )}
-          {onClose && (
-            <button className="zcode-panel-tool-btn" onClick={onClose} title="关闭面板">
-              <IconX size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div
-        className="zcode-side-terminal-screen zcode-terminal-xterm-container"
-        ref={dockBodyRef}
-        onClick={() => {
-          const inst = instancesRef.current.get(activeTabId);
-          inst?.term.focus();
-        }}
-      />
-    </div>
-  );
-}
-
 /** Main SidePanel Component */
 export function SidePanel({
   cascadeId,
@@ -2983,6 +2658,15 @@ export function SidePanel({
   const [activeTab, setActiveTab] = useState<SidePanelTab | null>(() => initialTab);
   const [commitMsg, setCommitMsg] = useState("");
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
+  // Desktop keep-alive: once opened, the terminal view stays mounted (hidden) so
+  // switching tabs never destroys live terminal sessions.
+  const [terminalMounted, setTerminalMounted] = useState(() => initialTab === "terminal");
+
+  useEffect(() => {
+    if (activeTab === "terminal") {
+      setTerminalMounted(true);
+    }
+  }, [activeTab]);
 
   const { steps: liveSteps } = useStepsStream(cascadeId || "");
   const effectiveSteps = (steps && steps.length > 0) ? steps : liveSteps;
@@ -3064,6 +2748,79 @@ export function SidePanel({
 
   return (
     <div className="zcode-sidepanel-root">
+      {/* Desktop persistent tab bar (hidden on <1024px via CSS; mobile keeps cards + back) */}
+      <div className="zcode-sidepanel-tabbar porta-sidepanel-desktop-tabbar" role="tablist" aria-label="侧边面板标签">
+        <div className="zcode-sidepanel-tab-list">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "chat"}
+            className={`zcode-sidepanel-tab-item ${activeTab === "chat" ? "active" : ""}`}
+            onClick={() => handleOpenTab("chat")}
+            title="辅助对话"
+          >
+            <span className="tab-icon"><IconMessageSquare size={13} /></span>
+            辅助对话
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "review"}
+            className={`zcode-sidepanel-tab-item ${activeTab === "review" ? "active" : ""}`}
+            onClick={() => handleOpenTab("review")}
+            title="代码审查"
+          >
+            <span className="tab-icon"><IconFilePlus size={13} /></span>
+            审查
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "git"}
+            className={`zcode-sidepanel-tab-item ${activeTab === "git" ? "active" : ""}`}
+            onClick={() => handleOpenTab("git")}
+            title="Git 控制台"
+          >
+            <span className="tab-icon"><IconGitBranch size={13} /></span>
+            Git
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "terminal"}
+            className={`zcode-sidepanel-tab-item ${activeTab === "terminal" ? "active" : ""}`}
+            onClick={() => handleOpenTab("terminal")}
+            title="终端"
+          >
+            <span className="tab-icon"><IconTerminalSquare size={13} /></span>
+            终端
+          </button>
+          {subagentSessions.length > 0 && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "subagent_directory"}
+              className={`zcode-sidepanel-tab-item ${activeTab === "subagent_directory" ? "active" : ""}`}
+              onClick={() => handleOpenTab("subagent_directory")}
+              title="子智能体目录"
+            >
+              <span className="tab-icon"><IconBot size={13} /></span>
+              子智能体
+            </button>
+          )}
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            className="porta-tabbar-close-btn"
+            onClick={onClose}
+            title="关闭面板"
+            aria-label="关闭面板"
+          >
+            <IconX size={14} />
+          </button>
+        )}
+      </div>
       <div className="zcode-sidepanel-content">
         {activeTab === null ? (
           /* Empty State: Card Picker (Exact match of User's Reference Screenshot) */
@@ -3174,12 +2931,8 @@ export function SidePanel({
             onClose={onClose}
           />
         ) : activeTab === "terminal" ? (
-          <SideTerminalView
-            workspaceUri={workspaceUri}
-            projectName={projectName}
-            onBack={handleBackToPicker}
-            onClose={onClose}
-          />
+          /* Terminal renders in the keep-alive wrapper below the ternary chain */
+          null
         ) : activeTab === "subagent_directory" ? (
           <div className="zcode-side-subagent-dir-wrap" style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div className="vscode-editor-tab-bar">
@@ -3229,6 +2982,23 @@ export function SidePanel({
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Terminal keep-alive: stays mounted once opened; hidden while other tabs are active */}
+        {terminalMounted && (
+          <div
+            className="zcode-sidepanel-keepalive"
+            style={{ display: activeTab === "terminal" ? "flex" : "none" }}
+          >
+            <Suspense fallback={<div className="artifacts-loading"><IconSpinner className="icon-spin" /></div>}>
+              <SideTerminalView
+                workspaceUri={workspaceUri}
+                projectName={projectName}
+                onBack={handleBackToPicker}
+                onClose={onClose}
+              />
+            </Suspense>
           </div>
         )}
       </div>
