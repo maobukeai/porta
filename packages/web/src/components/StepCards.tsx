@@ -12,6 +12,8 @@ import {
   IconChevron,
   IconPrisma,
   IconBot,
+  IconMedia,
+  IconCamera,
 } from "./Icons";
 import type {
   AskQuestionEntry,
@@ -25,6 +27,34 @@ import { subagentDataFromStep } from "../utils/subagents";
 import { formatOptionTextZh, formatQuestionTitleZh } from "../utils/stepCards";
 import { copyText } from "../utils/clipboard";
 import { triggerHaptic } from "../utils/haptics";
+import { parseAnsi } from "../utils/ansi";
+
+/** Formatted ANSI terminal output renderer */
+export function AnsiOutput({ text }: { text: string }) {
+  const spans = useMemo(() => parseAnsi(text), [text]);
+  return (
+    <>
+      {spans.map((span, idx) => {
+        const style: React.CSSProperties = {};
+        if (span.color) style.color = span.color;
+        if (span.backgroundColor) style.backgroundColor = span.backgroundColor;
+        if (span.bold) style.fontWeight = 600;
+        if (span.dim) style.opacity = 0.65;
+        if (span.italic) style.fontStyle = "italic";
+        if (span.underline) style.textDecoration = "underline";
+
+        return (
+          <span
+            key={idx}
+            style={Object.keys(style).length > 0 ? style : undefined}
+          >
+            {span.text}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 
 /** Inline copy button for step cards */
 export function StepCopyBtn({ text }: { text: string }) {
@@ -657,7 +687,17 @@ export function CommandCard({ step, onCommandAction }: CommandCardProps) {
           </div>
 
           {output && (
-            <pre className="zcode-command-output-body">{output}</pre>
+            <pre
+              className="zcode-command-output-body"
+              style={{
+                maxHeight: "340px",
+                overflowY: "auto",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}
+            >
+              <AnsiOutput text={output} />
+            </pre>
           )}
 
           {isWaiting && !responded && onCommandAction && (
@@ -833,7 +873,7 @@ function useAnimatedNumber(target: number, minDuration: number = 600): number {
   return count;
 }
 
-export function CodeActionCard({ step }: CodeActionCardProps) {
+export function CodeActionCard({ step, onOpenFile }: CodeActionCardProps) {
   const ca = step.codeAction;
   if (!ca) return null;
 
@@ -1022,12 +1062,35 @@ export function CodeActionCard({ step }: CodeActionCardProps) {
           <span className="zcode-code-action-label">
             {isEditing ? "正在编辑" : "已编辑"}
           </span>
-          <span className="zcode-code-action-file-badge">
+          <span
+            className="zcode-code-action-file-badge"
+            onClick={
+              onOpenFile
+                ? (e) => {
+                    e.stopPropagation();
+                    onOpenFile({ name: fileName, path: cleanPath });
+                  }
+                : undefined
+            }
+            style={onOpenFile ? { cursor: "pointer" } : undefined}
+          >
             {getFileTypeIcon(fileName)}
             <span className="zcode-code-action-filename">{fileName}</span>
           </span>
           {fileDir && (
-            <span className="zcode-code-action-dir" title={fileDir}>
+            <span
+              className="zcode-code-action-dir"
+              title={fileDir}
+              onClick={
+                onOpenFile
+                  ? (e) => {
+                      e.stopPropagation();
+                      onOpenFile({ name: fileName, path: cleanPath });
+                    }
+                  : undefined
+              }
+              style={onOpenFile ? { cursor: "pointer" } : undefined}
+            >
               {fileDir}
             </span>
           )}
@@ -1060,7 +1123,7 @@ export function CodeActionCard({ step }: CodeActionCardProps) {
           {inlineDiffLines.map((line, idx) => (
             <div key={idx} className={`zcode-inline-diff-line ${line.type}`}>
               <div className="zcode-inline-diff-bar" />
-              <div className="zcode-inline-diff-num">{idx + 1}</div>
+              <div className="zcode-inline-diff-num">{line.lineNum ?? (idx + 1)}</div>
               <div className="zcode-inline-diff-text">
                 {highlightDiffTokens(line.text)}
               </div>
@@ -1175,6 +1238,70 @@ export function SubagentCard({ step, data, onSelectSubagent }: SubagentCardProps
                   <pre className="subagent-detail-pre">{detail.text}</pre>
                 </div>
               ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Media & Screenshot Preview Card (Desktop 1:1) ──
+
+export interface MediaStepCardProps {
+  title?: string;
+  description?: string;
+  mediaUrls: string[];
+  onImageClick?: (src: string) => void;
+  icon?: string;
+}
+
+export function MediaStepCard({
+  title,
+  description,
+  mediaUrls = [],
+  onImageClick,
+  icon = "image",
+}: MediaStepCardProps) {
+  if (mediaUrls.length === 0 && !title && !description) return null;
+
+  return (
+    <div className="step-card media-step-card">
+      <div className="step-card-header" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <span className="step-card-icon">
+          {icon === "camera" ? <IconCamera size={14} /> : <IconMedia size={14} />}
+        </span>
+        <span className="info-card-text" style={{ fontWeight: 500 }}>
+          {title || (icon === "camera" ? "屏幕截图快照" : "图片产物")}
+        </span>
+      </div>
+      {description && (
+        <div
+          className="step-card-desc"
+          style={{
+            fontSize: "12px",
+            color: "var(--text-secondary, #94a3b8)",
+            margin: "4px 0 8px",
+          }}
+        >
+          {description}
+        </div>
+      )}
+      {mediaUrls.length > 0 && (
+        <div className="step-media-grid">
+          {mediaUrls.map((url, idx) => (
+            <div
+              key={idx}
+              className="step-media-thumb-wrapper"
+              onClick={() => onImageClick?.(url)}
+              title="点击查看大图"
+            >
+              <img
+                src={url}
+                alt="step media thumbnail"
+                className="step-media-thumbnail"
+                loading="lazy"
+              />
             </div>
           ))}
         </div>

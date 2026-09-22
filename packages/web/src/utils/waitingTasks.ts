@@ -15,11 +15,16 @@ export function isAnyStepWaiting(steps?: TrajectoryStep[]): boolean {
     ) {
       return false;
     }
+    const typeStr = String(s.type ?? "").toUpperCase();
+    const toolCallName = s.metadata?.toolCall?.name || (s as any).toolCall?.name || "";
     return (
-      s.type === "CORTEX_STEP_TYPE_ASK_QUESTION" ||
-      s.type === "CORTEX_STEP_TYPE_FILE_PERMISSION" ||
+      typeStr.includes("ASK_QUESTION") ||
+      typeStr.includes("FILE_PERMISSION") ||
+      toolCallName === "ask_permission" ||
+      toolCallName === "ask_question" ||
       s.requestedInteraction !== undefined ||
-      (s.type === "CORTEX_STEP_TYPE_RUN_COMMAND" && st.includes("WAITING"))
+      st.includes("WAITING") ||
+      (typeStr.includes("RUN_COMMAND") && st.includes("WAITING"))
     );
   });
 }

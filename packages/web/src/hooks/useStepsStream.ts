@@ -369,6 +369,15 @@ export function useStepsStream(
     stepsRef.current = [];
     baseOffsetRef.current = 0;
     endOffsetRef.current = 0;
+
+    if (!cascadeId) {
+      setSteps([]);
+      setLoading(false);
+      setError(null);
+      setHasMore(false);
+      return;
+    }
+
     setSteps([]);
     setLoading(true);
     setError(null);

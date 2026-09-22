@@ -38,6 +38,28 @@ function cleanUriPath(uri?: string): { name: string; dir: string; ext: string } 
   return { name, dir, ext };
 }
 
+function parseToolArgs(step: TrajectoryStep): Record<string, any> {
+  const tc = step.metadata?.toolCall ?? (step as any).toolCall;
+  if (tc?.args && typeof tc.args === "object") return tc.args;
+  if (tc?.argumentsJson) {
+    try {
+      return JSON.parse(tc.argumentsJson);
+    } catch {}
+  }
+  return (step as any).args ?? (step as any).arguments ?? {};
+}
+
+const JS_BUILTIN_PROPS = new Set([
+  "toString",
+  "valueOf",
+  "constructor",
+  "hasOwnProperty",
+  "isPrototypeOf",
+  "propertyIsEnumerable",
+  "toLocaleString",
+  "__proto__",
+]);
+
 /**
  * Cache keyed by a content fingerprint, NOT array identity.
  *
@@ -285,7 +307,11 @@ export function stepsToMessages(steps: TrajectoryStep[], baseOffset = 0): ChatMe
       }
     }
 
-    const toolName = step.metadata?.toolCall?.name;
+    const toolName =
+      step.metadata?.toolCall?.name ??
+      (step as any).toolCall?.name ??
+      (step as any).toolName ??
+      (step as any).tool_name;
 
     // Filter internal manage_subagents list query noise from main chat cards
     if (toolName === "manage_subagents") {
@@ -593,6 +619,129 @@ export function stepsToMessages(steps: TrajectoryStep[], baseOffset = 0): ChatMe
         type,
         icon: "corner-up-left",
       });
+    } else if (
+      toolName === "search_web" ||
+      type === "CORTEX_STEP_TYPE_SEARCH_WEB" ||
+      Boolean((step as any).searchWeb)
+    ) {
+      const args = parseToolArgs(step);
+      const query = args.query || args.Query || (step as any).searchWeb?.query || "";
+      const displayQuery = query ? `"${query}"` : "网络搜索";
+      messages.push({
+        role: "system",
+        content: query ? `Searched web for "${query}"` : `执行网络搜索`,
+        stepIndex: absoluteIndex,
+        type: type || "CORTEX_STEP_TYPE_SEARCH_WEB",
+        icon: "globe",
+        explorationGroup: {
+          title: "搜索 · 1 项操作",
+          totalCount: 1,
+          items: [
+            {
+              action: "网络搜索",
+              name: displayQuery,
+              path: "Web Search",
+              ext: "search",
+            },
+          ],
+        },
+        step,
+      });
+    } else if (
+      toolName === "read_url_content" ||
+      type === "CORTEX_STEP_TYPE_READ_URL_CONTENT" ||
+      Boolean((step as any).readUrlContent)
+    ) {
+      const args = parseToolArgs(step);
+      const url = args.Url || args.url || (step as any).readUrlContent?.url || "";
+      messages.push({
+        role: "system",
+        content: url ? `Fetched ${url}` : `读取网页内容`,
+        stepIndex: absoluteIndex,
+        type: type || "CORTEX_STEP_TYPE_READ_URL_CONTENT",
+        icon: "globe",
+        explorationGroup: {
+          title: "探索 · 1 网页",
+          totalCount: 1,
+          items: [
+            {
+              action: "已抓取",
+              name: url || "网页",
+              path: url || "URL",
+              ext: "url",
+            },
+          ],
+        },
+        step,
+      });
+    } else if (
+      toolName === "generate_image" ||
+      type === "CORTEX_STEP_TYPE_GENERATE_IMAGE" ||
+      Boolean((step as any).generateImage)
+    ) {
+      const args = parseToolArgs(step);
+      const prompt = args.Prompt || args.prompt || "";
+      const imageName = args.ImageName || args.imageName || "";
+      const desc = imageName ? `**${imageName}**` : prompt ? `"${prompt}"` : "";
+      messages.push({
+        role: "system",
+        content: desc ? `Generated image ${desc}` : `生成图片产物`,
+        stepIndex: absoluteIndex,
+        type: type || "CORTEX_STEP_TYPE_GENERATE_IMAGE",
+        icon: "image",
+        step,
+      });
+    } else if (
+      toolName === "capture_browser_screenshot" ||
+      type === "CORTEX_STEP_TYPE_CAPTURE_BROWSER_SCREENSHOT" ||
+      Boolean((step as any).captureBrowserScreenshot)
+    ) {
+      messages.push({
+        role: "system",
+        content: `Captured browser screenshot`,
+        stepIndex: absoluteIndex,
+        type: type || "CORTEX_STEP_TYPE_CAPTURE_BROWSER_SCREENSHOT",
+        icon: "camera",
+        step,
+      });
+    } else if (
+      toolName === "git_commit" ||
+      type === "CORTEX_STEP_TYPE_GIT_COMMIT" ||
+      Boolean((step as any).gitCommit)
+    ) {
+      const args = parseToolArgs(step);
+      const commitMsg = args.message || args.Message || args.commitMessage || (step as any).gitCommit?.message || "";
+      messages.push({
+        role: "system",
+        content: commitMsg ? `Git commit: ${commitMsg}` : `提交 Git 变更`,
+        stepIndex: absoluteIndex,
+        type: type || "CORTEX_STEP_TYPE_GIT_COMMIT",
+        icon: "git-commit",
+        step,
+      });
+    } else if (
+      (Boolean(toolName) && !JS_BUILTIN_PROPS.has(toolName!)) ||
+      Boolean(step.metadata?.toolCall?.name && !JS_BUILTIN_PROPS.has(step.metadata.toolCall.name)) ||
+      Boolean((step as any).toolCall?.name && !JS_BUILTIN_PROPS.has((step as any).toolCall.name)) ||
+      Boolean(step.metadata?.toolAction) ||
+      Boolean(step.metadata?.toolSummary) ||
+      type === "CORTEX_STEP_TYPE_TOOL_CALL" ||
+      type === "TOOL_CALL"
+    ) {
+      // Default generic tool call fallback
+      const call = step.metadata?.toolCall ?? (step as any).toolCall;
+      const name = toolName || call?.name || "tool";
+      if (!JS_BUILTIN_PROPS.has(name)) {
+        const summary = step.metadata?.toolSummary || step.metadata?.toolAction;
+        messages.push({
+          role: "system",
+          content: summary ? `${summary} (${name})` : `Executed tool **${name}**`,
+          stepIndex: absoluteIndex,
+          type: type || "CORTEX_STEP_TYPE_TOOL_CALL",
+          icon: "box",
+          step,
+        });
+      }
     }
   }
 

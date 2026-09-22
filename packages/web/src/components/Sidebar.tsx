@@ -36,6 +36,7 @@ import {
 } from "./Icons";
 import { loadWaitingTasks } from "../utils/waitingTasks";
 import { isSubagentConversation } from "../utils/subagents";
+import { preloadSettingsPanel } from "../utils/preloadSettings";
 
 interface Props {
   conversations: ConversationEntry[];
@@ -430,6 +431,15 @@ export function Sidebar({
     }
   });
 
+  const [pinnedGroups, setPinnedGroups] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("porta:pinnedGroups_v1");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   const [archivedIds, setArchivedIds] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("porta:archivedConversations_v1");
@@ -459,6 +469,16 @@ export function Sidebar({
         });
       } catch {}
       try {
+        const rawG = localStorage.getItem("porta:pinnedGroups_v1");
+        const listG: string[] = rawG ? JSON.parse(rawG) : [];
+        setPinnedGroups((prev) => {
+          if (prev.size === listG.length && listG.every((name) => prev.has(name))) {
+            return prev;
+          }
+          return new Set(listG);
+        });
+      } catch {}
+      try {
         const rawA = localStorage.getItem("porta:archivedConversations_v1");
         const listA: string[] = rawA ? JSON.parse(rawA) : [];
         setArchivedIds((prev) => {
@@ -470,9 +490,11 @@ export function Sidebar({
       } catch {}
     };
 
+    window.addEventListener("porta:group-pinned-updated", handleUpdate);
     window.addEventListener("porta:conversation-updated", handleUpdate);
     window.addEventListener("storage", handleUpdate);
     return () => {
+      window.removeEventListener("porta:group-pinned-updated", handleUpdate);
       window.removeEventListener("porta:conversation-updated", handleUpdate);
       window.removeEventListener("storage", handleUpdate);
     };
@@ -515,6 +537,25 @@ export function Sidebar({
       return next;
     });
     window.dispatchEvent(new Event("porta:conversation-updated"));
+  }, []);
+
+  const togglePinGroup = useCallback((groupName: string) => {
+    if (!groupName || isTaskGroupName(groupName)) return;
+    setPinnedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupName)) {
+        next.delete(groupName);
+      } else {
+        next.add(groupName);
+      }
+      try {
+        localStorage.setItem(
+          "porta:pinnedGroups_v1",
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {}
+      return next;
+    });
   }, []);
 
   const getConvTime = useCallback(
@@ -605,6 +646,10 @@ export function Sidebar({
         if (!aIsTask && bIsTask) return -1;
         if (aIsTask && bIsTask) return 0;
 
+        const aPinned = !aIsTask && pinnedGroups.has(a.name);
+        const bPinned = !bIsTask && pinnedGroups.has(b.name);
+        if (aPinned !== bPinned) return aPinned ? -1 : 1;
+
         if (customGroupOrder.length > 0) {
           const aIndex = customGroupOrder.indexOf(a.name);
           const bIndex = customGroupOrder.indexOf(b.name);
@@ -632,6 +677,7 @@ export function Sidebar({
     activeId,
     getConvTime,
     customGroupOrder,
+    pinnedGroups,
   ]);
 
   const handleGroupDragStart = (e: React.DragEvent, groupName: string) => {
@@ -1411,6 +1457,7 @@ export function Sidebar({
               ? false
               : collapsed[group.name] ?? false;
             const isTask = isTaskGroupName(group.name);
+            const isPinned = !isTask && pinnedGroups.has(group.name);
 
             return (
               <div
@@ -1441,9 +1488,9 @@ export function Sidebar({
                     {isTask ? (
                       <IconMessagePlus size={14} className="zcode-tree-folder-icon" />
                     ) : isGroupCollapsed ? (
-                      <IconFolder size={14} className="zcode-tree-folder-icon" />
+                      <IconFolder size={14} className={`zcode-tree-folder-icon ${isPinned ? "pinned" : ""}`} />
                     ) : (
-                      <IconFolderOpen size={14} className="zcode-tree-folder-icon open" />
+                      <IconFolderOpen size={14} className={`zcode-tree-folder-icon open ${isPinned ? "pinned" : ""}`} />
                     )}
                     <span className="workspace-group-name zcode-tree-folder-name">{group.name}</span>
                   </div>
@@ -1461,6 +1508,20 @@ export function Sidebar({
                       <span className="zcode-tree-dot unread" title="文件夹内有未读已完成任务" />
                     ) : null}
                     <span className="workspace-group-count zcode-tree-count">{totalCount}</span>
+                    {!isTask && (
+                      <button
+                        type="button"
+                        className={`workspace-group-pin-btn zcode-tree-pin-btn ${isPinned ? "pinned" : ""}`}
+                        title={isPinned ? `取消置顶「${group.name}」` : `置顶「${group.name}」`}
+                        aria-label={isPinned ? `取消置顶「${group.name}」` : `置顶「${group.name}」`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePinGroup(group.name);
+                        }}
+                      >
+                        <IconPin size={11} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="workspace-group-new-btn zcode-tree-new-btn"
@@ -1524,6 +1585,8 @@ export function Sidebar({
         <button
           className="zcode-footer-settings-btn"
           onClick={onSettings}
+          onMouseEnter={preloadSettingsPanel}
+          onTouchStart={preloadSettingsPanel}
           title="系统设置"
         >
           <IconGear size={15} />

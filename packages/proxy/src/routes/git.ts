@@ -7,6 +7,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { rpcAny } from "../routing.js";
+import { getMetadata } from "../metadata.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +28,26 @@ function resolvePathFromUri(uri?: string): string {
   return decoded.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
 }
 
+async function getRemoteWebUrl(cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["config", "--get", "remote.origin.url"], { cwd });
+    const raw = stdout.trim();
+    if (!raw) return null;
+    let url = raw;
+    if (url.startsWith("git@") && url.includes(":")) {
+      const parts = url.slice(4).split(":");
+      url = `https://${parts[0]}/${parts[1]}`;
+    }
+    url = url.replace(/\.git$/, "");
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url.replace(/^\/+/, "")}`;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export function registerGitRoutes(app: Hono): void {
   // 1. GET /api/git/status
   app.get("/api/git/status", async (c) => {
@@ -33,7 +55,7 @@ export function registerGitRoutes(app: Hono): void {
     const cwd = resolvePathFromUri(workspaceUri);
 
     if (!existsSync(cwd)) {
-      return c.json({ error: `目录不存在: ${cwd}`, files: [], branch: "main", totalChanges: 0 }, 400);
+      return c.json({ error: `目录不存在: ${cwd}`, files: [], branch: "main", totalChanges: 0, remoteWebUrl: null }, 400);
     }
 
     try {
@@ -80,12 +102,15 @@ export function registerGitRoutes(app: Hono): void {
         // No upstream configured
       }
 
+      const remoteWebUrl = await getRemoteWebUrl(cwd);
+
       return c.json({
         branch,
         ahead,
         behind,
         files,
         totalChanges: files.length,
+        remoteWebUrl,
       });
     } catch (err) {
       return c.json({
@@ -93,6 +118,7 @@ export function registerGitRoutes(app: Hono): void {
         branch: "main",
         files: [],
         totalChanges: 0,
+        remoteWebUrl: null,
       });
     }
   });
@@ -296,9 +322,11 @@ export function registerGitRoutes(app: Hono): void {
           return { hash, message, author, relativeTime, date, refs, isRemotePushed, isHead };
         });
 
-      return c.json({ logs });
+      const remoteWebUrl = await getRemoteWebUrl(cwd);
+
+      return c.json({ logs, remoteWebUrl });
     } catch (err) {
-      return c.json({ error: (err as Error).message, logs: [] });
+      return c.json({ error: (err as Error).message, logs: [], remoteWebUrl: null });
     }
   });
 
@@ -603,12 +631,40 @@ export function registerGitRoutes(app: Hono): void {
     }
   });
 
-  // 11. POST /api/git/ai-commit-msg
-  app.post("/api/git/ai-commit-msg", async (c) => {
+  // 11. POST /api/git/ai-commit-msg & POST /api/git/ai-commit
+  const handleAiCommitMsg = async (c: any) => {
     try {
       const body = await c.req.json();
       const { workspaceUri, prompt } = body;
       const cwd = resolvePathFromUri(workspaceUri);
+
+      // Attempt to generate commit message via Language Server GenerateCommitMessage RPC
+      try {
+        const metadata = await getMetadata(true);
+        const normalizedRoot = cwd.replace(/\\/g, "/");
+        const rpcPayload: Record<string, any> = {
+          metadata,
+          repoRoot: normalizedRoot,
+        };
+        if (prompt && typeof prompt === "string" && prompt.trim()) {
+          rpcPayload.userPrompt = prompt.trim();
+        }
+        const res = (await rpcAny("GenerateCommitMessage", rpcPayload)) as any;
+        const lsSummary = res?.commitMessage?.commitMessageSummary;
+        if (lsSummary && typeof lsSummary === "string" && lsSummary.trim()) {
+          const message = lsSummary.trim();
+          const changedFiles = res?.commitMessage?.changedFileUris;
+          const filesCount = Array.isArray(changedFiles) ? changedFiles.length : undefined;
+          return c.json({
+            message,
+            filesCount,
+            body: res?.commitMessage?.commitMessageBody,
+            source: "language_server",
+          });
+        }
+      } catch {
+        // Fall back to local semantic heuristic generator
+      }
 
       // Get status and diffs
       let diffText = "";
@@ -717,9 +773,6 @@ export function registerGitRoutes(app: Hono): void {
         actionDesc = `refine ${fileBasenames.slice(0, 2).join(", ")} and related modules`;
       }
 
-      // Small async delay for realistic AI reasoning & parsing
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
       // Generate dynamic message based on deep semantic diff
       let message = `${type}(${scope}): ${actionDesc}`;
       if (prompt && typeof prompt === "string" && prompt.trim()) {
@@ -735,5 +788,8 @@ export function registerGitRoutes(app: Hono): void {
     } catch (err) {
       return c.json({ message: "chore: update codebase files" });
     }
-  });
+  };
+
+  app.post("/api/git/ai-commit-msg", handleAiCommitMsg);
+  app.post("/api/git/ai-commit", handleAiCommitMsg);
 }

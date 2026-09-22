@@ -681,4 +681,130 @@ describe("stepsToMessages", () => {
     expect(msgs[0].type).toBe("CORTEX_STEP_TYPE_ASK_QUESTION");
     expect(msgs[0].role).toBe("system");
   });
+
+  // ── Official Antigravity Tool Steps ──
+
+  it("converts search_web tool step into system message with exploration group", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      metadata: {
+        toolCall: {
+          name: "search_web",
+          argumentsJson: JSON.stringify({ query: "vitest documentation" }),
+        },
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("globe");
+    expect(msgs[0].content).toContain("vitest documentation");
+    expect(msgs[0].explorationGroup?.items[0].action).toBe("网络搜索");
+  });
+
+  it("converts read_url_content tool step into system message with exploration group", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      metadata: {
+        toolCall: {
+          name: "read_url_content",
+          argumentsJson: JSON.stringify({ Url: "https://vitest.dev/guide" }),
+        },
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("globe");
+    expect(msgs[0].content).toContain("https://vitest.dev/guide");
+    expect(msgs[0].explorationGroup?.items[0].action).toBe("已抓取");
+  });
+
+  it("converts generate_image tool step into system message", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      metadata: {
+        toolCall: {
+          name: "generate_image",
+          argumentsJson: JSON.stringify({ Prompt: "a red fox", ImageName: "fox_avatar" }),
+        },
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("image");
+    expect(msgs[0].content).toContain("fox_avatar");
+  });
+
+  it("converts capture_browser_screenshot tool step into system message", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_CAPTURE_BROWSER_SCREENSHOT",
+      metadata: {
+        toolCall: {
+          name: "capture_browser_screenshot",
+        },
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("camera");
+    expect(msgs[0].content).toBe("Captured browser screenshot");
+  });
+
+  it("converts git_commit tool step into system message", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      metadata: {
+        toolCall: {
+          name: "git_commit",
+          argumentsJson: JSON.stringify({ message: "feat: new feature" }),
+        },
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("git-commit");
+    expect(msgs[0].content).toContain("feat: new feature");
+  });
+
+  it("converts unknown generic tool calls into system messages via fallback", () => {
+    const step: TrajectoryStep = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      metadata: {
+        toolCall: {
+          name: "custom_analyzer",
+        },
+        toolAction: "Running custom analysis",
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("box");
+    expect(msgs[0].content).toContain("custom_analyzer");
+  });
+
+  it("converts tool calls defined directly on step without metadata via fallback", () => {
+    const step: any = {
+      type: "CORTEX_STEP_TYPE_TOOL_CALL",
+      toolCall: {
+        name: "direct_tool",
+      },
+    };
+
+    const msgs = stepsToMessages([step]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].icon).toBe("box");
+    expect(msgs[0].content).toContain("direct_tool");
+  });
 });

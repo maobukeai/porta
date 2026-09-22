@@ -266,6 +266,9 @@ export const api = {
   stop: (cascadeId: string) =>
     request(`/api/conversations/${cascadeId}/stop`, { method: "POST" }),
 
+  cancel: (cascadeId: string) =>
+    request(`/api/conversations/${cascadeId}/cancel`, { method: "POST" }),
+
   filePermission: (
     cascadeId: string,
     trajectoryId: string,

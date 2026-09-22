@@ -7,6 +7,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync } from "node:fs";
 import { resolve, isAbsolute } from "node:path";
+import { rpcAny } from "../routing.js";
 
 function resolvePathFromUri(uri?: string): string {
   if (!uri) return process.cwd();
@@ -194,6 +195,55 @@ export function registerTerminalRoutes(app: Hono): void {
         },
         500,
       );
+    }
+  });
+
+  // 3. Official Language Server Terminal RPCs
+  // POST /api/terminal/ls/create
+  app.post("/api/terminal/ls/create", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const res = await rpcAny("CreateTerminal", body);
+      return c.json(res);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 500);
+    }
+  });
+
+  // GET /api/terminal/ls/list
+  app.get("/api/terminal/ls/list", async (c) => {
+    try {
+      const res = await rpcAny("ListTerminals", {});
+      return c.json(res);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 500);
+    }
+  });
+
+  // POST /api/terminal/ls/input
+  app.post("/api/terminal/ls/input", async (c) => {
+    try {
+      const body = await c.req.json<{ terminalId: string; input: string }>();
+      const rawInput = body.input ?? "";
+      const base64Input = Buffer.from(rawInput, "utf8").toString("base64");
+      const res = await rpcAny("SendTerminalInput", {
+        terminalId: body.terminalId,
+        input: base64Input,
+      });
+      return c.json(res);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 500);
+    }
+  });
+
+  // POST /api/terminal/ls/close
+  app.post("/api/terminal/ls/close", async (c) => {
+    try {
+      const body = await c.req.json<{ terminalId: string }>();
+      const res = await rpcAny("CloseTerminal", { terminalId: body.terminalId });
+      return c.json(res);
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 500);
     }
   });
 }

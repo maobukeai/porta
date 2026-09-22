@@ -16,7 +16,7 @@ interface Props {
   className?: string;
 }
 
-function formatSubagentRelativeTime(timestamp?: string, defaultDays = "1天"): string {
+export function formatSubagentRelativeTime(timestamp?: string, defaultDays = "1天"): string {
   if (!timestamp) return defaultDays;
   try {
     const diff = Date.now() - new Date(timestamp).getTime();
@@ -31,6 +31,36 @@ function formatSubagentRelativeTime(timestamp?: string, defaultDays = "1天"): s
   } catch {
     return defaultDays;
   }
+}
+
+export function formatSubagentDuration(duration?: string | number, timestamp?: string, defaultDays = "1天"): string {
+  if (duration !== undefined && duration !== null && duration !== "") {
+    let totalSecs: number | null = null;
+    if (typeof duration === "number") {
+      totalSecs = duration;
+    } else {
+      const dStr = String(duration).trim();
+      const msMatch = dStr.match(/^(\d+(?:\.\d+)?)\s*ms$/i);
+      if (msMatch) {
+        totalSecs = parseFloat(msMatch[1]) / 1000;
+      } else {
+        const secMatch = dStr.match(/^(\d+(?:\.\d+)?)\s*s?$/i);
+        if (secMatch) {
+          totalSecs = parseFloat(secMatch[1]);
+        } else {
+          return dStr;
+        }
+      }
+    }
+
+    if (totalSecs !== null && !isNaN(totalSecs) && totalSecs >= 0) {
+      if (totalSecs < 60) return `${Math.max(1, Math.round(totalSecs))}秒`;
+      const mins = Math.floor(totalSecs / 60);
+      const secs = Math.round(totalSecs % 60);
+      return secs > 0 ? `${mins}分${secs}秒` : `${mins}分钟`;
+    }
+  }
+  return formatSubagentRelativeTime(timestamp, defaultDays);
 }
 
 function cleanMarkdownSnippet(text?: string): string {
@@ -139,9 +169,25 @@ export function SubagentDirectoryView({
                       <IconBot size={14} className="subagent-dir-bot-icon is-spinning" />
                       <span className="subagent-dir-card-name">{s.role}</span>
                       <span className="subagent-dir-running-badge">执行中</span>
+                      {s.needsAttention && (
+                        <span
+                          className="subagent-dir-attention-badge"
+                          style={{
+                            backgroundColor: "#f59e0b",
+                            color: "#ffffff",
+                            fontSize: "10px",
+                            padding: "1px 6px",
+                            borderRadius: "10px",
+                            fontWeight: 600,
+                            marginLeft: "6px",
+                          }}
+                        >
+                          待确认
+                        </span>
+                      )}
                     </div>
                     <span className="subagent-dir-card-time">
-                      {formatSubagentRelativeTime(s.timestamp, "正在执行")}
+                      {formatSubagentDuration(s.duration, s.timestamp, "正在执行")}
                     </span>
                   </div>
                   {s.prompt && (
@@ -195,7 +241,7 @@ export function SubagentDirectoryView({
                         </span>
                       </div>
                       <span className="subagent-dir-card-time">
-                        {formatSubagentRelativeTime(s.timestamp, "1天")}
+                        {formatSubagentDuration(s.duration, s.timestamp, "1天")}
                       </span>
                     </div>
 

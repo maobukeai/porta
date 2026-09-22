@@ -6,6 +6,8 @@ import type { Hono } from "hono";
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
+import { rpcAny } from "../routing.js";
+import { resolveModelIdentifier } from "./models.js";
 
 export interface CommandItem {
   name: string;
@@ -14,6 +16,11 @@ export interface CommandItem {
 }
 
 const BUILTIN_COMMANDS: CommandItem[] = [
+  {
+    name: "boost",
+    desc: "多智能体深度推理与高阶自主研发管线 (/boost)",
+    category: "slash",
+  },
   {
     name: "btw",
     desc: "不中断主对话的情况下快速提问",
@@ -224,7 +231,7 @@ function scanCustomCommandsDir(baseDir: string): CommandItem[] {
 }
 
 export function registerCommandRoutes(app: Hono): void {
-  app.get("/api/commands", (c) => {
+  app.get("/api/commands", async (c) => {
     const home = homedir();
     const rawWorkspace = c.req.query("workspaceUri");
     let workspaceDir: string | null = null;
@@ -257,6 +264,41 @@ export function registerCommandRoutes(app: Hono): void {
     // 1. Built-in slash commands
     for (const item of BUILTIN_COMMANDS) {
       map.set(item.name, item);
+    }
+
+    // 1.1 Dynamic slash commands from Language Server (GetSlashCommands)
+    try {
+      const resolvedModel = await resolveModelIdentifier(null);
+      const res = await rpcAny<{
+        commands?: Array<{
+          title?: string;
+          name?: string;
+          description?: string;
+          command?: { name?: string; description?: string };
+        }>;
+      }>("GetSlashCommands", {
+        cascadeConfig: {
+          plannerConfig: {
+            requestedModel: { model: resolvedModel },
+          },
+        },
+      });
+
+      if (res && Array.isArray(res.commands)) {
+        for (const cmd of res.commands) {
+          const rawName = cmd.title || cmd.name || cmd.command?.name;
+          if (rawName && typeof rawName === "string") {
+            const cleanName = rawName.replace(/^\//, "");
+            map.set(cleanName, {
+              name: cleanName,
+              desc: cmd.description || cmd.command?.description || `官方指令 /${cleanName}`,
+              category: "slash",
+            });
+          }
+        }
+      }
+    } catch {
+      // Clean fallback to BUILTIN_COMMANDS if LS is offline or in unit tests
     }
     // 2. User & Workspace custom commands
     for (const item of [...userCommands1, ...userCommands2, ...wsCommands1, ...wsCommands2]) {

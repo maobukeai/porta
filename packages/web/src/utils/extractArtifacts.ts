@@ -2,12 +2,13 @@ import type { TrajectoryStep, ToolCallData, ChatMessage } from "../types";
 
 export interface ArtifactItem {
   id: string;
-  type: "doc" | "code" | "media" | "diff";
+  type: "doc" | "code" | "media" | "diff" | "url";
   title: string;
   content: string;
   language?: string;
   timestamp?: string;
   path?: string;
+  url?: string;
 }
 
 export function parseFilename(path?: string): { filename: string; ext: string } {
@@ -115,6 +116,34 @@ function extractToolCallArtifacts(
         });
       }
     }
+
+    // 5. read_url_content / browser / URL tools
+    if (
+      name.includes("read_url") ||
+      name.includes("browser") ||
+      name.includes("navigate") ||
+      args.Url ||
+      args.url
+    ) {
+      const targetUrl = (args.Url || args.url || args.targetUrl || "").toString().trim();
+      if (/^https?:\/\//i.test(targetUrl)) {
+        const clean = targetUrl.replace(/[)\]>,.]+$/, "");
+        const isLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(clean);
+        const displayUrl = clean.replace("://0.0.0.0", "://localhost");
+        const id = `url-${stepIndex}-${clean}`;
+        if (!seenIds.has(id)) {
+          seenIds.add(id);
+          artifacts.push({
+            id,
+            type: "url",
+            title: isLocal ? `本地实时预览: ${displayUrl}` : `网页预览: ${clean}`,
+            content: clean,
+            url: displayUrl,
+            language: "url",
+          });
+        }
+      }
+    }
   } catch (e) {
     // Ignore JSON parse errors for non-JSON tool calls
   }
@@ -210,6 +239,15 @@ export function extractArtifactsFromSteps(
       }
     }
 
+    const outputText =
+      step.metadata?.output ??
+      step.runCommand?.combinedOutput?.full ??
+      (step.runCommand as any)?.output ??
+      (step as any).commandStatus?.output;
+    if (outputText) {
+      extractUrlsFromText(outputText, stepIndex, artifacts, seenIds);
+    }
+
     const pr = step.plannerResponse;
     if (pr) {
       const responseText =
@@ -221,6 +259,7 @@ export function extractArtifactsFromSteps(
         "";
 
       extractCodeBlocksFromText(responseText, stepIndex, artifacts, seenIds);
+      extractUrlsFromText(responseText, stepIndex, artifacts, seenIds);
     }
   });
 
@@ -228,6 +267,11 @@ export function extractArtifactsFromSteps(
   messages.forEach((msg, msgIndex) => {
     if (msg.content) {
       extractCodeBlocksFromText(msg.content, msgIndex + 1000, artifacts, seenIds);
+      extractUrlsFromText(msg.content, msgIndex + 1000, artifacts, seenIds);
+    }
+    const cmdOutput = msg.step?.runCommand?.combinedOutput?.full;
+    if (cmdOutput) {
+      extractUrlsFromText(cmdOutput, msgIndex + 2000, artifacts, seenIds);
     }
   });
 
@@ -238,6 +282,53 @@ export function extractArtifactsFromSteps(
   artifactsCache.set(cacheKey, artifacts);
 
   return artifacts;
+}
+
+const LOCAL_OR_WEB_URL_REGEX = /\b(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|(?:\d{1,3}\.){3}\d{1,3}|[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(?::\d+)?(?:\/[^\s<>"'`)]*)?)/gi;
+
+function extractUrlsFromText(
+  text: string,
+  index: number,
+  artifacts: ArtifactItem[],
+  seenIds: Set<string>,
+) {
+  if (!text) return;
+  // Strip ANSI escape codes (often present in dev server terminal outputs like Vite/Next)
+  const sanitized = text.replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+  if (!sanitized.includes("http")) return;
+
+  const matches = sanitized.match(LOCAL_OR_WEB_URL_REGEX);
+  if (!matches) return;
+
+  for (const rawUrl of matches) {
+    const cleanUrl = rawUrl.replace(/[)\]>,.]+$/, "");
+    const isLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/i.test(cleanUrl);
+    const hasPort = /:\d{2,5}/.test(cleanUrl);
+    const isPreviewCandidate =
+      isLocal ||
+      hasPort ||
+      sanitized.includes("预览") ||
+      sanitized.includes("preview") ||
+      sanitized.includes("Local:") ||
+      sanitized.includes("Serving") ||
+      sanitized.includes("localhost");
+
+    if (!isPreviewCandidate) continue;
+
+    const displayUrl = cleanUrl.replace("://0.0.0.0", "://localhost");
+    const id = `url-${index}-${displayUrl}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      artifacts.push({
+        id,
+        type: "url",
+        title: isLocal ? `实时服务预览: ${displayUrl}` : `Web 预览: ${cleanUrl}`,
+        content: cleanUrl,
+        url: displayUrl,
+        language: "url",
+      });
+    }
+  }
 }
 
 function extractCodeBlocksFromText(

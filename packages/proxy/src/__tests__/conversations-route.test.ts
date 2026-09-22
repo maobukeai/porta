@@ -556,6 +556,59 @@ describe("POST /api/conversations/:id/ask-question", () => {
     );
   });
 
+  it("preserves multiple question responses and multi-select option arrays", async () => {
+    const responses = [
+      {
+        question: "Select features",
+        selectedOptionIds: ["opt-1", "opt-2"],
+        writeInResponse: "feature note",
+      },
+      {
+        question: "Select mode",
+        selectedOptionId: "opt-3", // singular format
+      },
+    ];
+
+    const res = await app().request("/api/conversations/c-1/ask-question", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        trajectoryId: "traj-multi",
+        stepIndex: 15,
+        responses,
+      }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ ok: true });
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "HandleCascadeUserInteraction",
+      "c-1",
+      {
+        cascadeId: "c-1",
+        interaction: {
+          trajectoryId: "traj-multi",
+          stepIndex: 15,
+          askQuestion: {
+            responses: [
+              {
+                question: "Select features",
+                selectedOptionIds: ["opt-1", "opt-2"],
+                writeInResponse: "feature note",
+              },
+              {
+                question: "Select mode",
+                selectedOptionIds: ["opt-3"],
+              },
+            ],
+            cancelled: false,
+          },
+        },
+      },
+    );
+  });
+
   it("rejects requests without trajectory coordinates", async () => {
     const res = await app().request("/api/conversations/c-1/ask-question", {
       method: "POST",
@@ -660,3 +713,150 @@ describe("POST /api/conversations/:id/command-action", () => {
     );
   });
 });
+
+describe("Planning mode support in SendUserCascadeMessage and RevertToCascadeStep", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    conversationAffinity.clear();
+    conversationInstanceAffinity.clear();
+    mockRpcForConversation.mockResolvedValue({ ok: true });
+  });
+
+  it("passes plannerTypeConfig { planning: {} } and PLANNING_MODE_ON when plannerType is planning", async () => {
+    const res = await app().request("/api/conversations/c-1/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [{ text: "Create an implementation plan" }],
+        plannerType: "planning",
+        model: "gemini-3.8-flash-high",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "SendUserCascadeMessage",
+      "c-1",
+      expect.objectContaining({
+        cascadeId: "c-1",
+        planningMode: "PLANNING_MODE_ON",
+        metadata: expect.objectContaining({
+          planningMode: "PLANNING_MODE_ON",
+        }),
+        cascadeConfig: expect.objectContaining({
+          planningMode: "PLANNING_MODE_ON",
+          plannerConfig: expect.objectContaining({
+            plannerTypeConfig: { planning: {} },
+            planningMode: "PLANNING_MODE_ON",
+            requestedModel: { model: "MODEL_PLACEHOLDER_M318" },
+          }),
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("passes plannerTypeConfig { conversational: {} } and PLANNING_MODE_OFF when plannerType is conversational", async () => {
+    const res = await app().request("/api/conversations/c-1/message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [{ text: "Hello" }],
+        plannerType: "conversational",
+        model: "gemini-3.8-flash-high",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "SendUserCascadeMessage",
+      "c-1",
+      expect.objectContaining({
+        cascadeId: "c-1",
+        planningMode: "PLANNING_MODE_OFF",
+        metadata: expect.objectContaining({
+          planningMode: "PLANNING_MODE_OFF",
+        }),
+        cascadeConfig: expect.objectContaining({
+          planningMode: "PLANNING_MODE_OFF",
+          plannerConfig: expect.objectContaining({
+            plannerTypeConfig: { conversational: {} },
+            planningMode: "PLANNING_MODE_OFF",
+            requestedModel: { model: "MODEL_PLACEHOLDER_M318" },
+          }),
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("passes planningMode and plannerTypeConfig when reverting with planning mode", async () => {
+    const res = await app().request("/api/conversations/c-1/revert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stepIndex: 5,
+        plannerType: "planning",
+        model: "gemini-3.8-flash-high",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "RevertToCascadeStep",
+      "c-1",
+      expect.objectContaining({
+        cascadeId: "c-1",
+        stepIndex: 5,
+        planningMode: "PLANNING_MODE_ON",
+        overrideConfig: expect.objectContaining({
+          planningMode: "PLANNING_MODE_ON",
+          plannerConfig: expect.objectContaining({
+            plannerTypeConfig: { planning: {} },
+            planningMode: "PLANNING_MODE_ON",
+            requestedModel: { model: "MODEL_PLACEHOLDER_M318" },
+          }),
+        }),
+      }),
+    );
+  });
+});
+
+describe("POST /api/conversations/:id/cancel and /stop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    conversationAffinity.clear();
+    conversationInstanceAffinity.clear();
+  });
+
+  it("POST /api/conversations/:id/cancel calls CancelCascadeInvocation RPC", async () => {
+    mockRpcForConversation.mockResolvedValue({ success: true });
+
+    const res = await app().request("/api/conversations/c-test-cancel/cancel", {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "CancelCascadeInvocation",
+      "c-test-cancel",
+      { cascadeId: "c-test-cancel" },
+    );
+  });
+
+  it("POST /api/conversations/:id/stop calls CancelCascadeInvocation RPC", async () => {
+    mockRpcForConversation.mockResolvedValue({ success: true });
+
+    const res = await app().request("/api/conversations/c-test-stop/stop", {
+      method: "POST",
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRpcForConversation).toHaveBeenCalledWith(
+      "CancelCascadeInvocation",
+      "c-test-stop",
+      { cascadeId: "c-test-stop" },
+    );
+  });
+});
+

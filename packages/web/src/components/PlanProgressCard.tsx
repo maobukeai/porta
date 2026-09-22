@@ -13,6 +13,7 @@ import {
   IconCheck,
   IconBot,
   IconAlertTriangle,
+  IconMinus,
 } from "./Icons";
 import type { PlanProgressData } from "../hooks/usePlanTracker";
 import type { SubagentSession } from "../hooks/useSubagentViewer";
@@ -165,7 +166,23 @@ export function PlanProgressCard({
     return (
       <div
         className={`zcode-plan-minimized-badge ${className}`}
-        onClick={() => setMinimized(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerHaptic("medium");
+          setMinimized(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            triggerHaptic("medium");
+            setMinimized(false);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        title="点击展开智能体与规划面板"
+        aria-label="展开智能体与规划面板"
       >
         <span className="zcode-plan-min-icon">
           {runningSubagents.length > 0 ? "🤖" : "⚡"}
@@ -173,6 +190,7 @@ export function PlanProgressCard({
         <span className="zcode-plan-min-text">
           {headerLabel} {headerRatio}
         </span>
+        <IconChevronDown size={12} className="zcode-plan-min-chevron" />
       </div>
     );
   }
@@ -190,6 +208,20 @@ export function PlanProgressCard({
         </div>
 
         <div className="zcode-plan-header-actions" ref={menuRef}>
+          {/* 0. 收起/折叠面板按钮 */}
+          <button
+            className="zcode-plan-btn-icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("light");
+              setMinimized(true);
+            }}
+            title="收起/折叠面板"
+            aria-label="收起面板"
+          >
+            <IconMinus size={13} />
+          </button>
+
           {/* More options button */}
           <button
             className={`zcode-plan-btn-icon ${menuOpen ? "active" : ""}`}
@@ -269,7 +301,8 @@ export function PlanProgressCard({
                   setMenuOpen(false);
                 }}
               >
-                <span>最小化面板</span>
+                <IconMinus size={12} />
+                <span>收起为悬浮胶囊</span>
               </button>
             </div>
           )}

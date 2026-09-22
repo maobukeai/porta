@@ -233,6 +233,8 @@ export interface TrajectoryStep {
   writeFile?: { targetFile?: string; content?: string };
   errorMessage?: string;
   error?: unknown;
+  conversationId?: string;
+  content?: string;
 }
 
 export interface PlannerResponseData {
@@ -260,6 +262,8 @@ export interface StepMetadata {
   toolCall?: ToolCallData;
   toolSummary?: string;
   toolAction?: string;
+  childConversationId?: string;
+  conversationId?: string;
   sourceTrajectoryStepInfo?: {
     trajectoryId?: string;
     stepIndex?: number;

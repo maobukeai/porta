@@ -173,7 +173,7 @@ export function validateWebSocketUpgrade(
     }
   }
 
-  if (url.pathname === "/api/terminal/ws") {
+  if (url.pathname === "/api/terminal/ws" || url.pathname === "/ws/terminal") {
     return { ok: true, type: "terminal" };
   }
 

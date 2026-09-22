@@ -1,4 +1,6 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from "react";
+import { createPortal } from "react-dom";
+import { Lightbox } from "./Lightbox";
 import {
   IconBot,
   IconX,
@@ -6,10 +8,8 @@ import {
   IconChevron,
   IconArrowLeft,
   IconMoreHorizontal,
-  IconPencil,
-  IconPin,
-  IconArchive,
   IconCopy,
+  IconSquare,
 } from "./Icons";
 import type { SubagentSession } from "../hooks/useSubagentViewer";
 import { stepsToMessages } from "../transforms/stepsToMessages";
@@ -19,29 +19,90 @@ import { extractTurnSummary } from "../utils/extractTurnSummary";
 import { triggerHaptic } from "../utils/haptics";
 import { copyText } from "../utils/clipboard";
 import { useStepsStream } from "../hooks/useStepsStream";
-import type { ChatMessage, TrajectoryStep } from "../types";
+import type { ChatMessage, TrajectoryStep, AskQuestionEntry } from "../types";
+import { api } from "../api/client";
 
 interface Props {
   subagent: SubagentSession;
   allSubagents?: SubagentSession[];
+  currentModel?: string | null;
+  projectName?: string | null;
   onSelectSubagent?: (id: string) => void;
   onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
   onOpenReview?: () => void;
   onClose: () => void;
+  onFilePermission?: (
+    trajectoryId: string,
+    stepIndex: number,
+    allow: boolean,
+    scope: number,
+    absolutePathUri: string,
+    targetCascadeId?: string,
+  ) => void;
+  onCommandAction?: (
+    trajectoryId: string,
+    stepIndex: number,
+    approved: boolean,
+    targetCascadeId?: string,
+  ) => Promise<void>;
+  onAskQuestion?: (
+    trajectoryId: string,
+    stepIndex: number,
+    responses: AskQuestionEntry[],
+    cancelled?: boolean,
+    targetCascadeId?: string,
+  ) => Promise<void>;
 }
 
 export function SubagentDetailViewer({
   subagent,
   allSubagents = [],
+  currentModel,
+  projectName,
   onSelectSubagent,
   onOpenFile,
   onOpenReview,
   onClose,
+  onFilePermission,
+  onCommandAction,
+  onAskQuestion,
 }: Props) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copySubmenuOpen, setCopySubmenuOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+
+  const isSubagentCascadeId = (s?: string) =>
+    Boolean(s && s.trim().length > 0 && !s.startsWith("subagent-"));
+  const targetSubagentCascadeId = isSubagentCascadeId(subagent.conversationId)
+    ? subagent.conversationId
+    : isSubagentCascadeId(subagent.id)
+      ? subagent.id
+      : undefined;
+
+  const handleCancelSubagent = async () => {
+    if (!targetSubagentCascadeId) {
+      showToast("该子智能体无独立会话 ID");
+      return;
+    }
+    setCancelling(true);
+    triggerHaptic("medium");
+    try {
+      if (api.cancel) {
+        await api.cancel(targetSubagentCascadeId);
+      } else {
+        await api.stop(targetSubagentCascadeId);
+      }
+      showToast("已发送终止请求");
+    } catch (err) {
+      console.error("Failed to cancel subagent:", err);
+      showToast("终止请求失败");
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -214,6 +275,31 @@ export function SubagentDetailViewer({
         </div>
 
         <div className="zcode-subagent-tabs-right" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {subagent.status === "running" && (
+            <button
+              type="button"
+              className="zcode-subagent-stop-btn"
+              onClick={handleCancelSubagent}
+              disabled={cancelling}
+              title="终止子智能体任务"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                background: "rgba(239, 68, 68, 0.15)",
+                color: "#f87171",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                padding: "2px 8px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+            >
+              <IconSquare size={11} />
+              <span>{cancelling ? "终止中..." : "终止"}</span>
+            </button>
+          )}
+
           {/* Desktop 1:1 More Options (⋮) Dropdown Menu */}
           <div className="main-header-menu-container" ref={menuRef} style={{ position: "relative" }}>
             <button
@@ -231,54 +317,26 @@ export function SubagentDetailViewer({
 
             {menuOpen && (
               <div className="zcode-header-dropdown-menu" onClick={(e) => e.stopPropagation()}>
-                {/* 1. Rename */}
-                <button
-                  className="zcode-dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    triggerHaptic("light");
-                    showToast("子智能体名称为自动分配");
-                  }}
-                >
-                  <div className="zcode-dropdown-item-left">
-                    <IconPencil size={13} className="zcode-dropdown-icon" />
-                    <span>重命名</span>
-                  </div>
-                </button>
+                {subagent.status === "running" && (
+                  <>
+                    <button
+                      className="zcode-dropdown-item"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void handleCancelSubagent();
+                      }}
+                      style={{ color: "#f87171" }}
+                    >
+                      <div className="zcode-dropdown-item-left">
+                        <IconSquare size={13} className="zcode-dropdown-icon" />
+                        <span>终止执行</span>
+                      </div>
+                    </button>
+                    <div className="zcode-dropdown-divider" />
+                  </>
+                )}
 
-                {/* 2. Pin */}
-                <button
-                  className="zcode-dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    triggerHaptic("medium");
-                    showToast("已置顶子智能体会话");
-                  }}
-                >
-                  <div className="zcode-dropdown-item-left">
-                    <IconPin size={13} className="zcode-dropdown-icon" />
-                    <span>置顶</span>
-                  </div>
-                </button>
-
-                {/* 3. Archive */}
-                <button
-                  className="zcode-dropdown-item"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    triggerHaptic("medium");
-                    showToast("已归档子智能体会话");
-                  }}
-                >
-                  <div className="zcode-dropdown-item-left">
-                    <IconArchive size={13} className="zcode-dropdown-icon" />
-                    <span>归档</span>
-                  </div>
-                </button>
-
-                <div className="zcode-dropdown-divider" />
-
-                {/* 4. Copy Submenu (Desktop 1:1 match) */}
+                {/* Copy Submenu (Desktop 1:1 match) */}
                 <div
                   className="zcode-dropdown-item has-submenu"
                   onMouseEnter={() => setCopySubmenuOpen(true)}
@@ -315,7 +373,7 @@ export function SubagentDetailViewer({
                         className="zcode-dropdown-item"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleCopy("antigravity移动端", "项目名称");
+                          handleCopy(projectName || "Antigravity", "项目名称");
                         }}
                       >
                         <span>复制项目名称</span>
@@ -351,7 +409,7 @@ export function SubagentDetailViewer({
         <div className="zcode-subagent-model-row" style={{ marginBottom: "16px" }}>
           <div className="zcode-subagent-model-line" />
           <span className="zcode-subagent-model-text">
-            正在使用 {subagent.model || "sensenova/sensenova-6.8-flash-lite"}
+            正在使用 {subagent.model || currentModel || "智能体模型"}
           </span>
           <div className="zcode-subagent-model-line" />
         </div>
@@ -373,6 +431,7 @@ export function SubagentDetailViewer({
                     isUnconfirmed={false}
                     suppressImplementationPlan={true}
                     onOpenFile={onOpenFile}
+                    onImageClick={setLightboxSrc}
                   />
                 )}
 
@@ -385,6 +444,25 @@ export function SubagentDetailViewer({
                     thinking={turn.thinking}
                     steps={turn.stepMessages}
                     onOpenFile={onOpenFile}
+                    onImageClick={setLightboxSrc}
+                    onFilePermission={
+                      onFilePermission
+                        ? (trajId, stepIdx, allow, scope, pathUri) =>
+                            onFilePermission(trajId, stepIdx, allow, scope, pathUri, targetSubagentCascadeId)
+                        : undefined
+                    }
+                    onCommandAction={
+                      onCommandAction
+                        ? (trajId, stepIdx, approved) =>
+                            onCommandAction(trajId, stepIdx, approved, targetSubagentCascadeId)
+                        : undefined
+                    }
+                    onAskQuestion={
+                      onAskQuestion
+                        ? (trajId, stepIdx, responses, cancelled) =>
+                            onAskQuestion(trajId, stepIdx, responses, cancelled, targetSubagentCascadeId)
+                        : undefined
+                    }
                   />
                 )}
 
@@ -396,6 +474,7 @@ export function SubagentDetailViewer({
                     isUnconfirmed={false}
                     suppressImplementationPlan={true}
                     onOpenFile={onOpenFile}
+                    onImageClick={setLightboxSrc}
                   />
                 )}
 
@@ -413,6 +492,11 @@ export function SubagentDetailViewer({
           })}
         </div>
       </div>
+      {lightboxSrc &&
+        createPortal(
+          <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />,
+          document.body,
+        )}
     </div>
   );
 }

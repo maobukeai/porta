@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { TrajectoryStep } from "../types";
 import { cleanPath } from "../utils/pathUtils";
+import { isAnyStepWaiting, loadWaitingTasks } from "../utils/waitingTasks";
 
 export interface SubagentArtifactItem {
   type: "file" | "symbol";
@@ -27,6 +28,7 @@ export interface SubagentSession {
   prompt: string;
   duration?: string | number;
   status: "running" | "completed" | "failed";
+  needsAttention?: boolean;
   output?: string;
   workSteps?: SubagentWorkStep[];
   rawSteps?: TrajectoryStep[];
@@ -462,6 +464,13 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
             return false;
           });
 
+          const waitingTasks = loadWaitingTasks();
+          const isAttentionNeeded = (rSteps?: TrajectoryStep[], cId?: string) => {
+            if (cId && waitingTasks.has(cId)) return true;
+            if (rSteps && rSteps.length > 0 && isAnyStepWaiting(rSteps)) return true;
+            return false;
+          };
+
           if (existing) {
             // Merge / update existing session with the newest metadata and status
             if (childConversationId && !existing.conversationId) {
@@ -471,6 +480,14 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
               existing.status = stepStatus;
             } else if (existing.status === "running" && stepStatus === "completed") {
               existing.status = "completed";
+            }
+            if (rawSteps.length >= (existing.rawSteps?.length || 0)) {
+              existing.rawSteps = rawSteps;
+            }
+            existing.needsAttention = existing.status === "running" && isAttentionNeeded(existing.rawSteps, existing.conversationId);
+            const newDuration = (step as any).duration || (step.metadata as any)?.duration || (step.invokeSubagent as any)?.duration;
+            if (newDuration) {
+              existing.duration = newDuration;
             }
             if (output && (!existing.output || output.length > existing.output.length)) {
               existing.output = output;
@@ -503,6 +520,7 @@ export function extractSubagentSessions(steps: TrajectoryStep[] = []): SubagentS
                 prompt,
                 duration: (step as any).duration || (step.metadata as any)?.duration,
                 status: stepStatus,
+                needsAttention: stepStatus === "running" && isAttentionNeeded(rawSteps, childConversationId),
                 output,
                 workSteps,
                 rawSteps,

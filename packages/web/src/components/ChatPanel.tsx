@@ -38,6 +38,7 @@ import {
   CodeActionCard,
   FilePermissionCard,
   SubagentCard,
+  MediaStepCard,
 } from "./StepCards";
 import { QuotaAlertCard } from "./QuotaAlertCard";
 import { parseQuotaError } from "../utils/quotaError";
@@ -61,8 +62,14 @@ import {
   IconVolumeX,
   IconBrain,
   IconPlay,
+  IconStop,
   IconFileText,
   IconSparkles,
+  IconGlobe,
+  IconCamera,
+  IconMedia,
+  IconGitCommit,
+  IconBox,
 } from "./Icons";
 import { speakTTS, stopTTS, isTTSSpeaking } from "../utils/speech";
 import { ChatScrollSlider } from "./ChatScrollSlider";
@@ -121,6 +128,8 @@ interface Props {
   onSidebarRefresh?: () => void;
   /** Triggered when the user clicks interactive buttons (e.g. Proceed / Continue) in message cards */
   onSendMessage?: (text: string) => void;
+  /** Triggered to stop / cancel the current running conversation or turn */
+  onStop?: () => void;
 }
 
 function formatWorkDuration(duration?: string | number): string {
@@ -293,8 +302,20 @@ function MsgIcon({ name }: { name?: string }) {
       return <IconList size={s} />;
     case "alert":
       return <IconAlertTriangle size={s} />;
+    case "globe":
+      return <IconGlobe size={s} />;
+    case "camera":
+      return <IconCamera size={s} />;
+    case "image":
+      return <IconMedia size={s} />;
+    case "git-commit":
+      return <IconGitCommit size={s} />;
+    case "corner-up-left":
+      return <IconUndo size={s} />;
+    case "box":
+      return <IconBox size={s} />;
     default:
-      return null;
+      return <IconBox size={s} />;
   }
 }
 
@@ -323,6 +344,7 @@ export const TurnStepsCollapsible = memo(function TurnStepsCollapsible({
   onAskQuestion,
   onOpenFile,
   onSelectSubagent,
+  onImageClick,
 }: {
   duration?: string | number;
   thinkingDuration?: string | number;
@@ -349,14 +371,29 @@ export const TurnStepsCollapsible = memo(function TurnStepsCollapsible({
   ) => Promise<void>;
   onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
   onSelectSubagent?: (id: string) => void;
+  onImageClick?: (src: string) => void;
 }) {
   const [workOpen, setWorkOpen] = useState(isLive);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const hasAutoOpenedRef = useRef(false);
+
   useEffect(() => {
     setWorkOpen(isLive);
+    if (!isLive) {
+      hasAutoOpenedRef.current = false;
+    }
   }, [isLive]);
+
+  // Phase 2: When isLive and thinking starts streaming in, automatically open thinking accordion once
+  // without fighting the user's manual collapse on every subsequent streamed token
+  useEffect(() => {
+    if (isLive && thinking && thinking.trim().length > 0 && !hasAutoOpenedRef.current) {
+      hasAutoOpenedRef.current = true;
+      setThinkingOpen(true);
+    }
+  }, [isLive, thinking]);
 
   const renderedThinking = useMemo(
     () => (thinking ? renderMarkdown(thinking) : ""),
@@ -453,6 +490,7 @@ export const TurnStepsCollapsible = memo(function TurnStepsCollapsible({
                     onAskQuestion={onAskQuestion}
                     onOpenFile={onOpenFile}
                     onSelectSubagent={onSelectSubagent}
+                    onImageClick={onImageClick}
                   />
                 ))}
               </div>
@@ -704,6 +742,67 @@ export function groupMessagesIntoTurns(
   return turns;
 }
 
+export function extractStepMediaUrls(msg: ChatMessage): string[] {
+  const items: unknown[] = [];
+  if (msg.media && Array.isArray(msg.media)) {
+    items.push(...msg.media);
+  }
+  const step = msg.step as any;
+  if (step) {
+    if (Array.isArray(step.media)) items.push(...step.media);
+    else if (step.media) items.push(step.media);
+
+    if (Array.isArray(step.images)) items.push(...step.images);
+    else if (step.images) items.push(step.images);
+
+    const tc = step.metadata?.toolCall ?? step.toolCall;
+    const output = tc?.output ?? step.output ?? step.result;
+    if (output) {
+      if (typeof output === "string") {
+        if (
+          output.startsWith("data:image/") ||
+          /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(output.trim())
+        ) {
+          items.push(output.trim());
+        }
+      } else if (typeof output === "object") {
+        if (Array.isArray(output.images)) items.push(...output.images);
+        if (output.image) items.push(output.image);
+        if (output.screenshot) items.push(output.screenshot);
+        if (output.media) items.push(output.media);
+        if (output.uri || output.url || output.path) {
+          const p = output.uri || output.url || output.path;
+          if (typeof p === "string" && /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(p)) {
+            items.push(p);
+          }
+        }
+      }
+    }
+
+    if (tc?.args) {
+      if (Array.isArray(tc.args.ImagePaths)) {
+        items.push(...tc.args.ImagePaths);
+      }
+      if (tc.args.imagePath) {
+        items.push(tc.args.imagePath);
+      }
+    }
+
+    if (step.captureBrowserScreenshot?.screenshot) {
+      items.push(step.captureBrowserScreenshot.screenshot);
+    }
+  }
+
+  const urls: string[] = [];
+  for (const it of items) {
+    const src = resolveMediaSrc(it);
+    if (src && !urls.includes(src)) {
+      urls.push(src);
+    }
+  }
+  return urls;
+}
+
 const SystemMessage = memo(function SystemMessage({
   msg,
   onFilePermission,
@@ -711,6 +810,7 @@ const SystemMessage = memo(function SystemMessage({
   onAskQuestion,
   onOpenFile,
   onSelectSubagent,
+  onImageClick,
 }: {
   msg: ChatMessage;
   onFilePermission: (
@@ -733,6 +833,7 @@ const SystemMessage = memo(function SystemMessage({
   ) => Promise<void>;
   onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
   onSelectSubagent?: (id: string) => void;
+  onImageClick?: (src: string) => void;
 }) {
   const renderedContent = useMemo(
     () => renderMarkdown(msg.content ?? ""),
@@ -805,6 +906,29 @@ const SystemMessage = memo(function SystemMessage({
     return (
       <div className="message system">
         <QuotaAlertCard content={msg.content} />
+      </div>
+    );
+  }
+
+  const mediaUrls = extractStepMediaUrls(msg);
+  if (
+    msg.type === "CORTEX_STEP_TYPE_GENERATE_IMAGE" ||
+    msg.type === "CORTEX_STEP_TYPE_CAPTURE_BROWSER_SCREENSHOT" ||
+    msg.icon === "image" ||
+    msg.icon === "camera" ||
+    mediaUrls.length > 0
+  ) {
+    const isCamera =
+      msg.type === "CORTEX_STEP_TYPE_CAPTURE_BROWSER_SCREENSHOT" ||
+      msg.icon === "camera";
+    return (
+      <div className="message system">
+        <MediaStepCard
+          title={msg.content || (isCamera ? "屏幕截图快照" : "生成图片产物")}
+          mediaUrls={mediaUrls}
+          onImageClick={onImageClick}
+          icon={isCamera ? "camera" : "image"}
+        />
       </div>
     );
   }
@@ -976,7 +1100,7 @@ export function resolveMediaSrc(m: unknown): string | null {
       trimmed.startsWith("/") ||
       /^[A-Za-z]:[\\/]/.test(trimmed)
     ) {
-      return `/api/files?uri=${encodeURIComponent(trimmed)}`;
+      return toProxyUrl(trimmed);
     }
     if (
       trimmed.startsWith("data:") ||
@@ -1443,6 +1567,7 @@ export function ChatPanel({
   onOpenTerminal,
   onSidebarRefresh,
   onSendMessage,
+  onStop,
 }: Props) {
   const [proceededStepIndexes, setProceededStepIndexes] = useState<Set<number>>(() => new Set());
   const handleProceed = useCallback((stepIndex: number) => {
@@ -1974,6 +2099,7 @@ export function ChatPanel({
                     onAskQuestion={onAskQuestion}
                     onOpenFile={onOpenFile}
                     onSelectSubagent={openSubagent}
+                    onImageClick={setLightboxSrc}
                   />
                 )}
 
@@ -2052,6 +2178,20 @@ export function ChatPanel({
             </div>
           )}
         </div>
+        {(wsRunning || isConversationRunning) && onStop && (
+          <button
+            type="button"
+            className="chat-stop-btn"
+            onClick={() => {
+              triggerHaptic("medium");
+              onStop();
+            }}
+            title="停止生成 (Cancel)"
+          >
+            <IconStop size={12} />
+            <span>停止生成</span>
+          </button>
+        )}
         {showScrollBtn && (
           <button
             className="scroll-to-bottom-btn"

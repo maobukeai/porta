@@ -67,6 +67,7 @@ import type { AskQuestionEntry, HealthResponse, MediaAttachment } from "./types"
 import type { PlannerType } from "./components/ChatInput";
 import { triggerHaptic } from "./utils/haptics";
 import { SetupWizard } from "./components/SetupWizard";
+import { preloadSettingsPanel } from "./utils/preloadSettings";
 
 export default function App() {
   const [showSetupWizard, setShowSetupWizard] = useState(false);
@@ -80,6 +81,27 @@ export default function App() {
     );
     if (isNative && !localStorage.getItem("porta_custom_api_base")) {
       setShowSetupWizard(true);
+    }
+
+    if (typeof window !== "undefined") {
+      if ("requestIdleCallback" in window) {
+        const id = (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(
+          () => {
+            preloadSettingsPanel();
+          },
+          { timeout: 3000 },
+        );
+        return () => {
+          if ("cancelIdleCallback" in window) {
+            (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(id);
+          }
+        };
+      } else {
+        const timer = setTimeout(() => {
+          preloadSettingsPanel();
+        }, 1200);
+        return () => clearTimeout(timer);
+      }
     }
   }, []);
 
@@ -557,11 +579,15 @@ function ChatView() {
       allow: boolean,
       scope: number,
       absolutePathUri: string,
+      targetCascadeId?: string,
     ) => {
-      if (!activeId) return;
+      const isRealCascadeId = (id?: string) =>
+        Boolean(id && id.trim().length > 0 && !id.startsWith("subagent-"));
+      const cid = (targetCascadeId && isRealCascadeId(targetCascadeId)) ? targetCascadeId : activeId;
+      if (!cid) return;
       try {
         await api.filePermission(
-          activeId,
+          cid,
           trajectoryId,
           stepIndex,
           allow,
@@ -585,11 +611,15 @@ function ChatView() {
       trajectoryId: string,
       stepIndex: number,
       approved: boolean,
+      targetCascadeId?: string,
     ) => {
-      if (!activeId) return;
+      const isRealCascadeId = (id?: string) =>
+        Boolean(id && id.trim().length > 0 && !id.startsWith("subagent-"));
+      const cid = (targetCascadeId && isRealCascadeId(targetCascadeId)) ? targetCascadeId : activeId;
+      if (!cid) return;
       try {
         await api.commandAction(
-          activeId,
+          cid,
           trajectoryId,
           stepIndex,
           approved,
@@ -611,11 +641,15 @@ function ChatView() {
       stepIndex: number,
       responses: AskQuestionEntry[],
       cancelled = false,
+      targetCascadeId?: string,
     ) => {
-      if (!activeId) return;
+      const isRealCascadeId = (id?: string) =>
+        Boolean(id && id.trim().length > 0 && !id.startsWith("subagent-"));
+      const cid = (targetCascadeId && isRealCascadeId(targetCascadeId)) ? targetCascadeId : activeId;
+      if (!cid) return;
       try {
         await api.askQuestion(
-          activeId,
+          cid,
           trajectoryId,
           stepIndex,
           responses,
@@ -1017,6 +1051,7 @@ function ChatView() {
             if (artifactsOpen && sidePanelTab === "git") {
               setArtifactsOpen(false);
             } else {
+              setSelectedFile(null);
               setSidePanelTab("git");
               setArtifactsOpen(true);
             }
@@ -1025,6 +1060,7 @@ function ChatView() {
             if (artifactsOpen && sidePanelTab === "review") {
               setArtifactsOpen(false);
             } else {
+              setSelectedFile(null);
               setSidePanelTab("review");
               setArtifactsOpen(true);
             }
@@ -1123,6 +1159,7 @@ function ChatView() {
                     onSendMessage={(text) => {
                       void handleSend(text);
                     }}
+                    onStop={handleStop}
                   />
                 ) : (
                   <div className="chat-area-container">
@@ -1374,13 +1411,20 @@ function ChatView() {
                         messages={optimisticMessages}
                         workspaceUri={currentWorkspaceUri}
                         projectName={projectSlug}
+                        currentModel={settings.defaultModel}
                         selectedFile={selectedFile}
                         activeSubagentId={activeSubagentId}
                         onSelectSubagent={handleSelectSubagent}
+                        onOpenFile={handleOpenFile}
+                        onFilePermission={handleFilePermission}
+                        onCommandAction={handleCommandAction}
+                        onAskQuestion={handleAskQuestion}
                         onClose={() => {
                           setArtifactsOpen(false);
                           setSelectedFile(null);
                         }}
+                        activeTab={sidePanelTab}
+                        onTabChange={(tab) => setSidePanelTab(tab)}
                         initialTab={sidePanelTab}
                       />
                     </Suspense>

@@ -4623,6 +4623,42 @@
   border: 1px solid rgb(var(--c-warning, 245 158 11) / 0.3);
 }
 
+.settings-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.settings-close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-header-refresh-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+}
+
+.settings-header-refresh-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
 .cockpit-quota-chip.is-low {
   color: rgb(var(--c-danger, 239 68 68));
   background: rgb(var(--c-danger, 239 68 68) / 0.1);
@@ -4758,3 +4794,47 @@
   border-color: #e2e8f0;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
 }
+
+/* ── Settings Subpanel Loading Skeleton ── */
+@keyframes settingsSkeletonPulse {
+  0% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
+.settings-skeleton-fadein {
+  animation: fade-in 0.15s ease-out;
+}
+
+.settings-skeleton-bar {
+  border-radius: 4px;
+  background-color: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  animation: settingsSkeletonPulse 1.4s ease-in-out infinite;
+}
+
+.settings-skeleton-title-bar {
+  width: 180px;
+  height: 16px;
+  margin-bottom: 6px;
+}
+
+.settings-skeleton-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary, rgba(255, 255, 255, 0.06));
+  animation: settingsSkeletonPulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.capability-card-row.settings-skeleton-card {
+  pointer-events: none;
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.05));
+}
+

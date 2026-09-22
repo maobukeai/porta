@@ -646,6 +646,89 @@ export async function getProjectNameMap(): Promise<Map<string, string>> {
   return map;
 }
 
+export interface MatchedProject {
+  id: string;
+  name?: string;
+  settings?: Record<string, unknown>;
+  projectResources?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export function normalizeWorkspaceUriForComparison(uri?: string): string {
+  if (!uri) return "";
+  try {
+    let decoded = uri;
+    try {
+      decoded = decodeURIComponent(uri);
+    } catch {}
+    decoded = decoded
+      .toLowerCase()
+      .replace(/\\/g, "/")
+      .replace(/%3a/gi, ":")
+      .replace(/^file:\/\/\/?([a-z]):/i, "file:///$1:")
+      .replace(/\/+$/, "");
+    if (!decoded.startsWith("file://") && /^[a-z]:/i.test(decoded)) {
+      decoded = `file:///${decoded}`;
+    }
+    return decoded;
+  } catch {
+    return uri.toLowerCase().replace(/\\/g, "/").replace(/\/+$/, "");
+  }
+}
+
+export async function findProjectForWorkspace(
+  workspaceUri?: string,
+): Promise<MatchedProject | undefined> {
+  if (!workspaceUri) return undefined;
+  const targetUri = normalizeWorkspaceUriForComparison(workspaceUri);
+  if (!targetUri) return undefined;
+
+  const projectsDir = join(homedir(), ".gemini", "config", "projects");
+  try {
+    const files = await readdir(projectsDir);
+    let bestMatch: MatchedProject | undefined;
+    let bestMatchLen = 0;
+
+    for (const file of files) {
+      if (!file.endsWith(".json")) continue;
+      const fullPath = join(projectsDir, file);
+      try {
+        const content = await readFile(fullPath, "utf-8");
+        const data = JSON.parse(content);
+        if (!data.id) continue;
+
+        const resources = data.projectResources?.resources ?? [];
+        for (const res of resources) {
+          const folderUri = res.gitFolder?.folderUri || res.folderUri;
+          if (!folderUri) continue;
+          const normFolder = normalizeWorkspaceUriForComparison(folderUri);
+          if (!normFolder) continue;
+
+          if (normFolder === targetUri) {
+            return {
+              id: data.id,
+              name: data.name ? safeDecodeUriComponent(data.name) : undefined,
+              ...data,
+            };
+          }
+
+          if (targetUri.startsWith(normFolder + "/") && normFolder.length > bestMatchLen) {
+            bestMatch = {
+              id: data.id,
+              name: data.name ? safeDecodeUriComponent(data.name) : undefined,
+              ...data,
+            };
+            bestMatchLen = normFolder.length;
+          }
+        }
+      } catch {}
+    }
+    return bestMatch;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getProjectPermissionPreset(
   workspaceUri?: string,
 ): Promise<string | undefined> {

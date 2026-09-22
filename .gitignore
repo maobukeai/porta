@@ -32,10 +32,21 @@ npm-debug.log*
 # Cloudflare
 .wrangler/
 
-# Tooling output
+# Lockfiles
+package-lock.json
+yarn.lock
+
+# Test & QA artifacts
+gui-test-screenshots/
+
+# Tooling output & agent caches
 graphify-out/
+.codegraph/
+.superpowers/
+.zcode/
 
 # Secrets
 .oauth-token
 .agent
 .gemini
+

@@ -18,7 +18,9 @@ import {
   IconUndo,
   IconMoreHorizontal,
   IconChevron,
-  IconCloud,
+  IconGithub,
+  IconArrowUpRight,
+  IconGlobe,
 } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
 import { copyText } from "../utils/clipboard";
@@ -33,6 +35,7 @@ import {
 } from "../utils/extractArtifacts";
 import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
+import { formatGitRelativeTimeChinese, parseGitRefs } from "./SidePanel";
 
 interface Props {
   steps?: TrajectoryStep[];
@@ -94,9 +97,101 @@ function parseSideBySideDiff(rawDiff: string): DiffLine[] {
   return result;
 }
 
+function WebPreviewFrame({ item }: { item: ArtifactItem }) {
+  const [viewport, setViewport] = useState<"responsive" | "mobile" | "tablet">("responsive");
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const previewUrl = item.url || item.content;
+
+  const handleReload = () => {
+    triggerHaptic("light");
+    setReloadNonce((n) => n + 1);
+  };
+
+  const viewportWidth =
+    viewport === "mobile" ? "375px" : viewport === "tablet" ? "768px" : "100%";
+
+  return (
+    <div className="web-preview-container">
+      <div className="web-preview-address-bar">
+        <div className="web-preview-url-box">
+          <span className="web-preview-dot" title="实时服务运行中" />
+          <IconGlobe size={13} className="web-preview-globe" />
+          <span className="web-preview-url-text" title={previewUrl}>
+            {previewUrl}
+          </span>
+        </div>
+        <div className="web-preview-bar-actions">
+          <div className="web-preview-viewport-toggle">
+            <button
+              type="button"
+              className={`viewport-btn ${viewport === "responsive" ? "active" : ""}`}
+              onClick={() => setViewport("responsive")}
+              title="自适应宽度"
+            >
+              自适应
+            </button>
+            <button
+              type="button"
+              className={`viewport-btn ${viewport === "tablet" ? "active" : ""}`}
+              onClick={() => setViewport("tablet")}
+              title="平板视角 (768px)"
+            >
+              平板
+            </button>
+            <button
+              type="button"
+              className={`viewport-btn ${viewport === "mobile" ? "active" : ""}`}
+              onClick={() => setViewport("mobile")}
+              title="手机视角 (375px)"
+            >
+              手机
+            </button>
+          </div>
+          <button
+            type="button"
+            className="web-preview-btn"
+            onClick={handleReload}
+            title="重新加载页面"
+          >
+            <IconRefresh size={13} />
+          </button>
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="web-preview-btn"
+            title="在新窗口打开"
+          >
+            <IconArrowUpRight size={13} />
+          </a>
+        </div>
+      </div>
+
+      <div className="web-preview-viewport-wrapper">
+        <div
+          className="web-preview-frame-box"
+          style={{ width: viewportWidth, transition: "width 0.25s ease" }}
+        >
+          <iframe
+            key={reloadNonce}
+            src={previewUrl}
+            title={item.title}
+            className="web-preview-iframe"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+          />
+        </div>
+      </div>
+
+      <div className="web-preview-footnote">
+        💡 提示：本地开发服务（如 Vite, Next.js, Express）可在此直接交互测试。若第三方站点因同源策略拒绝加载，可点击右上角在新窗口直接打开。
+      </div>
+    </div>
+  );
+}
+
 export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, selectedFile, onClose }: Props) {
   const [search, setSearch] = useState("");
-  const [selectedType, setSelectedType] = useState<"all" | "doc" | "code" | "diff" | "media">("all");
+  const [selectedType, setSelectedType] = useState<"all" | "doc" | "code" | "diff" | "media" | "url">("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,7 +204,7 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, sele
   // ── Git Source Control 2.0 States ──
   const [gitBranch, setGitBranch] = useState("main");
   const [gitFiles, setGitFiles] = useState<Array<{ status: string; path: string; staged: boolean }>>([]);
-  const [gitLogs, setGitLogs] = useState<Array<{ hash: string; message: string; author: string; relativeTime: string; refs?: string; isRemotePushed?: boolean; isHead?: boolean }>>([]);
+  const [gitLogs, setGitLogs] = useState<Array<{ hash: string; message: string; author: string; relativeTime: string; date?: string; refs?: string; isRemotePushed?: boolean; isHead?: boolean }>>([]);
   const [gitLoading, setGitLoading] = useState(false);
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
@@ -132,6 +227,16 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, sele
   const [graphCollapsed, setGraphCollapsed] = useState(false);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
+
+  const handleCopyHash = (hash: string) => {
+    triggerHaptic("light");
+    copyText(hash);
+    setCopiedHash(hash);
+    setTimeout(() => {
+      setCopiedHash((curr) => (curr === hash ? null : curr));
+    }, 2000);
+  };
 
   const fetchGitData = useCallback(async () => {
     setGitLoading(true);
@@ -382,6 +487,13 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, sele
           >
             <IconMedia size={13} /> 图表/媒体 (
             {artifacts.filter((a) => a.type === "media").length})
+          </button>
+          <button
+            className={`artifacts-tab ${selectedType === "url" ? "active" : ""}`}
+            onClick={() => setSelectedType("url")}
+          >
+            <IconGlobe size={13} /> 预览 (
+            {artifacts.filter((a) => a.type === "url").length})
           </button>
         </div>
       </div>
@@ -675,27 +787,74 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, sele
                 {!graphCollapsed && (
                   <div className="vscode-graph-timeline">
                     {gitLogs.map((log, idx) => {
-                      const isHead = idx === 0;
+                      const isFirst = idx === 0;
+                      const isLast = idx === gitLogs.length - 1;
+                      const isHead = log.isHead || isFirst;
+                      const refBadges = parseGitRefs(log.refs);
+                      const displayTime = formatGitRelativeTimeChinese(log.relativeTime, log.date);
+                      const targetCommitUrl =
+                        (log as any).commitUrl ||
+                        `https://github.com/maobukeai/porta/commit/${log.hash}`;
+
                       return (
-                        <div key={log.hash} className="vscode-graph-item">
-                          <div className="vscode-graph-track">
-                            <span className="vscode-track-line" />
-                            <span className={`vscode-graph-node ${isHead ? "head" : ""}`} />
+                        <div
+                          key={log.hash}
+                          className="vscode-graph-item"
+                          title={`${log.hash} • ${log.author || ""} • ${displayTime}\n${log.message}`}
+                        >
+                          {/* Left Spine: Continuous Rail Line + Node Dot */}
+                          <div className="vscode-graph-spine-cell">
+                            <div className={`vscode-graph-spine-top ${isFirst ? "transparent" : ""}`} />
+                            <div className={`vscode-graph-node-dot ${isHead ? "head" : "solid"}`}>
+                              {isHead ? <div className="vscode-graph-dot-inner" /> : null}
+                            </div>
+                            <div className={`vscode-graph-spine-bottom ${isLast ? "transparent" : ""}`} />
                           </div>
 
-                          <div className="vscode-graph-content">
-                            <span className="vscode-graph-msg" title={log.message}>{log.message}</span>
-                            <div className="vscode-graph-badges">
-                              {isHead && (
-                                <span className="vscode-branch-pill local">
-                                  <IconGitBranch size={10} /> {gitBranch}
+                          {/* Right Content: Message & Attached Ref Tags & Time/Hash */}
+                          <div className="vscode-graph-row-content">
+                            <div className="vscode-graph-row-top">
+                              <span className="vscode-graph-msg-text" title={log.message}>
+                                {log.message}
+                              </span>
+                              {refBadges.map((badge, bIdx) => (
+                                <span key={bIdx} className={`vscode-graph-ref-pill ${badge.type}`} title={badge.label}>
+                                  {badge.type === "head" && <span className="ref-dot head" />}
+                                  {badge.type === "remote" && <span className="ref-dot remote" />}
+                                  {badge.label}
                                 </span>
-                              )}
-                              {(log.isRemotePushed || log.refs?.includes("origin/")) && (
-                                <span className="vscode-branch-pill remote">
-                                  <IconCloud size={10} /> origin/{gitBranch}
-                                </span>
-                              )}
+                              ))}
+                            </div>
+
+                            <div className="vscode-graph-row-meta">
+                              <span
+                                className="vscode-graph-hash-pill"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyHash(log.hash);
+                                }}
+                                title="点击复制 Hash"
+                              >
+                                {log.hash}
+                                {copiedHash === log.hash && <span className="copied-text">✓ 已复制</span>}
+                              </span>
+                              <a
+                                href={targetCommitUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="vscode-graph-commit-link-btn"
+                                title="在 GitHub 中查看此提交 (在新标签页打开)"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic("light");
+                                }}
+                              >
+                                <IconGithub size={11} />
+                                <span>GitHub</span>
+                                <IconArrowUpRight size={10} className="ext-icon" />
+                              </a>
+                              {log.author && <span className="vscode-graph-author-name">{log.author}</span>}
+                              <span className="vscode-graph-time-text">{displayTime}</span>
                             </div>
                           </div>
                         </div>
@@ -724,31 +883,57 @@ export function ArtifactsConsole({ steps = [], messages = [], workspaceUri, sele
                   {item.type === "doc" && <IconFileText size={15} className="type-icon doc" />}
                   {item.type === "diff" && <IconSparkles size={15} className="type-icon diff" />}
                   {item.type === "media" && <IconMedia size={15} className="type-icon media" />}
+                  {item.type === "url" && <IconGlobe size={15} className="type-icon url" />}
                   <span className="artifact-card-title">{item.title}</span>
                   {item.language && (
                     <span className="artifact-lang-pill">{item.language}</span>
                   )}
                 </div>
                 <div className="artifact-card-actions">
-                  <button
-                    className="artifact-action-btn"
-                    onClick={() => handleCopy(item.id, item.content)}
-                    title="复制内容"
-                  >
-                    {copiedId === item.id ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                  </button>
-                  <button
-                    className="artifact-action-btn"
-                    onClick={() => handleDownload(item)}
-                    title="下载文件"
-                  >
-                    <IconDownload size={14} />
-                  </button>
+                  {item.type === "url" ? (
+                    <>
+                      <a
+                        href={item.url || item.content}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="artifact-action-btn"
+                        title="在浏览器新标签页打开"
+                      >
+                        <IconArrowUpRight size={14} />
+                      </a>
+                      <button
+                        className="artifact-action-btn"
+                        onClick={() => handleCopy(item.id, item.url || item.content)}
+                        title="复制链接"
+                      >
+                        {copiedId === item.id ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="artifact-action-btn"
+                        onClick={() => handleCopy(item.id, item.content)}
+                        title="复制内容"
+                      >
+                        {copiedId === item.id ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                      </button>
+                      <button
+                        className="artifact-action-btn"
+                        onClick={() => handleDownload(item)}
+                        title="下载文件"
+                      >
+                        <IconDownload size={14} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="artifact-card-body">
-                {item.type === "doc" || item.language === "md" || item.language === "markdown" ? (
+              <div className={`artifact-card-body ${item.type === "url" ? "has-preview" : ""}`}>
+                {item.type === "url" ? (
+                  <WebPreviewFrame item={item} />
+                ) : item.type === "doc" || item.language === "md" || item.language === "markdown" ? (
                   <div className="artifact-markdown-rendered-view">
                     <MarkdownContent html={renderMarkdown(item.content)} />
                   </div>

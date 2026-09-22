@@ -50,6 +50,7 @@ import {
   IconList,
   IconMaximize,
   IconPanelRight,
+  IconSpinner,
 } from "./Icons";
 import { UsageStatisticsView } from "./UsageStatisticsView";
 import { CockpitAccountManager } from "./CockpitAccountManager";
@@ -264,6 +265,10 @@ export function SettingsPanel({
   const [playingTestSound, setPlayingTestSound] = useState(false);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
+  // ── On-demand Loading States ──
+  const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({});
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(() => new Set());
+
   // ── Agent Capabilities State ──
   const [memoryData, setMemoryData] = useState<MemorySummaryResponse | null>(null);
   const [editingMemory, setEditingMemory] = useState<MemoryRecord | null>(null);
@@ -363,43 +368,6 @@ export function SettingsPanel({
     return () => clearTimeout(timer);
   }, []);
 
-  const fetchCapabilities = useCallback(async () => {
-    try {
-      const [mem, plugs, sks, subs, mcps, cmds, hks] = await Promise.allSettled([
-        api.agentCapabilities.memory(safeWorkspaces[0]?.uri),
-        api.agentCapabilities.plugins(),
-        api.agentCapabilities.skills(),
-        api.agentCapabilities.subagents(),
-        api.agentCapabilities.mcp(),
-        api.agentCapabilities.commands(),
-        api.agentCapabilities.hooks(safeWorkspaces[0]?.uri),
-      ]);
-
-      if (!isMountedRef.current) return;
-
-      if (mem.status === "fulfilled" && mem.value) setMemoryData(mem.value);
-      if (plugs.status === "fulfilled" && plugs.value?.plugins) setPluginsList(plugs.value.plugins);
-      if (sks.status === "fulfilled" && sks.value?.skills) setSkillsList(sks.value.skills);
-      if (subs.status === "fulfilled" && subs.value?.subagents) setSubagentsList(subs.value.subagents);
-      if (mcps.status === "fulfilled" && mcps.value?.servers) setMcpServersList(mcps.value.servers);
-      if (cmds.status === "fulfilled" && cmds.value?.commands) {
-        const cmdList = cmds.value.commands;
-        setCommandsList(cmdList);
-        const serverDisabled = cmdList.filter((c) => c.enabled === false).map((c) => c.cmd);
-        if (serverDisabled.length > 0) {
-          const currentList = settings.disabledCommands ?? [];
-          const merged = Array.from(new Set([...currentList, ...serverDisabled]));
-          if (merged.length !== currentList.length) {
-            onUpdate({ disabledCommands: merged });
-          }
-        }
-      }
-      if (hks.status === "fulfilled" && hks.value?.hooks) setHooksList(hks.value.hooks);
-    } catch (err) {
-      console.warn("Failed to fetch capabilities:", err);
-    }
-  }, [safeWorkspaces]);
-
   const fetchHealth = useCallback(async () => {
     try {
       const data = await api.health();
@@ -407,21 +375,6 @@ export function SettingsPanel({
       setHealthData(data);
     } catch (err) {
       console.warn("Failed to fetch health:", err);
-    }
-  }, []);
-
-  const fetchModels = useCallback(async (retries = 3) => {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const data = await api.models();
-        if (!isMountedRef.current) return;
-        setModels(data.clientModelConfigs ?? []);
-        return;
-      } catch {
-        if (i < retries - 1) {
-          await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
-        }
-      }
     }
   }, []);
 
@@ -447,23 +400,267 @@ export function SettingsPanel({
     }
   }, []);
 
+  const fetchMemory = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("memory")) return;
+      setTabLoading((prev) => ({ ...prev, memory: true }));
+      try {
+        const mem = await api.agentCapabilities.memory(safeWorkspaces[0]?.uri);
+        if (!isMountedRef.current) return;
+        if (mem) setMemoryData(mem);
+        setLoadedTabs((prev) => new Set(prev).add("memory"));
+      } catch (err) {
+        console.warn("Failed to fetch memory:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, memory: false }));
+        }
+      }
+    },
+    [safeWorkspaces, loadedTabs],
+  );
+
+  const fetchPlugins = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("plugins")) return;
+      setTabLoading((prev) => ({ ...prev, plugins: true }));
+      try {
+        const plugs = await api.agentCapabilities.plugins();
+        if (!isMountedRef.current) return;
+        if (plugs?.plugins) setPluginsList(plugs.plugins);
+        setLoadedTabs((prev) => new Set(prev).add("plugins"));
+      } catch (err) {
+        console.warn("Failed to fetch plugins:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, plugins: false }));
+        }
+      }
+    },
+    [loadedTabs],
+  );
+
+  const fetchSkills = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("skills")) return;
+      setTabLoading((prev) => ({ ...prev, skills: true }));
+      try {
+        const sks = await api.agentCapabilities.skills();
+        if (!isMountedRef.current) return;
+        if (sks?.skills) setSkillsList(sks.skills);
+        setLoadedTabs((prev) => new Set(prev).add("skills"));
+      } catch (err) {
+        console.warn("Failed to fetch skills:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, skills: false }));
+        }
+      }
+    },
+    [loadedTabs],
+  );
+
+  const fetchSubagents = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("subagents")) return;
+      setTabLoading((prev) => ({ ...prev, subagents: true }));
+      try {
+        const subs = await api.agentCapabilities.subagents();
+        if (!isMountedRef.current) return;
+        if (subs?.subagents) setSubagentsList(subs.subagents);
+        setLoadedTabs((prev) => new Set(prev).add("subagents"));
+      } catch (err) {
+        console.warn("Failed to fetch subagents:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, subagents: false }));
+        }
+      }
+    },
+    [loadedTabs],
+  );
+
+  const fetchMcpServers = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("mcp_servers")) return;
+      setTabLoading((prev) => ({ ...prev, mcp_servers: true }));
+      try {
+        const mcps = await api.agentCapabilities.mcp();
+        if (!isMountedRef.current) return;
+        if (mcps?.servers) setMcpServersList(mcps.servers);
+        setLoadedTabs((prev) => new Set(prev).add("mcp_servers"));
+      } catch (err) {
+        console.warn("Failed to fetch MCP servers:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, mcp_servers: false }));
+        }
+      }
+    },
+    [loadedTabs],
+  );
+
+  const fetchCommands = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("commands")) return;
+      setTabLoading((prev) => ({ ...prev, commands: true }));
+      try {
+        const cmds = await api.agentCapabilities.commands();
+        if (!isMountedRef.current) return;
+        if (cmds?.commands) {
+          const cmdList = cmds.commands;
+          setCommandsList(cmdList);
+          const serverDisabled = cmdList.filter((c) => c.enabled === false).map((c) => c.cmd);
+          if (serverDisabled.length > 0) {
+            const currentList = settings.disabledCommands ?? [];
+            const merged = Array.from(new Set([...currentList, ...serverDisabled]));
+            if (merged.length !== currentList.length) {
+              onUpdate({ disabledCommands: merged });
+            }
+          }
+        }
+        setLoadedTabs((prev) => new Set(prev).add("commands"));
+      } catch (err) {
+        console.warn("Failed to fetch commands:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, commands: false }));
+        }
+      }
+    },
+    [loadedTabs, settings.disabledCommands, onUpdate],
+  );
+
+  const fetchHooks = useCallback(
+    async (force = false) => {
+      if (!force && loadedTabs.has("hooks")) return;
+      setTabLoading((prev) => ({ ...prev, hooks: true }));
+      try {
+        const hks = await api.agentCapabilities.hooks(safeWorkspaces[0]?.uri);
+        if (!isMountedRef.current) return;
+        if (hks?.hooks) setHooksList(hks.hooks);
+        setLoadedTabs((prev) => new Set(prev).add("hooks"));
+      } catch (err) {
+        console.warn("Failed to fetch hooks:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, hooks: false }));
+        }
+      }
+    },
+    [safeWorkspaces, loadedTabs],
+  );
+
+  const fetchModels = useCallback(
+    async (forceOrRetries: boolean | number = false, retriesCount = 3) => {
+      const force = typeof forceOrRetries === "boolean" ? forceOrRetries : true;
+      const retries = typeof forceOrRetries === "number" ? forceOrRetries : retriesCount;
+      if (!force && loadedTabs.has("models")) return;
+      setTabLoading((prev) => ({ ...prev, models: true }));
+      try {
+        for (let i = 0; i < retries; i++) {
+          try {
+            const data = await api.models();
+            if (!isMountedRef.current) return;
+            setModels(data.clientModelConfigs ?? []);
+            setLoadedTabs((prev) => new Set(prev).add("models"));
+            return;
+          } catch {
+            if (i < retries - 1) {
+              await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch models:", err);
+      } finally {
+        if (isMountedRef.current) {
+          setTabLoading((prev) => ({ ...prev, models: false }));
+        }
+      }
+    },
+    [loadedTabs],
+  );
+
+  const loadTabData = useCallback(
+    (tab: SettingsTab, force = false) => {
+      switch (tab) {
+        case "memory":
+          return fetchMemory(force);
+        case "plugins":
+          return fetchPlugins(force);
+        case "skills":
+          return fetchSkills(force);
+        case "subagents":
+          return fetchSubagents(force);
+        case "mcp_servers":
+          return fetchMcpServers(force);
+        case "commands":
+          return fetchCommands(force);
+        case "hooks":
+          return fetchHooks(force);
+        case "models":
+          return fetchModels(force);
+        case "account":
+          return fetchUserStatus();
+        case "status":
+          return fetchHealth();
+        default:
+          return Promise.resolve();
+      }
+    },
+    [
+      fetchMemory,
+      fetchPlugins,
+      fetchSkills,
+      fetchSubagents,
+      fetchMcpServers,
+      fetchCommands,
+      fetchHooks,
+      fetchModels,
+      fetchUserStatus,
+      fetchHealth,
+    ],
+  );
+
+  const fetchCapabilities = useCallback(
+    async (force: boolean | unknown = true) => {
+      const isForce = typeof force === "boolean" ? force : true;
+      await Promise.allSettled([
+        fetchMemory(isForce),
+        fetchPlugins(isForce),
+        fetchSkills(isForce),
+        fetchSubagents(isForce),
+        fetchMcpServers(isForce),
+        fetchCommands(isForce),
+        fetchHooks(isForce),
+      ]);
+    },
+    [
+      fetchMemory,
+      fetchPlugins,
+      fetchSkills,
+      fetchSubagents,
+      fetchMcpServers,
+      fetchCommands,
+      fetchHooks,
+    ],
+  );
+
   useEffect(() => {
     isMountedRef.current = true;
-    fetchModels();
-    fetchUserStatus();
+    // 挂载时仅拉取基础必要信息（如 fetchHealth 与 fetchUserStatus），彻底移除高频轮询
     fetchHealth();
-    fetchCapabilities();
-
-    const timer = setInterval(() => {
-      fetchHealth();
-      fetchCapabilities();
-    }, 4000);
+    fetchUserStatus();
 
     return () => {
       isMountedRef.current = false;
-      clearInterval(timer);
     };
-  }, [fetchModels, fetchUserStatus, fetchHealth, fetchCapabilities]);
+  }, [fetchHealth, fetchUserStatus]);
+
+  useEffect(() => {
+    loadTabData(activeTab, false);
+  }, [activeTab, loadTabData]);
 
   useEffect(() => {
     if (activeTabRef.current && typeof activeTabRef.current.scrollIntoView === "function") {
@@ -495,28 +692,29 @@ export function SettingsPanel({
     setInstallingPluginId(pluginId);
     try {
       await api.agentCapabilities.installPlugin(pluginId);
-      await fetchCapabilities();
+      await fetchPlugins(true);
       flashSaved();
     } catch (err) {
       console.error("Failed to install plugin:", err);
     } finally {
       setInstallingPluginId(null);
     }
-  }, [fetchCapabilities, flashSaved]);
+  }, [fetchPlugins, flashSaved]);
 
   const handleUninstallPlugin = useCallback(async (pluginId: string, displayName: string) => {
     if (!window.confirm(`确定要卸载/删除扩展插件「${displayName}」吗？`)) return;
     setInstallingPluginId(pluginId);
     try {
       await api.agentCapabilities.uninstallPlugin(pluginId);
-      await fetchCapabilities();
+      await fetchPlugins(true);
       flashSaved();
     } catch (err) {
       console.error("Failed to uninstall plugin:", err);
     } finally {
       setInstallingPluginId(null);
     }
-  }, [fetchCapabilities, flashSaved]);
+  }, [fetchPlugins, flashSaved]);
+
 
   const toggleSkill = useCallback((skillName: string) => {
     const next = new Set(disabledSkills);
@@ -569,7 +767,7 @@ export function SettingsPanel({
       await api.agentCapabilities.saveMemory(editingMemory.path, editMemoryContent);
       setMemorySaveStatus("ok");
       flashSaved();
-      fetchCapabilities();
+      fetchMemory(true);
       setTimeout(() => {
         setMemorySaveStatus("idle");
         setEditingMemory(null);
@@ -578,7 +776,7 @@ export function SettingsPanel({
       setMemorySaveStatus("error");
       setTimeout(() => setMemorySaveStatus("idle"), 2500);
     }
-  }, [editingMemory, editMemoryContent, flashSaved, fetchCapabilities]);
+  }, [editingMemory, editMemoryContent, flashSaved, fetchMemory]);
 
   const handleCopyCommand = useCallback((cmd: string) => {
     try {
@@ -879,26 +1077,26 @@ export function SettingsPanel({
       }
       setCommandSubView("list");
       setEditingCommand(null);
-      await fetchCapabilities();
+      await fetchCommands(true);
       flashSaved();
     } catch (e) {
       console.error(e);
     } finally {
       setCmdFormSaving(false);
     }
-  }, [cmdFormName, cmdFormPrompt, cmdFormDesc, cmdFormArgHint, cmdFormScope, editingCommand, fetchCapabilities, flashSaved]);
+  }, [cmdFormName, cmdFormPrompt, cmdFormDesc, cmdFormArgHint, cmdFormScope, editingCommand, fetchCommands, flashSaved]);
 
   const handleDeleteCommand = useCallback(async (cmd: CommandDefinition) => {
     if (!cmd.path) return;
     if (!confirm(`确定要删除自定义指令「${cmd.cmd}」吗？该操作不可撤销。`)) return;
     try {
       await api.agentCapabilities.deleteCommand(cmd.path);
-      await fetchCapabilities();
+      await fetchCommands(true);
       flashSaved();
     } catch (e) {
       console.error(e);
     }
-  }, [fetchCapabilities, flashSaved]);
+  }, [fetchCommands, flashSaved]);
 
   const handleToggleCommand = useCallback(
     async (cmd: string, enabled: boolean) => {
@@ -993,7 +1191,7 @@ export function SettingsPanel({
 
       setHookSubView("list");
       setEditingHook(null);
-      await fetchCapabilities();
+      await fetchHooks(true);
       flashSaved();
     } catch (err) {
       console.error("Failed to save hook:", err);
@@ -1011,7 +1209,7 @@ export function SettingsPanel({
     hookFormRunType,
     hookFormMatcher,
     hookFormTimeout,
-    fetchCapabilities,
+    fetchHooks,
     flashSaved,
   ]);
 
@@ -1156,26 +1354,26 @@ export function SettingsPanel({
       }
       setShowAgentEditor(false);
       setEditingAgent(null);
-      await fetchCapabilities();
+      await fetchSubagents(true);
       flashSaved();
     } catch (e) {
       console.error(e);
     } finally {
       setAgentFormSaving(false);
     }
-  }, [agentFormName, agentFormRole, agentFormDesc, agentFormTools, agentFormPrompt, editingAgent, fetchCapabilities, flashSaved]);
+  }, [agentFormName, agentFormRole, agentFormDesc, agentFormTools, agentFormPrompt, editingAgent, fetchSubagents, flashSaved]);
 
   const handleDeleteAgent = useCallback(async (agent: SubagentInfo) => {
     if (!agent.path) return;
     if (!confirm(`确定要删除自定义智能体「${agent.name}」吗？`)) return;
     try {
       await api.agentCapabilities.deleteSubagent(agent.path);
-      await fetchCapabilities();
+      await fetchSubagents(true);
       flashSaved();
     } catch (e) {
       console.error(e);
     }
-  }, [fetchCapabilities, flashSaved]);
+  }, [fetchSubagents, flashSaved]);
 
   const displayedProjects = (showAllProjects ? safeWorkspaces : safeWorkspaces.slice(0, 4)) ?? [];
 
@@ -1401,6 +1599,7 @@ export function SettingsPanel({
                 </p>
               </div>
               <div className="settings-desktop-header-actions">
+                {tabLoading[activeTab] && <IconSpinner className="icon-spin" size={16} />}
                 {savedFlash && <span className="settings-saved-badge">✓ 已保存</span>}
                 <button className="settings-close-btn" onClick={onBack} title="关闭设置 (Esc)">
                   <IconX size={18} />

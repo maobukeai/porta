@@ -347,12 +347,13 @@ export function ModelSelector({ selectedModel, onSelect }: Props) {
       });
     }
 
-    // Sort models: Active model group first, then Gemini 3.7 > 3.6 > 3.5 > 3.1 > Claude > GPT > others
+    // Sort models: Active model group first, then Gemini 3.8 > 3.7 > 3.6 > 3.5 > 3.1 > Claude > GPT > others
     const getScore = (name: string, hasActive: boolean) => {
       let score = 0;
       if (hasActive) score += 50000;
       const n = name.toLowerCase();
-      if (n.includes("3.7")) score += 10000;
+      if (n.includes("3.8")) score += 12000;
+      else if (n.includes("3.7")) score += 10000;
       else if (n.includes("3.6")) score += 8000;
       else if (n.includes("3.5")) score += 6000;
       else if (n.includes("3.1")) score += 4000;

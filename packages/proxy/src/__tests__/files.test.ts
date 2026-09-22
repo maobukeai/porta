@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveSafeHomeFilePath } from "../routes/files.js";
+import { resolveSafeHomeFilePath, resolveLocalCandidatePath } from "../routes/files.js";
+import { resolve } from "node:path";
 
 describe("resolveSafeHomeFilePath", () => {
   it("allows files under home", () => {
@@ -62,5 +63,25 @@ describe("resolveSafeHomeFilePath", () => {
         true,
       ),
     ).toBeNull();
+  });
+});
+
+describe("resolveLocalCandidatePath", () => {
+  it("decodes URL encoded file URIs and finds existing files", () => {
+    const pkgJson = resolve(process.cwd(), "package.json");
+    const encoded = `file:///${encodeURIComponent(pkgJson.replaceAll("\\", "/"))}`;
+    const result = resolveLocalCandidatePath(encoded);
+    expect(result).toBeTruthy();
+  });
+
+  it("resolves relative path using workspaceUri", () => {
+    const cwd = process.cwd();
+    const result = resolveLocalCandidatePath("package.json", cwd);
+    expect(result).toBeTruthy();
+  });
+
+  it("returns null for non-existent files", () => {
+    const result = resolveLocalCandidatePath("definitely-not-existing-file-12345.xyz");
+    expect(result).toBeNull();
   });
 });

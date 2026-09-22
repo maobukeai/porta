@@ -585,3 +585,118 @@ describe("Sidebar status quick-filters (只看运行中/只看未读)", () => {
     expect(screen.queryByText("正在执行的任务")).toBeNull();
   });
 });
+
+describe("Sidebar project folder pinning (置顶项目文件夹)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const pinTestConvs: ConversationEntry[] = [
+    {
+      id: "conv-p1",
+      summary: {
+        summary: "项目A任务",
+        lastModifiedTime: "2026-08-17T10:00:00.000Z",
+        createdTime: "2026-08-17T10:00:00.000Z",
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-p1",
+        projectName: "项目A",
+        workspaces: [],
+      },
+    },
+    {
+      id: "conv-p2",
+      summary: {
+        summary: "项目B任务",
+        lastModifiedTime: "2026-08-17T11:00:00.000Z",
+        createdTime: "2026-08-17T11:00:00.000Z",
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-p2",
+        projectName: "项目B",
+        workspaces: [],
+      },
+    },
+    {
+      id: "conv-task",
+      summary: {
+        summary: "独立任务",
+        lastModifiedTime: "2026-08-17T12:00:00.000Z",
+        createdTime: "2026-08-17T12:00:00.000Z",
+        status: "CASCADE_RUN_STATUS_IDLE",
+        stepCount: 1,
+        trajectoryId: "traj-task",
+        projectName: "任务",
+        workspaces: [],
+      },
+    },
+  ];
+
+  function renderSidebar() {
+    return render(
+      <Sidebar
+        conversations={pinTestConvs}
+        activeId={null}
+        onSelect={vi.fn()}
+        onNew={vi.fn()}
+        onDelete={vi.fn()}
+        onSettings={vi.fn()}
+        loading={false}
+        connected={true}
+        isOpen={true}
+        onToggle={vi.fn()}
+      />,
+    );
+  }
+
+  it("renders pin button for project folders but not for task folder", () => {
+    renderSidebar();
+
+    expect(screen.getByTitle("置顶「项目A」")).toBeInTheDocument();
+    expect(screen.getByTitle("置顶「项目B」")).toBeInTheDocument();
+    expect(screen.queryByTitle(/置顶「任务」/)).toBeNull();
+  });
+
+  it("toggles pin on project folder, persists to localStorage, and updates UI", () => {
+    renderSidebar();
+
+    const pinBtnA = screen.getByTitle("置顶「项目A」");
+    fireEvent.click(pinBtnA);
+
+    expect(screen.getByTitle("取消置顶「项目A」")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("porta:pinnedGroups_v1") as string)).toEqual(["项目A"]);
+
+    const unpinBtnA = screen.getByTitle("取消置顶「项目A」");
+    fireEvent.click(unpinBtnA);
+
+    expect(screen.getByTitle("置顶「项目A」")).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("porta:pinnedGroups_v1") as string)).toEqual([]);
+  });
+
+  it("sorts pinned project folders to the top before unpinned folders", () => {
+    renderSidebar();
+
+    // Initially, 项目B has later modified time (11:00) than 项目A (10:00)
+    const initialHeaders = screen.getAllByText(/^项目[AB]$/).map((el) => el.textContent);
+    expect(initialHeaders).toEqual(["项目B", "项目A"]);
+
+    // Pin 项目A
+    fireEvent.click(screen.getByTitle("置顶「项目A」"));
+
+    // Now 项目A should be sorted before 项目B
+    const sortedHeaders = screen.getAllByText(/^项目[AB]$/).map((el) => el.textContent);
+    expect(sortedHeaders).toEqual(["项目A", "项目B"]);
+  });
+
+  it("initializes pinned groups from localStorage", () => {
+    localStorage.setItem("porta:pinnedGroups_v1", JSON.stringify(["项目A"]));
+    renderSidebar();
+
+    expect(screen.getByTitle("取消置顶「项目A」")).toBeInTheDocument();
+    expect(screen.getByTitle("置顶「项目B」")).toBeInTheDocument();
+
+    const groupHeaders = screen.getAllByText(/^项目[AB]$/).map((el) => el.textContent);
+    expect(groupHeaders).toEqual(["项目A", "项目B"]);
+  });
+});

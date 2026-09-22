@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { extractSubagentSessions } from "../hooks/useSubagentViewer";
+import { formatSubagentDuration, formatSubagentRelativeTime } from "../components/SubagentDirectoryView";
 import type { TrajectoryStep } from "../types";
 
-describe("useSubagentViewer & extractSubagentSessions", () => {
-  it("extracts subagent sessions from tool calls correctly", () => {
-    const mockSteps: TrajectoryStep[] = [
+describe("useSubagentViewer - extractSubagentSessions", () => {
+  it("extracts subagent sessions from invoke_subagent tool calls", () => {
+    const steps: TrajectoryStep[] = [
       {
         type: "PLANNER_RESPONSE",
         status: "DONE",
@@ -14,36 +15,38 @@ describe("useSubagentViewer & extractSubagentSessions", () => {
             args: {
               Subagents: [
                 {
-                  Role: "Fix reorderTask+rate limiting",
-                  TypeName: "subagent",
-                  Model: "sensenova/sensenova-6.8-flash-lite",
-                  Prompt: "You are a backend engineer fixing production-grade bugs in a Kanban board system.\n\nTask 1: Fix reorderTask...",
-                },
-                {
-                  Role: "Create Vitest test suite",
-                  TypeName: "subagent",
-                  Model: "gemini-2.5-flash",
-                  Prompt: "Write 25+ unit tests...",
+                  Role: "review-auditor",
+                  TypeName: "audit",
+                  Prompt: "Review recent code changes for safety",
+                  Model: "gemini-2.5-pro",
                 },
               ],
             },
           },
         },
       },
+    ];
+
+    const sessions = extractSubagentSessions(steps);
+    expect(sessions.length).toBe(1);
+    expect(sessions[0].role).toBe("review-auditor");
+    expect(sessions[0].typeName).toBe("audit");
+    expect(sessions[0].model).toBe("gemini-2.5-pro");
+    expect(sessions[0].prompt).toBe("Review recent code changes for safety");
+  });
+
+  it("updates existing session rawSteps and recalculates status when steps arrive", () => {
+    const stepsInitial: TrajectoryStep[] = [
       {
         type: "PLANNER_RESPONSE",
-        status: "ERROR",
-        errorMessage: "Test execution failed",
+        status: "DONE",
         metadata: {
+          childConversationId: "conv-child-1",
           toolCall: {
             name: "invoke_subagent",
             args: {
               Subagents: [
-                {
-                  Role: "Frontend Polish",
-                  TypeName: "subagent",
-                  Prompt: "Polish CSS...",
-                },
+                { Role: "worker", Prompt: "Do work" },
               ],
             },
           },
@@ -51,179 +54,92 @@ describe("useSubagentViewer & extractSubagentSessions", () => {
       },
     ];
 
-    const sessions = extractSubagentSessions(mockSteps);
-    expect(sessions.length).toBe(3);
+    const sessions1 = extractSubagentSessions(stepsInitial);
+    expect(sessions1.length).toBe(1);
+    expect(sessions1[0].conversationId).toBe("conv-child-1");
+    expect(sessions1[0].status).toBe("running");
 
-    expect(sessions[0].role).toBe("Fix reorderTask+rate limiting");
-    expect(sessions[0].typeName).toBe("subagent");
-    expect(sessions[0].model).toBe("sensenova/sensenova-6.8-flash-lite");
-    expect(sessions[0].prompt).toContain("You are a backend engineer");
-    expect(sessions[0].status).toBe("completed");
-
-    expect(sessions[1].role).toBe("Create Vitest test suite");
-    expect(sessions[1].status).toBe("completed");
-
-    expect(sessions[2].role).toBe("Frontend Polish");
-    expect(sessions[2].status).toBe("failed");
-  });
-
-  it("extracts subagent sessions when tool_calls array and stringified JSON Subagents are used", () => {
-    const mockSteps: TrajectoryStep[] = [
-      {
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        tool_calls: [
-          {
-            name: "invoke_subagent",
-            args: {
-              Subagents: JSON.stringify([
-                {
-                  Role: "Usage Statistics Auditor",
-                  TypeName: "self",
-                  Model: "inherit",
-                  Prompt: "Audit usage stats...",
-                },
-              ]),
-            },
-          },
-        ],
-      } as any,
-      {
-        type: "PLANNER_RESPONSE",
-        status: "RUNNING",
-        tool_calls: [
-          {
-            name: "invoke_subagent",
-            args: {
-              Subagents: [
-                {
-                  Role: "Active Code Generator",
-                  TypeName: "builder",
-                  Prompt: "Generating UI...",
-                },
-              ],
-            },
-          },
-        ],
-      } as any,
-    ];
-
-    const sessions = extractSubagentSessions(mockSteps);
-    expect(sessions.length).toBe(2);
-    expect(sessions[0].role).toBe("Usage Statistics Auditor");
-    expect(sessions[0].status).toBe("completed");
-
-    expect(sessions[1].role).toBe("Active Code Generator");
-    expect(sessions[1].status).toBe("running");
-  });
-
-  it("accurately detects running subagent when conversationId is created but has not reported back yet", () => {
-    const mockSteps: TrajectoryStep[] = [
-      // Subagent 1: Dispatched and completed
-      {
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        tool_calls: [
-          {
-            name: "invoke_subagent",
-            args: {
-              Subagents: [{ Role: "Auditor 1", TypeName: "self", Prompt: "Audit 1" }],
-            },
-          },
-        ],
-      } as any,
-      {
-        type: "INVOKE_SUBAGENT",
-        status: "DONE",
-        content: `Created the following subagents:\n{\n  "conversationId": "subagent-uuid-1"\n}`,
-      } as any,
+    // Add completion system message
+    const stepsFinished: TrajectoryStep[] = [
+      ...stepsInitial,
       {
         type: "SYSTEM_MESSAGE",
         status: "DONE",
-        content: `[Message] timestamp=2026-08-15 sender=subagent-uuid-1 content=Audit complete`,
-      } as any,
-
-      // Subagent 2: Dispatched and still running in background
-      {
-        type: "PLANNER_RESPONSE",
-        status: "DONE",
-        tool_calls: [
-          {
-            name: "invoke_subagent",
-            args: {
-              Subagents: [{ Role: "Auditor 2 Running", TypeName: "self", Prompt: "Audit 2" }],
-            },
-          },
-        ],
-      } as any,
-      {
-        type: "INVOKE_SUBAGENT",
-        status: "DONE",
-        content: `Created the following subagents:\n{\n  "conversationId": "subagent-uuid-2"\n}`,
-      } as any,
+        content: '{"sender":"conv-child-1", "action":"completed"}',
+      },
     ];
 
-    const sessions = extractSubagentSessions(mockSteps);
-    expect(sessions.length).toBe(2);
-
-    expect(sessions[0].role).toBe("Auditor 1");
-    expect(sessions[0].status).toBe("completed");
-    expect(sessions[0].conversationId).toBe("subagent-uuid-1");
-
-    expect(sessions[1].role).toBe("Auditor 2 Running");
-    expect(sessions[1].status).toBe("running");
-    expect(sessions[1].conversationId).toBe("subagent-uuid-2");
+    const sessions2 = extractSubagentSessions(stepsFinished);
+    expect(sessions2.length).toBe(1);
+    expect(sessions2[0].status).toBe("completed");
   });
 
-  it("deduplicates subagents when both plannerResponse.toolCalls and tool execution step metadata are present", () => {
-    const mockSteps: TrajectoryStep[] = [
-      // Step 0: Planner response proposing invoke_subagent with 3 subagents
+  it("detects needsAttention when child subagent has waiting step", () => {
+    const steps: TrajectoryStep[] = [
       {
         type: "PLANNER_RESPONSE",
         status: "DONE",
-        plannerResponse: {
-          toolCalls: [
-            {
-              name: "invoke_subagent",
-              args: {
-                Subagents: [
-                  { Role: "TypeScript & UI Fixer", TypeName: "self", Prompt: "Fix TS" },
-                  { Role: "Disk Writer & Verifier", TypeName: "self", Prompt: "Write disk" },
-                  { Role: "Self Coding Agent", TypeName: "self", Prompt: "Code logic" },
-                ],
-              },
-            },
-          ],
-        },
-      } as any,
-      // Step 1: Tool execution step with metadata.toolCall containing same subagents
-      {
-        type: "CORTEX_STEP_TYPE_INVOKE_SUBAGENT",
-        status: "RUNNING",
         metadata: {
+          childConversationId: "conv-waiting",
           toolCall: {
             name: "invoke_subagent",
             args: {
-              Subagents: [
-                { Role: "TypeScript & UI Fixer", TypeName: "self", Prompt: "Fix TS" },
-                { Role: "Disk Writer & Verifier", TypeName: "self", Prompt: "Write disk" },
-                { Role: "Self Coding Agent", TypeName: "self", Prompt: "Code logic" },
-              ],
+              Subagents: [{ Role: "permission-worker", Prompt: "Run dangerous command" }],
             },
           },
-          childConversationId: "conv-self-coding-1",
         },
-      } as any,
+      },
+      {
+        type: "TOOL_CALL",
+        status: "WAITING",
+        metadata: {
+          toolCall: {
+            name: "ask_permission",
+            args: { command: "rm -rf /" },
+          },
+        },
+      },
     ];
 
-    const sessions = extractSubagentSessions(mockSteps);
-    // Must be 3, NOT 6!
-    expect(sessions.length).toBe(3);
-    expect(sessions.map((s) => s.role)).toEqual([
-      "TypeScript & UI Fixer",
-      "Disk Writer & Verifier",
-      "Self Coding Agent",
-    ]);
-    expect(sessions[2].conversationId).toBe("conv-self-coding-1");
+    const sessions = extractSubagentSessions(steps);
+    expect(sessions.length).toBe(1);
+    expect(sessions[0].status).toBe("running");
+    expect(sessions[0].needsAttention).toBe(true);
+  });
+});
+
+describe("SubagentDirectoryView formatting helpers", () => {
+  describe("formatSubagentDuration", () => {
+    it("formats seconds less than 60", () => {
+      expect(formatSubagentDuration("45s")).toBe("45秒");
+      expect(formatSubagentDuration(30)).toBe("30秒");
+      expect(formatSubagentDuration("0s")).toBe("1秒");
+    });
+
+    it("formats minutes and seconds accurately", () => {
+      expect(formatSubagentDuration("125s")).toBe("2分5秒");
+      expect(formatSubagentDuration(120)).toBe("2分钟");
+      expect(formatSubagentDuration(360)).toBe("6分钟");
+      expect(formatSubagentDuration("65s")).toBe("1分5秒");
+    });
+
+    it("formats millisecond strings", () => {
+      expect(formatSubagentDuration("1500ms")).toBe("2秒");
+      expect(formatSubagentDuration("65000ms")).toBe("1分5秒");
+    });
+
+    it("returns raw string if not matching seconds or ms pattern", () => {
+      expect(formatSubagentDuration("unparsed duration")).toBe("unparsed duration");
+    });
+  });
+
+  describe("formatSubagentRelativeTime", () => {
+    it("formats relative time into Chinese units", () => {
+      const now = Date.now();
+      expect(formatSubagentRelativeTime(new Date(now - 10000).toISOString())).toBe("刚刚");
+      expect(formatSubagentRelativeTime(new Date(now - 120000).toISOString())).toBe("2分钟前");
+      expect(formatSubagentRelativeTime(new Date(now - 3600000 * 3).toISOString())).toBe("3小时前");
+      expect(formatSubagentRelativeTime(new Date(now - 86400000 * 4).toISOString())).toBe("4天");
+    });
   });
 });

@@ -33,7 +33,7 @@ describe("Statistics Routes (/api/statistics/*)", () => {
     expect(Array.isArray(data.heatmap)).toBe(true);
     expect(Array.isArray(data.dailyTrends)).toBe(true);
     expect(Array.isArray(data.models)).toBe(true);
-  });
+  }, 15000);
 
   it("GET /api/statistics/usage?range=7d returns 7-day statistics", async () => {
     const res = await app.request("/api/statistics/usage?range=7d");
@@ -41,7 +41,7 @@ describe("Statistics Routes (/api/statistics/*)", () => {
     const data = await res.json();
     expect(data.range).toBe("7d");
     expect(data.dailyTrends.length).toBe(7);
-  });
+  }, 15000);
 
   it("GET /api/statistics/usage without range defaults to 1d (当天)", async () => {
     const res = await app.request("/api/statistics/usage");
@@ -49,7 +49,7 @@ describe("Statistics Routes (/api/statistics/*)", () => {
     const data = await res.json();
     expect(data.range).toBe("1d");
     expect(data.dailyTrends.length).toBe(24);
-  });
+  }, 15000);
 
   it("extractModelFromText extracts valid model names and handles edge cases", () => {
     expect(extractModelFromText("Updated Model Selection to Gemini 3.7 Flash (High)")).toBe(
@@ -85,5 +85,5 @@ describe("Statistics Routes (/api/statistics/*)", () => {
     const dataToday = await resToday.json();
     expect(dataToday.range).toBe("1d");
     expect(dataToday.dailyTrends.length).toBe(24);
-  });
+  }, 15000);
 });

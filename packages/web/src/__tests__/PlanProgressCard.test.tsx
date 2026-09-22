@@ -239,4 +239,67 @@ describe("PlanProgressCard Component", () => {
     expect(onPauseSubagent).toHaveBeenCalledWith("sub-run-pause", "conv-sub-123");
     expect(screen.getByText("已暂停")).toBeInTheDocument();
   });
+
+  it("collapses panel to minimized badge when clicking header collapse button and restores on click", () => {
+    render(<PlanProgressCard planData={mockPlanData} />);
+
+    // Full card is visible
+    expect(screen.getByText("进程")).toBeInTheDocument();
+    expect(screen.getByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).toBeInTheDocument();
+
+    // Click header collapse button
+    const collapseBtn = screen.getByTitle("收起/折叠面板");
+    expect(collapseBtn).toBeInTheDocument();
+    expect(screen.getByLabelText("收起面板")).toBeInTheDocument();
+    fireEvent.click(collapseBtn);
+
+    // Now card is minimized to floating badge
+    expect(screen.queryByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).not.toBeInTheDocument();
+    const badge = screen.getByTitle("点击展开智能体与规划面板");
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveClass("zcode-plan-minimized-badge");
+    expect(screen.getByText("进程 1/7")).toBeInTheDocument();
+
+    // Click minimized badge to restore
+    fireEvent.click(badge);
+
+    // Full card is restored
+    expect(screen.getByText("进程")).toBeInTheDocument();
+    expect(screen.getByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).toBeInTheDocument();
+  });
+
+  it("restores panel from minimized badge via keyboard Enter / Space", () => {
+    render(<PlanProgressCard planData={mockPlanData} />);
+
+    // Click collapse button
+    fireEvent.click(screen.getByTitle("收起/折叠面板"));
+
+    const badge = screen.getByTitle("点击展开智能体与规划面板");
+    expect(badge).toBeInTheDocument();
+
+    // Trigger Enter key
+    fireEvent.keyDown(badge, { key: "Enter" });
+    expect(screen.getByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).toBeInTheDocument();
+
+    // Collapse again and trigger Space key
+    fireEvent.click(screen.getByTitle("收起/折叠面板"));
+    const badge2 = screen.getByTitle("点击展开智能体与规划面板");
+    fireEvent.keyDown(badge2, { key: " " });
+    expect(screen.getByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).toBeInTheDocument();
+  });
+
+  it("collapses panel when choosing 收起为悬浮胶囊 in dropdown menu", () => {
+    render(<PlanProgressCard planData={mockPlanData} />);
+
+    // Open more menu
+    fireEvent.click(screen.getByTitle("更多操作"));
+    expect(screen.getByText("收起为悬浮胶囊")).toBeInTheDocument();
+
+    // Click collapse option in menu
+    fireEvent.click(screen.getByText("收起为悬浮胶囊"));
+
+    // Verify minimized badge is shown
+    expect(screen.getByTitle("点击展开智能体与规划面板")).toBeInTheDocument();
+    expect(screen.queryByText("后端Bug修复: reorderTask逻辑 + 限流中间件")).not.toBeInTheDocument();
+  });
 });

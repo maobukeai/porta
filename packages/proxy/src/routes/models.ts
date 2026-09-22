@@ -6,6 +6,13 @@ import type { Hono } from "hono";
 import { rpcAny } from "../routing.js";
 
 export const MODEL_MAP: Record<string, string> = {
+  // Gemini 3.8 Flash
+  "gemini-3.8-flash-high": "MODEL_PLACEHOLDER_M318",
+  "gemini-3.8-flash-medium": "MODEL_PLACEHOLDER_M319",
+  "gemini-3.8-flash-low": "MODEL_PLACEHOLDER_M320",
+  "gemini-3.8-flash": "MODEL_PLACEHOLDER_M318",
+  "gemini-3.8": "MODEL_PLACEHOLDER_M318",
+
   // Gemini 3.7 Flash
   "gemini-3.7-flash-high": "MODEL_PLACEHOLDER_M298",
   "gemini-3.7-flash-medium": "MODEL_PLACEHOLDER_M299",
@@ -40,6 +47,30 @@ export const MODEL_MAP: Record<string, string> = {
 };
 
 const DEFAULT_MODEL_CONFIGS = [
+  {
+    label: "Gemini 3.8 Flash (High)",
+    modelOrAlias: { model: "MODEL_PLACEHOLDER_M318" },
+    modelId: "gemini-3.8-flash-high",
+    supportsImages: true,
+    isRecommended: true,
+    quotaInfo: { remainingFraction: 1.0 },
+  },
+  {
+    label: "Gemini 3.8 Flash (Medium)",
+    modelOrAlias: { model: "MODEL_PLACEHOLDER_M319" },
+    modelId: "gemini-3.8-flash-medium",
+    supportsImages: true,
+    isRecommended: true,
+    quotaInfo: { remainingFraction: 1.0 },
+  },
+  {
+    label: "Gemini 3.8 Flash (Low)",
+    modelOrAlias: { model: "MODEL_PLACEHOLDER_M320" },
+    modelId: "gemini-3.8-flash-low",
+    supportsImages: true,
+    isRecommended: true,
+    quotaInfo: { remainingFraction: 1.0 },
+  },
   {
     label: "Gemini 3.7 Flash (High)",
     modelOrAlias: { model: "MODEL_PLACEHOLDER_M298" },
@@ -169,7 +200,7 @@ export async function resolveModelIdentifier(modelInput?: string | null): Promis
     // Fall back below
   }
 
-  if (!modelInput) return "MODEL_PLACEHOLDER_M298";
+  if (!modelInput) return "MODEL_PLACEHOLDER_M318";
   if (modelInput.startsWith("MODEL_")) return modelInput;
 
   const normalizedKey = modelInput.toLowerCase().trim();
@@ -177,7 +208,7 @@ export async function resolveModelIdentifier(modelInput?: string | null): Promis
     return MODEL_MAP[normalizedKey];
   }
 
-  return "MODEL_PLACEHOLDER_M298";
+  return "MODEL_PLACEHOLDER_M318";
 }
 
 export function registerModelRoutes(app: Hono): void {
@@ -189,12 +220,12 @@ export function registerModelRoutes(app: Hono): void {
       }
       return c.json({
         clientModelConfigs: DEFAULT_MODEL_CONFIGS,
-        defaultOverrideModelConfig: { modelOrAlias: { model: "MODEL_PLACEHOLDER_M298" } },
+        defaultOverrideModelConfig: { modelOrAlias: { model: "MODEL_PLACEHOLDER_M318" } },
       });
     } catch {
       return c.json({
         clientModelConfigs: DEFAULT_MODEL_CONFIGS,
-        defaultOverrideModelConfig: { modelOrAlias: { model: "MODEL_PLACEHOLDER_M298" } },
+        defaultOverrideModelConfig: { modelOrAlias: { model: "MODEL_PLACEHOLDER_M318" } },
       });
     }
   });

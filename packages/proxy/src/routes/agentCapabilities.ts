@@ -1266,6 +1266,21 @@ const BUILTIN_SLASH_COMMANDS: CommandItem[] = [
 - 任务执行过程中临时查询某 API 的参数定义或语法示例
 - 不想打断长任务规划时的快速概念澄清`,
   },
+  {
+    cmd: "/boost",
+    name: "深度推理与高阶自主研发管线 (Boost Reasoning Pipeline)",
+    description: "启动 Antigravity 官方高强度多智能体深度推理与复杂自主研发管线。",
+    category: "slash_builtin",
+    source: "builtin",
+    usage: "/boost <宏大任务或复杂架构需求>",
+    fullPrompt: `### ⚡ 指令定位与核心机制
+\`/boost\` 是 Antigravity 2.12 官方深度推理管线指令。
+开启深度推理管线、多维度代码审查与复杂架构决策，自动调用多智能体协同攻坚。
+
+### 📌 适用场景
+- 复杂架构设计与深度重构
+- 涉及跨模块联动与严密验证的长生命周期任务`,
+  },
 ];
 
 const FRIENDLY_COMMAND_TRANSLATIONS: Record<
@@ -1514,7 +1529,7 @@ export async function expandCustomCommand(rawText: string): Promise<string> {
   }
 
   // Native built-in slash commands handled directly by Antigravity runtime
-  const nativeCmds = ["goal", "schedule", "browser", "grill-me", "teamwork-preview", "learn", "btw"];
+  const nativeCmds = ["goal", "schedule", "browser", "grill-me", "teamwork-preview", "learn", "btw", "boost"];
   if (nativeCmds.includes(cmdName)) {
     return rawText;
   }

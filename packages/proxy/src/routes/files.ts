@@ -3,7 +3,7 @@
  */
 
 import type { Hono } from "hono";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { extname, posix, win32 } from "node:path";
 import { Readable } from "node:stream";
 import { homedir } from "node:os";
@@ -130,28 +130,89 @@ export function resolveSafeHomeFilePath(
   return resolvedPath;
 }
 
+export function resolveLocalCandidatePath(
+  fileRef: string,
+  workspaceUri?: string,
+): string | null {
+  let cleanRef = fileRef;
+  try {
+    cleanRef = decodeURIComponent(fileRef);
+  } catch {}
+
+  let candidatePath = cleanRef;
+  if (candidatePath.startsWith("file://")) {
+    const fromUri = fileUriToPath(candidatePath, process.platform === "win32");
+    if (fromUri) {
+      candidatePath = fromUri;
+    } else {
+      candidatePath = candidatePath.replace(/^file:\/\/\/?/, "");
+      if (process.platform === "win32" && /^[A-Za-z]:[\\/]/.test(candidatePath)) {
+        // Windows drive path like C:/...
+      } else if (!candidatePath.startsWith("/")) {
+        candidatePath = `/${candidatePath}`;
+      }
+    }
+  }
+
+  const cleanCandidate = normalizeLegacyPath(
+    candidatePath.replace(/^file:\/\/\/?/, ""),
+    process.platform === "win32",
+  );
+
+  const pathApi = process.platform === "win32" ? win32 : posix;
+
+  // 1. Direct candidate path
+  if (existsSync(cleanCandidate)) {
+    return cleanCandidate;
+  }
+  const norm = pathApi.normalize(cleanCandidate);
+  if (existsSync(norm)) {
+    return norm;
+  }
+
+  // 2. Resolve relative to workspaceUri
+  if (workspaceUri) {
+    let cwd = workspaceUri;
+    try {
+      cwd = decodeURIComponent(cwd);
+    } catch {}
+    if (cwd.startsWith("file://")) {
+      const fromUri = fileUriToPath(cwd, process.platform === "win32");
+      cwd = fromUri || cwd.replace(/^file:\/\/\/?/, "");
+    }
+    cwd = normalizeLegacyPath(cwd, process.platform === "win32");
+    const fullPath = pathApi.resolve(cwd, cleanCandidate);
+    if (existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  // 3. Fallback to ~/.gemini safe path
+  const safeHome = resolveSafeHomeFilePath(cleanRef);
+  if (safeHome && existsSync(safeHome)) {
+    return safeHome;
+  }
+
+  // 4. Fallback to process.cwd()
+  const fromCwd = pathApi.resolve(process.cwd(), cleanCandidate);
+  if (existsSync(fromCwd)) {
+    return fromCwd;
+  }
+
+  return null;
+}
+
 export function registerFileRoutes(app: Hono): void {
   app.get("/api/files", async (c) => {
     const fileRef = c.req.query("uri") ?? c.req.query("path");
+    const workspaceUri = c.req.query("workspaceUri") ?? c.req.query("workspace");
     if (!fileRef) {
       return c.json({ error: "Missing 'uri' or 'path' query param" }, 400);
     }
 
-    // Security: check home dir, or allow valid local image files on disk
-    let resolved = resolveSafeHomeFilePath(fileRef);
-    if (!resolved) {
-      const cleanPath = fileRef.startsWith("file://")
-        ? fileUriToPath(fileRef, process.platform === "win32")
-        : normalizeLegacyPath(fileRef, process.platform === "win32");
-      if (cleanPath && existsSync(cleanPath)) {
-        const ext = extname(cleanPath).toLowerCase();
-        if (IMAGE_EXTS[ext]) {
-          resolved = cleanPath;
-        }
-      }
-    }
-    if (!resolved) {
-      return c.json({ error: "Access denied" }, 403);
+    const resolved = resolveLocalCandidatePath(fileRef, workspaceUri);
+    if (!resolved || !existsSync(resolved)) {
+      return c.json({ error: "File not found" }, 404);
     }
 
     // Only serve images
@@ -159,10 +220,6 @@ export function registerFileRoutes(app: Hono): void {
     const mimeType = IMAGE_EXTS[ext];
     if (!mimeType) {
       return c.json({ error: `Unsupported file type: ${ext}` }, 400);
-    }
-
-    if (!existsSync(resolved)) {
-      return c.json({ error: "File not found" }, 404);
     }
 
     const stream = createReadStream(resolved);
@@ -175,75 +232,13 @@ export function registerFileRoutes(app: Hono): void {
   });
 
   app.get("/api/files/text", async (c) => {
-    let fileRef = c.req.query("uri") ?? c.req.query("path");
+    const fileRef = c.req.query("uri") ?? c.req.query("path");
     const workspaceUri = c.req.query("workspaceUri") ?? c.req.query("workspace");
     if (!fileRef) {
       return c.json({ error: "Missing 'uri' or 'path' query param" }, 400);
     }
-    try {
-      fileRef = decodeURIComponent(fileRef);
-    } catch {}
 
-    let resolved: string | null = null;
-    const { resolve, normalize } = await import("node:path");
-    const { existsSync, statSync, readFileSync } = await import("node:fs");
-
-    // 1. Direct candidate normalization (supporting file:// protocol and absolute Windows/POSIX paths)
-    let candidatePath = fileRef;
-    if (candidatePath.startsWith("file://")) {
-      try {
-        const { fileURLToPath } = await import("node:url");
-        candidatePath = fileURLToPath(candidatePath);
-      } catch {
-        candidatePath = candidatePath.replace(/^file:\/\/\/?/, "");
-        if (/^[A-Za-z]:[\\/]/.test(candidatePath)) {
-          // Windows drive path like C:/...
-        } else if (!candidatePath.startsWith("/")) {
-          candidatePath = `/${candidatePath}`;
-        }
-      }
-    }
-
-    const cleanCandidate = candidatePath.replace(/^file:\/\/\/?/, "");
-    if (existsSync(cleanCandidate)) {
-      resolved = cleanCandidate;
-    } else if (existsSync(normalize(cleanCandidate))) {
-      resolved = normalize(cleanCandidate);
-    }
-
-    // 2. Resolve with workspaceUri if given and not yet resolved
-    if ((!resolved || !existsSync(resolved)) && workspaceUri) {
-      let cwd = workspaceUri;
-      if (cwd.startsWith("file://")) {
-        try {
-          const { fileURLToPath } = await import("node:url");
-          cwd = fileURLToPath(cwd);
-        } catch {
-          cwd = cwd.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
-        }
-      } else {
-        cwd = cwd.replace(/^file:\/\/\/?/, "").replace(/\//g, "\\");
-      }
-
-      const fullPath = resolve(cwd, cleanCandidate);
-      if (existsSync(fullPath)) {
-        resolved = fullPath;
-      }
-    }
-
-    // 3. Fallback to ~/.gemini safe path
-    if (!resolved || !existsSync(resolved)) {
-      resolved = resolveSafeHomeFilePath(fileRef);
-    }
-
-    // 4. Fallback to process.cwd()
-    if (!resolved || !existsSync(resolved)) {
-      const fromCwd = resolve(process.cwd(), cleanCandidate);
-      if (existsSync(fromCwd)) {
-        resolved = fromCwd;
-      }
-    }
-
+    const resolved = resolveLocalCandidatePath(fileRef, workspaceUri);
     if (!resolved || !existsSync(resolved)) {
       return c.json({ error: "File not found", content: "" }, 404);
     }

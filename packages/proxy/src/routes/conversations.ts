@@ -26,6 +26,7 @@ import {
   getProjectNameMap,
   syncProjectPermissionPreset,
   getProjectPermissionPreset,
+  findProjectForWorkspace,
   getAllKnownSubagentConversationIds,
   isSubagentContent,
   isValidConversationId,
@@ -650,20 +651,38 @@ export function registerConversationRoutes(app: Hono): void {
             ? [workspaceUri]
             : [];
 
+      const matchedProject = workspaceUri
+        ? await findProjectForWorkspace(workspaceUri)
+        : undefined;
+
+      const startPayload: Record<string, unknown> = {
+        ...body,
+        metadata,
+        source:
+          typeof body.source === "string"
+            ? body.source
+            : "CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT",
+      };
+
+      if (matchedProject) {
+        delete startPayload.workspaceFolderAbsoluteUri;
+        delete startPayload.workspaceUris;
+        startPayload.projectEnvConfig = {
+          projectId: matchedProject.id,
+          defaultProjectEnvironment: {},
+        };
+      } else {
+        if (workspaceUri) {
+          startPayload.workspaceFolderAbsoluteUri = workspaceUri;
+        }
+        if (startWorkspaceUris.length > 0) {
+          startPayload.workspaceUris = startWorkspaceUris;
+        }
+      }
+
       const data = await rpc.call(
         "StartCascade",
-        {
-          ...body,
-          metadata,
-          source:
-            typeof body.source === "string"
-              ? body.source
-              : "CORTEX_TRAJECTORY_SOURCE_CASCADE_CLIENT",
-          ...(workspaceUri ? { workspaceFolderAbsoluteUri: workspaceUri } : {}),
-          ...(startWorkspaceUris.length > 0
-            ? { workspaceUris: startWorkspaceUris }
-            : {}),
-        },
+        startPayload,
         targetInstance,
       );
 
@@ -689,7 +708,7 @@ export function registerConversationRoutes(app: Hono): void {
     }
   });
 
-  app.post("/api/conversations/:id/messages", async (c) => {
+  const handleSendMessage = async (c: any) => {
     const id = c.req.param("id");
     try {
       return await runConversationMutation(id, async () => {
@@ -747,6 +766,10 @@ export function registerConversationRoutes(app: Hono): void {
             ? "planning"
             : "conversational";
 
+        const isPlanning = effectivePlannerType === "planning";
+        const planningModeEnum = isPlanning ? "PLANNING_MODE_ON" : "PLANNING_MODE_OFF";
+        metadata.planningMode = planningModeEnum;
+
         const expandedItems = Array.isArray(items)
           ? await Promise.all(
               items.map(async (item: any) => {
@@ -763,6 +786,7 @@ export function registerConversationRoutes(app: Hono): void {
           metadata,
           cascadeId: id,
           items: expandedItems,
+          planningMode: planningModeEnum,
         };
 
         if (media && Array.isArray(media) && media.length > 0) {
@@ -795,18 +819,20 @@ export function registerConversationRoutes(app: Hono): void {
           });
         }
 
-        const typeConfig =
-          effectivePlannerType === "planning"
-            ? { planning: {} }
-            : { conversational: {} };
-
+        const typeConfig = isPlanning ? { planning: {} } : { conversational: {} };
         const resolvedModel = await resolveModelIdentifier(model);
+        const plannerConfig: Record<string, unknown> = {
+          plannerTypeConfig: typeConfig,
+          permissionPreset: permissionPresetNum,
+          planningMode: planningModeEnum,
+        };
+        if (resolvedModel) {
+          plannerConfig.requestedModel = { model: resolvedModel };
+        }
+
         req.cascadeConfig = {
-          plannerConfig: {
-            plannerTypeConfig: typeConfig,
-            requestedModel: { model: resolvedModel },
-            permissionPreset: permissionPresetNum,
-          },
+          plannerConfig,
+          planningMode: planningModeEnum,
         };
 
         const data = await rpcForConversation(
@@ -828,21 +854,28 @@ export function registerConversationRoutes(app: Hono): void {
     } catch (err) {
       return handleRPCError(c, err);
     }
-  });
+  };
 
-  // ── Stop ──
+  app.post("/api/conversations/:id/messages", handleSendMessage);
+  app.post("/api/conversations/:id/message", handleSendMessage);
 
-  app.post("/api/conversations/:id/stop", async (c) => {
+  // ── Stop / Cancel ──
+
+  const handleCancelConversation = async (c: any) => {
     const id = c.req.param("id");
     try {
       const data = await rpcForConversation("CancelCascadeInvocation", id, {
         cascadeId: id,
       });
+      conversationSignals.emit("activate", id);
       return c.json(data);
     } catch (err) {
       return handleRPCError(c, err);
     }
-  });
+  };
+
+  app.post("/api/conversations/:id/stop", handleCancelConversation);
+  app.post("/api/conversations/:id/cancel", handleCancelConversation);
 
   // ── Delete ──
 
@@ -1004,14 +1037,26 @@ export function registerConversationRoutes(app: Hono): void {
         );
       }
 
-      const firstResponse = Array.isArray(responses) ? responses[0] : undefined;
-      const selectedId = firstResponse?.selectedOptionIds?.[0] ?? "1";
-      const isDeny =
-        selectedId === "5" ||
-        selectedId === "deny" ||
-        selectedId === "no" ||
-        cancelled;
-      const scopeNum = parseInt(selectedId, 10) || 1;
+      const rawResponses = Array.isArray(responses)
+        ? responses
+        : responses && typeof responses === "object"
+          ? [responses]
+          : [];
+
+      // Preserve all responses, and ensure selectedOptionIds is always a full array of strings
+      const normalizedResponses = rawResponses.map((r: any) => {
+        if (!r || typeof r !== "object") return {};
+        const selectedOptionIds: string[] = Array.isArray(r.selectedOptionIds)
+          ? r.selectedOptionIds.map(String)
+          : r.selectedOptionId !== undefined && r.selectedOptionId !== null
+            ? [String(r.selectedOptionId)]
+            : [];
+        const { selectedOptionId: _legacyId, ...rest } = r;
+        return {
+          ...rest,
+          selectedOptionIds,
+        };
+      });
 
       let data: unknown;
       let lastErr: unknown;
@@ -1026,7 +1071,7 @@ export function registerConversationRoutes(app: Hono): void {
               trajectoryId,
               stepIndex: Number(stepIndex),
               askQuestion: {
-                responses: Array.isArray(responses) ? responses : [],
+                responses: normalizedResponses,
                 cancelled: !!cancelled,
               },
             },
@@ -1036,6 +1081,18 @@ export function registerConversationRoutes(app: Hono): void {
         lastErr = err1;
         try {
           // Fallback for permission-style interactions (e.g. MCP tool, URL/resource permissions)
+          const allSelectedIds = normalizedResponses.flatMap((r: any) => r.selectedOptionIds ?? []);
+          const isDeny =
+            Boolean(cancelled) ||
+            allSelectedIds.some((sId: string) => sId === "5" || sId === "deny" || sId === "no");
+          const numericScope = allSelectedIds
+            .map((sId: string) => parseInt(sId, 10))
+            .find((n: number) => !isNaN(n) && n > 0) ?? 1;
+          const writeIns = normalizedResponses
+            .map((r: any) => r.writeInResponse)
+            .filter(Boolean)
+            .join("\n");
+
           data = await rpcForConversation(
             "HandleCascadeUserInteraction",
             id,
@@ -1046,10 +1103,8 @@ export function registerConversationRoutes(app: Hono): void {
                 stepIndex: Number(stepIndex),
                 permission: {
                   allow: !isDeny,
-                  scope: isDeny ? 0 : scopeNum,
-                  ...(firstResponse?.writeInResponse
-                    ? { feedback: firstResponse.writeInResponse }
-                    : {}),
+                  scope: isDeny ? 0 : numericScope,
+                  ...(writeIns ? { feedback: writeIns } : {}),
                 },
               },
             },
@@ -1133,12 +1188,24 @@ export function registerConversationRoutes(app: Hono): void {
           metadata,
         };
 
+        const isPlanning = body.plannerType === "planning" || body.executionMode === "planning";
+        const planningModeEnum = isPlanning ? "PLANNING_MODE_ON" : "PLANNING_MODE_OFF";
+        metadata.planningMode = planningModeEnum;
+        req.planningMode = planningModeEnum;
+
+        const typeConfig = isPlanning ? { planning: {} } : { conversational: {} };
         const resolvedModel = await resolveModelIdentifier(body.model);
+        const plannerConfig: Record<string, unknown> = {
+          plannerTypeConfig: typeConfig,
+          planningMode: planningModeEnum,
+        };
+        if (resolvedModel) {
+          plannerConfig.requestedModel = { model: resolvedModel };
+        }
+
         req.overrideConfig = {
-          plannerConfig: {
-            plannerTypeConfig: { conversational: {} },
-            requestedModel: { model: resolvedModel },
-          },
+          plannerConfig,
+          planningMode: planningModeEnum,
         };
 
         const data = await rpcForConversation("RevertToCascadeStep", id, req);

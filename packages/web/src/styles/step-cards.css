@@ -2008,3 +2008,63 @@
     white-space: nowrap;
   }
 }
+
+/* ── Media & Screenshot Step Card (Desktop 1:1) ── */
+.media-step-card {
+  padding: 10px 12px;
+  background: var(--bg-surface, #1e1e24);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: var(--radius-md, 8px);
+}
+
+.step-media-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.step-media-thumb-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.step-media-thumb-wrapper:hover {
+  transform: scale(1.02);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.step-media-thumb-wrapper:active {
+  transform: scale(0.98);
+}
+
+.step-media-thumbnail {
+  display: block;
+  max-width: 220px;
+  max-height: 140px;
+  width: auto;
+  height: auto;
+  object-fit: cover;
+}
+
+[data-theme="light"] .media-step-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+[data-theme="light"] .step-media-thumb-wrapper {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+[data-theme="light"] .step-media-thumb-wrapper:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}

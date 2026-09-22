@@ -29,10 +29,12 @@ import {
   IconSearch,
   IconCloud,
   IconBot,
+  IconArrowUpRight,
+  IconGithub,
 } from "./Icons";
 import { triggerHaptic } from "../utils/haptics";
 import { copyText } from "../utils/clipboard";
-import type { TrajectoryStep, ChatMessage } from "../types";
+import type { TrajectoryStep, ChatMessage, AskQuestionEntry } from "../types";
 import { api } from "../api/client";
 import { renderMarkdown } from "../utils/markdown";
 import { MarkdownContent } from "./MarkdownContent";
@@ -53,12 +55,37 @@ interface Props {
   steps?: TrajectoryStep[];
   messages?: ChatMessage[];
   workspaceUri?: string;
-  projectName?: string;
+  projectName?: string | null;
+  currentModel?: string | null;
   selectedFile?: { name: string; path?: string; ext?: string; range?: string } | null;
   activeSubagentId?: string | null;
   onSelectSubagent?: (id: string) => void;
+  onOpenFile?: (file: { name: string; path?: string; ext?: string; range?: string }) => void;
+  onFilePermission?: (
+    trajectoryId: string,
+    stepIndex: number,
+    allow: boolean,
+    scope: number,
+    absolutePathUri: string,
+    targetCascadeId?: string,
+  ) => void;
+  onCommandAction?: (
+    trajectoryId: string,
+    stepIndex: number,
+    approved: boolean,
+    targetCascadeId?: string,
+  ) => Promise<void>;
+  onAskQuestion?: (
+    trajectoryId: string,
+    stepIndex: number,
+    responses: AskQuestionEntry[],
+    cancelled?: boolean,
+    targetCascadeId?: string,
+  ) => Promise<void>;
   onClose?: () => void;
   initialTab?: SidePanelTab | null;
+  activeTab?: SidePanelTab | null;
+  onTabChange?: (tab: SidePanelTab | null) => void;
 }
 
 // Side-by-Side Diff Line Parser
@@ -1501,7 +1528,113 @@ function SideReviewView({
   );
 }
 
-function parseGitRefs(refsStr?: string): Array<{ type: "head" | "remote" | "tag" | "branch"; label: string }> {
+export interface ConventionalCommitInfo {
+  isConventional: boolean;
+  type?: string;
+  scope?: string;
+  isBreaking?: boolean;
+  subject: string;
+}
+
+export function parseConventionalCommit(message: string): ConventionalCommitInfo {
+  if (!message) return { isConventional: false, subject: "" };
+  const regex = /^([a-zA-Z0-9_\-]+)(?:\(([^\)]+)\))?(!)?:\s*(.*)$/;
+  const match = message.match(regex);
+  if (!match) {
+    return { isConventional: false, subject: message };
+  }
+  const [, typeRaw, scope, breaking, subject] = match;
+  const type = typeRaw.toLowerCase();
+  return {
+    isConventional: true,
+    type,
+    scope: scope?.trim(),
+    isBreaking: Boolean(breaking),
+    subject: subject || "",
+  };
+}
+
+export function getRemoteRepoLabel(url: string | null | undefined): { label: string; host: string } | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.replace(/^\/+/, "").replace(/\.git$/, "");
+    if (host.includes("github.com")) {
+      return { label: `GitHub: ${pathname}`, host: "github" };
+    }
+    if (host.includes("gitee.com")) {
+      return { label: `Gitee: ${pathname}`, host: "gitee" };
+    }
+    if (host.includes("gitlab.com")) {
+      return { label: `GitLab: ${pathname}`, host: "gitlab" };
+    }
+    return { label: pathname ? `${host}: ${pathname}` : host, host: "git" };
+  } catch {
+    const clean = url.replace(/^https?:\/\//, "").replace(/\.git$/, "");
+    return { label: clean, host: "git" };
+  }
+}
+
+/**
+ * 将 Git 提交历史的时间转换为中文相对时间显示。
+ * 优先根据 rawDate 绝对时间计算本地相对时间差，辅以 Git 原生相对时间英文字符串的正则翻译双重保障。
+ */
+export function formatGitRelativeTimeChinese(
+  relativeTime?: string | null,
+  rawDate?: string | null
+): string {
+  if (rawDate) {
+    const timestamp = Date.parse(rawDate);
+    if (!Number.isNaN(timestamp)) {
+      const now = Date.now();
+      const diffSec = Math.floor((now - timestamp) / 1000);
+      if (diffSec < 45) {
+        return "刚刚";
+      }
+      if (diffSec < 3600) {
+        const mins = Math.max(1, Math.floor(diffSec / 60));
+        return `${mins} 分钟前`;
+      }
+      if (diffSec < 86400) {
+        const hours = Math.max(1, Math.floor(diffSec / 3600));
+        return `${hours} 小时前`;
+      }
+      if (diffSec < 30 * 86400) {
+        const days = Math.max(1, Math.floor(diffSec / 86400));
+        return `${days} 天前`;
+      }
+      if (diffSec < 365 * 86400) {
+        const months = Math.max(1, Math.floor(diffSec / (30 * 86400)));
+        return `${months} 个月前`;
+      }
+      const years = Math.max(1, Math.floor(diffSec / (365 * 86400)));
+      return `${years} 年前`;
+    }
+  }
+
+  if (relativeTime && typeof relativeTime === "string") {
+    let t = relativeTime.trim();
+    if (!t) return "刚刚";
+
+    t = t.replace(/(\d+)\s*seconds?\s*ago/gi, "$1 秒前");
+    t = t.replace(/(\d+)\s*minutes?\s*ago/gi, "$1 分钟前");
+    t = t.replace(/(\d+)\s*hours?\s*ago/gi, "$1 小时前");
+    t = t.replace(/\byesterday\b/gi, "昨天");
+    t = t.replace(/(\d+)\s*days?\s*ago/gi, "$1 天前");
+    t = t.replace(/(\d+)\s*weeks?\s*ago/gi, "$1 周前");
+    t = t.replace(/(\d+)\s*months?\s*ago/gi, "$1 个月前");
+    t = t.replace(/(\d+)\s*years?\s*ago/gi, "$1 年前");
+    t = t.replace(/\bjust\s*now\b/gi, "刚刚");
+
+    return t;
+  }
+
+  return "刚刚";
+}
+
+
+export function parseGitRefs(refsStr?: string): Array<{ type: "head" | "remote" | "tag" | "branch"; label: string }> {
   if (!refsStr) return [];
   const rawList = refsStr.split(",").map((s) => s.trim()).filter(Boolean);
   const result: Array<{ type: "head" | "remote" | "tag" | "branch"; label: string }> = [];
@@ -1553,6 +1686,7 @@ function SideGitView({
   const [gitAhead, setGitAhead] = useState(0);
   const [gitBehind, setGitBehind] = useState(0);
   const [gitLoading, setGitLoading] = useState(false);
+  const [remoteWebUrl, setRemoteWebUrl] = useState<string | null>(null);
   const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
 
@@ -1592,6 +1726,8 @@ function SideGitView({
   const [splitRatio, setSplitRatio] = useState<number>(50);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
+
+  const remoteRepoInfo = useMemo(() => getRemoteRepoLabel(remoteWebUrl), [remoteWebUrl]);
 
   const filteredLocalBranches = useMemo(() => {
     const q = branchSearchQuery.trim().toLowerCase();
@@ -1766,9 +1902,11 @@ function SideGitView({
         if (statusRes.value.branch) setGitBranch(statusRes.value.branch);
         setGitAhead(statusRes.value.ahead || 0);
         setGitBehind(statusRes.value.behind || 0);
+        if ((statusRes.value as any).remoteWebUrl) setRemoteWebUrl((statusRes.value as any).remoteWebUrl);
       }
       if (logRes.status === "fulfilled" && logRes.value) {
         setGitLogs(logRes.value.logs || []);
+        if ((logRes.value as any).remoteWebUrl) setRemoteWebUrl((logRes.value as any).remoteWebUrl);
       }
     } catch {
       // fallback
@@ -2053,6 +2191,23 @@ function SideGitView({
                 <IconDownload size={11} /> {gitBehind}
               </span>
             )}
+            {remoteRepoInfo && remoteWebUrl && (
+              <a
+                href={remoteWebUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="vscode-remote-repo-badge"
+                title={`点击访问远程仓库: ${remoteWebUrl}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerHaptic("light");
+                }}
+              >
+                <IconGithub size={12} className="repo-icon" />
+                <span className="repo-label">{remoteRepoInfo.label}</span>
+                <IconArrowUpRight size={10} className="external-arrow" />
+              </a>
+            )}
           </div>
           <div className="vscode-git-branch-actions">
             <button
@@ -2109,19 +2264,28 @@ function SideGitView({
                 }
               }}
             />
-            <button
-              className="vscode-ai-btn"
-              onClick={() => handleGenerateAiCommit()}
-              disabled={aiMsgLoading || gitFiles.length === 0}
-              title="点击 AI 自动分析 Git 变更并一键填入提交信息"
-            >
-              {aiMsgLoading ? (
-                <IconSpinner size={12} className="icon-spin" />
-              ) : (
-                <IconSparkles size={12} />
-              )}
-              <span>AI 生成</span>
-            </button>
+            <div className="vscode-commit-input-footer">
+              <div className="vscode-commit-hint-strip">
+                <span className="vscode-kbd-badge">Ctrl+Enter</span>
+                <span className="hint-text">提交</span>
+                <span className="hint-sep">•</span>
+                <span className="vscode-kbd-badge">/btw</span>
+                <span className="hint-text">AI 建议</span>
+              </div>
+              <button
+                className="vscode-ai-btn"
+                onClick={() => handleGenerateAiCommit()}
+                disabled={aiMsgLoading || gitFiles.length === 0}
+                title="点击 AI 自动分析 Git 变更并一键填入提交信息"
+              >
+                {aiMsgLoading ? (
+                  <IconSpinner size={12} className="icon-spin" />
+                ) : (
+                  <IconSparkles size={12} />
+                )}
+                <span>AI 生成</span>
+              </button>
+            </div>
           </div>
 
           <div className="vscode-commit-actions">
@@ -2186,52 +2350,58 @@ function SideGitView({
               {gitFiles.length === 0 ? (
                 <div className="vscode-empty-hint">工作区暂无未提交的代码变更</div>
               ) : (
-                gitFiles.map((file) => (
-                  <div
-                    key={file.path}
-                    className={`vscode-file-row ${activeDiffFile === file.path ? "active" : ""}`}
-                    onClick={() => handleInspectDiff(file.path)}
-                  >
-                    <div className="vscode-file-info">
-                      <IconFileCode size={13} className="vscode-file-icon" />
-                      <span className="vscode-file-name" title={file.path}>
-                        {file.path.split("/").pop()}
-                      </span>
-                      <span className="vscode-file-dir" title={file.path}>
-                        {file.path.split("/").slice(0, -1).join("/")}
-                      </span>
-                    </div>
-                    <div className="vscode-file-actions" onClick={(e) => e.stopPropagation()}>
-                      <span className={`vscode-status-badge ${file.status.toLowerCase()}`}>
-                        {file.status}
-                      </span>
-                      {file.staged ? (
+                gitFiles.map((file) => {
+                  const fileName = file.path.split("/").pop();
+                  const fileDir = file.path.split("/").slice(0, -1).join("/");
+                  return (
+                    <div
+                      key={file.path}
+                      className={`vscode-file-row ${activeDiffFile === file.path ? "active" : ""}`}
+                      onClick={() => handleInspectDiff(file.path)}
+                    >
+                      <div className="vscode-file-info">
+                        <IconFileCode size={13} className="vscode-file-icon" />
+                        <span className="vscode-file-name" title={file.path}>
+                          {fileName}
+                        </span>
+                        {fileDir && (
+                          <span className="vscode-file-dir" title={file.path}>
+                            {fileDir}
+                          </span>
+                        )}
+                      </div>
+                      <div className="vscode-file-actions" onClick={(e) => e.stopPropagation()}>
+                        <span className={`vscode-status-badge ${file.status.toLowerCase()}`} title={`状态: ${file.status}`}>
+                          {file.status}
+                        </span>
+                        {file.staged ? (
+                          <button
+                            className="vscode-file-action-btn unstage"
+                            title="取消暂存"
+                            onClick={() => handleUnstage(file.path)}
+                          >
+                            <IconX size={11} />
+                          </button>
+                        ) : (
+                          <button
+                            className="vscode-file-action-btn stage"
+                            title="暂存更改"
+                            onClick={() => handleStage(file.path)}
+                          >
+                            <IconPlus size={11} />
+                          </button>
+                        )}
                         <button
-                          className="vscode-file-action-btn"
-                          title="取消暂存"
-                          onClick={() => handleUnstage(file.path)}
+                          className="vscode-file-action-btn discard"
+                          title="放弃修改"
+                          onClick={() => handleDiscard(file.path)}
                         >
-                          <IconX size={11} />
+                          <IconRotateCcw size={11} />
                         </button>
-                      ) : (
-                        <button
-                          className="vscode-file-action-btn"
-                          title="暂存更改"
-                          onClick={() => handleStage(file.path)}
-                        >
-                          <IconPlus size={11} />
-                        </button>
-                      )}
-                      <button
-                        className="vscode-file-action-btn discard"
-                        title="放弃修改"
-                        onClick={() => handleDiscard(file.path)}
-                      >
-                        <IconRotateCcw size={11} />
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
@@ -2285,13 +2455,18 @@ function SideGitView({
                   const isHead = log.isHead || isFirst;
                   const isOutgoing = gitAhead > 0 && index < gitAhead;
                   const refBadges = parseGitRefs(log.refs);
+                  const displayTime = formatGitRelativeTimeChinese(log.relativeTime, log.date);
+                  const targetCommitUrl =
+                    (log as any).commitUrl ||
+                    (remoteWebUrl ? `${remoteWebUrl}/commit/${log.hash}` : undefined) ||
+                    `https://github.com/maobukeai/porta/commit/${log.hash}`;
 
                   return (
                     <div
                       key={log.hash}
-                      className={`vscode-graph-item ${activeCommitHash === log.hash ? "active" : ""} ${isOutgoing ? "is-outgoing" : ""}`}
+                      className={`vscode-graph-item ${isOutgoing ? "is-outgoing" : ""} ${activeCommitHash === log.hash ? "active" : ""}`}
+                      title={`${log.hash} • ${log.author} • ${displayTime}\n${log.message}`}
                       onClick={() => handleInspectCommitDiff(log.hash, log.message)}
-                      title={`${log.hash} • ${log.author} • ${log.relativeTime}\n${log.message}`}
                     >
                       {/* Left Spine: Continuous Rail Line + Node Dot */}
                       <div className="vscode-graph-spine-cell">
@@ -2305,7 +2480,9 @@ function SideGitView({
                       {/* Right Content: Message & Attached Ref Tags & Time/Hash */}
                       <div className="vscode-graph-row-content">
                         <div className="vscode-graph-row-top">
-                          <span className="vscode-graph-msg-text">{log.message}</span>
+                          <span className="vscode-graph-msg-text" title={log.message}>
+                            {log.message}
+                          </span>
                           {refBadges.map((badge, bIdx) => (
                             <span key={bIdx} className={`vscode-graph-ref-pill ${badge.type}`} title={badge.label}>
                               {badge.type === "head" && <span className="ref-dot head" />}
@@ -2327,8 +2504,23 @@ function SideGitView({
                             {log.hash}
                             {copiedHash === log.hash && <span className="copied-text">✓ 已复制</span>}
                           </span>
+                          <a
+                            href={targetCommitUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="vscode-graph-commit-link-btn"
+                            title="在 GitHub 中查看此提交 (在新标签页打开)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic("light");
+                            }}
+                          >
+                            <IconGithub size={11} />
+                            <span>GitHub</span>
+                            <IconArrowUpRight size={10} className="ext-icon" />
+                          </a>
                           <span className="vscode-graph-author-name">{log.author}</span>
-                          <span className="vscode-graph-time-text">{log.relativeTime}</span>
+                          <span className="vscode-graph-time-text">{displayTime}</span>
                         </div>
                       </div>
                     </div>
@@ -2649,18 +2841,40 @@ export function SidePanel({
   messages = [],
   workspaceUri,
   projectName,
+  currentModel,
   selectedFile,
   activeSubagentId,
   onSelectSubagent,
+  onOpenFile,
+  onFilePermission,
+  onCommandAction,
+  onAskQuestion,
   onClose,
   initialTab = null,
+  activeTab: controlledActiveTab,
+  onTabChange,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<SidePanelTab | null>(() => initialTab);
+  const isControlled = controlledActiveTab !== undefined;
+  const [internalActiveTab, setInternalActiveTab] = useState<SidePanelTab | null>(() =>
+    controlledActiveTab !== undefined ? controlledActiveTab : initialTab,
+  );
+  const activeTab = isControlled ? controlledActiveTab : internalActiveTab;
+
+  const handleSetActiveTab = useCallback(
+    (newTab: SidePanelTab | null) => {
+      if (!isControlled) {
+        setInternalActiveTab(newTab);
+      }
+      onTabChange?.(newTab);
+    },
+    [isControlled, onTabChange],
+  );
+
   const [commitMsg, setCommitMsg] = useState("");
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   // Desktop keep-alive: once opened, the terminal view stays mounted (hidden) so
   // switching tabs never destroys live terminal sessions.
-  const [terminalMounted, setTerminalMounted] = useState(() => initialTab === "terminal");
+  const [terminalMounted, setTerminalMounted] = useState(() => (controlledActiveTab || initialTab) === "terminal");
 
   useEffect(() => {
     if (activeTab === "terminal") {
@@ -2669,23 +2883,25 @@ export function SidePanel({
   }, [activeTab]);
 
   const { steps: liveSteps } = useStepsStream(cascadeId || "");
-  const effectiveSteps = (steps && steps.length > 0) ? steps : liveSteps;
+  const effectiveSteps = (liveSteps && liveSteps.length > 0) ? liveSteps : (steps ?? []);
   const { subagents: subagentSessions, activeSubagent: hookActiveSubagent } = useSubagentViewer(effectiveSteps);
 
   const activeSubagent = useMemo(() => {
     if (!subagentSessions || subagentSessions.length === 0) return null;
-    if (!activeSubagentId) return hookActiveSubagent || subagentSessions[subagentSessions.length - 1] || null;
+    if (!activeSubagentId) {
+      return (
+        hookActiveSubagent ||
+        subagentSessions[subagentSessions.length - 1] ||
+        null
+      );
+    }
     const target = activeSubagentId.toLowerCase();
-
-    // 1. Exact match on unique session ID or conversation UUID
     const exactMatch = subagentSessions.find(
       (s) =>
         s.id === activeSubagentId ||
         (s.conversationId && s.conversationId.toLowerCase() === target),
     );
     if (exactMatch) return exactMatch;
-
-    // 2. Search from newest to oldest for role or partial match
     for (let i = subagentSessions.length - 1; i >= 0; i--) {
       const s = subagentSessions[i];
       if (
@@ -2698,7 +2914,6 @@ export function SidePanel({
         return s;
       }
     }
-
     return (
       hookActiveSubagent ||
       subagentSessions[subagentSessions.length - 1] ||
@@ -2707,16 +2922,16 @@ export function SidePanel({
   }, [subagentSessions, activeSubagentId, hookActiveSubagent]);
 
   useEffect(() => {
-    if (initialTab !== undefined && initialTab !== null) {
-      setActiveTab(initialTab);
+    if (!isControlled && initialTab !== undefined) {
+      setInternalActiveTab(initialTab);
     }
-  }, [initialTab]);
+  }, [isControlled, initialTab]);
 
   useEffect(() => {
     if (activeSubagentId) {
-      setActiveTab("subagent");
+      handleSetActiveTab("subagent");
     }
-  }, [activeSubagentId]);
+  }, [activeSubagentId, handleSetActiveTab]);
 
   const prevFileRef = useRef(selectedFile);
   useEffect(() => {
@@ -2726,24 +2941,24 @@ export function SidePanel({
         selectedFile.path !== prevFileRef.current?.path) &&
       (selectedFile.name || selectedFile.path)
     ) {
-      setActiveTab("review");
+      handleSetActiveTab("review");
     }
     prevFileRef.current = selectedFile;
-  }, [selectedFile]);
+  }, [selectedFile, handleSetActiveTab]);
 
   const handleOpenTab = (tab: SidePanelTab) => {
     triggerHaptic("medium");
-    setActiveTab(tab);
+    handleSetActiveTab(tab);
   };
 
   const handleBackToPicker = () => {
     triggerHaptic("light");
-    setActiveTab(null);
+    handleSetActiveTab(null);
   };
 
   const handleApplyCommitToGit = (msg: string) => {
     setCommitMsg(msg);
-    setActiveTab("git");
+    handleSetActiveTab("git");
   };
 
   return (
@@ -2898,7 +3113,7 @@ export function SidePanel({
           <SideChatView
             key={`side-chat-${cascadeId || "default"}`}
             cascadeId={cascadeId}
-            steps={steps}
+            steps={effectiveSteps}
             workspaceUri={workspaceUri}
             onBack={handleBackToPicker}
             onClose={onClose}
@@ -2909,15 +3124,15 @@ export function SidePanel({
         ) : activeTab === "review" ? (
           <SideReviewView
             workspaceUri={workspaceUri}
-            steps={steps}
+            steps={effectiveSteps}
             messages={messages}
             selectedFile={selectedFile}
             subagentSessions={subagentSessions}
             onSelectSubagent={(id) => {
               onSelectSubagent?.(id);
-              setActiveTab("subagent");
+              handleSetActiveTab("subagent");
             }}
-            onOpenSubagentDirectory={() => setActiveTab("subagent_directory")}
+            onOpenSubagentDirectory={() => handleSetActiveTab("subagent_directory")}
             onBack={handleBackToPicker}
             onClose={onClose}
           />
@@ -2954,7 +3169,7 @@ export function SidePanel({
               subagents={subagentSessions}
               onSelectSubagent={(id) => {
                 onSelectSubagent?.(id);
-                setActiveTab("subagent");
+                handleSetActiveTab("subagent");
               }}
               onClose={onClose}
             />
@@ -2966,11 +3181,17 @@ export function SidePanel({
               <SubagentDetailViewer
                 subagent={activeSubagent}
                 allSubagents={subagentSessions}
+                currentModel={currentModel}
+                projectName={projectName}
                 onSelectSubagent={(id) => {
                   onSelectSubagent?.(id);
                 }}
+                onOpenFile={onOpenFile}
+                onFilePermission={onFilePermission}
+                onCommandAction={onCommandAction}
+                onAskQuestion={onAskQuestion}
                 onOpenReview={() => {
-                  setActiveTab("review");
+                  handleSetActiveTab("review");
                 }}
                 onClose={onClose || (() => {})}
               />
@@ -2994,7 +3215,7 @@ export function SidePanel({
             <Suspense fallback={<div className="artifacts-loading"><IconSpinner className="icon-spin" /></div>}>
               <SideTerminalView
                 workspaceUri={workspaceUri}
-                projectName={projectName}
+                projectName={projectName ?? undefined}
                 onBack={handleBackToPicker}
                 onClose={onClose}
               />
